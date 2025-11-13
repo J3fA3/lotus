@@ -9,7 +9,7 @@ from sqlalchemy import select
 import uuid
 from datetime import datetime
 
-from .schemas import (
+from api.schemas import (
     TaskSchema,
     TaskCreateRequest,
     TaskUpdateRequest,
@@ -18,10 +18,10 @@ from .schemas import (
     HealthResponse,
     CommentSchema
 )
-from ..db.database import get_db
-from ..db.models import Task, Comment, Attachment, InferenceHistory
-from ..agents.task_extractor import TaskExtractor
-from ..agents.pdf_processor import PDFProcessor
+from db.database import get_db
+from db.models import Task, Comment, Attachment, InferenceHistory
+from agents.task_extractor import TaskExtractor
+from agents.pdf_processor import PDFProcessor
 
 router = APIRouter()
 
@@ -292,6 +292,25 @@ async def infer_tasks_from_pdf(
 
 def _task_to_schema(task: Task) -> TaskSchema:
     """Convert SQLAlchemy Task to Pydantic schema"""
+    # Safely access relationships - they may not be loaded
+    try:
+        attachments = [att.url for att in task.attachments] if hasattr(task, 'attachments') and task.attachments else []
+    except:
+        attachments = []
+    
+    try:
+        comments = [
+            CommentSchema(
+                id=comment.id,
+                text=comment.text,
+                author=comment.author,
+                createdAt=comment.created_at.isoformat()
+            )
+            for comment in task.comments
+        ] if hasattr(task, 'comments') and task.comments else []
+    except:
+        comments = []
+    
     return TaskSchema(
         id=task.id,
         title=task.title,
@@ -301,16 +320,8 @@ def _task_to_schema(task: Task) -> TaskSchema:
         dueDate=task.due_date,
         valueStream=task.value_stream,
         description=task.description,
-        attachments=[att.url for att in task.attachments],
-        comments=[
-            CommentSchema(
-                id=comment.id,
-                text=comment.text,
-                author=comment.author,
-                createdAt=comment.created_at.isoformat()
-            )
-            for comment in task.comments
-        ],
+        attachments=attachments,
+        comments=comments,
         createdAt=task.created_at.isoformat(),
         updatedAt=task.updated_at.isoformat()
     )
