@@ -17,61 +17,67 @@ A modern task management application featuring a Notion-style Kanban board with 
 
 ### Prerequisites
 
-1. **Install Ollama on your host machine** (not in dev container):
+1. **Install Ollama on your local machine** (not in codespace/dev container):
    ```bash
-   # macOS/Linux
-   curl -fsSL https://ollama.com/install.sh | sh
+   # macOS
+   brew install ollama
    
-   # Pull the model
+   # Or download from https://ollama.com/download
+   
+   # Linux
+   curl -fsSL https://ollama.com/install.sh | sh
+   ```
+
+2. **Download the AI model**:
+   ```bash
    ollama pull qwen2.5:7b-instruct
    ```
 
-2. **Set up SSH tunnel** (for dev container access):
+3. **Start Ollama server** (keep this running):
    ```bash
-   # On host machine, create ~/.ssh/config entry:
-   Host devcontainer
-       HostName localhost
-       Port 2222
-       User vscode
-       RemoteForward 11434 127.0.0.1:11434
-   
-   # Start Ollama service
    ollama serve
    ```
 
-### Running the Application
+### Running in GitHub Codespaces
+
+1. **Forward Ollama port** from your local machine:
+   ```bash
+   # On your LOCAL machine terminal (not in codespace)
+   gh codespace ssh -- -R 11434:localhost:11434
+   
+   # This creates an SSH tunnel that forwards your local Ollama 
+   # (port 11434) to the codespace
+   ```
+
+2. **Start the application** (in codespace terminal):
+   ```bash
+   ./start.sh
+   ```
+
+3. **Access the app**:
+   - Frontend: http://localhost:8080
+   - Backend: http://localhost:8000
+   - API Docs: http://localhost:8000/docs
+
+4. **Stop the application**:
+   ```bash
+   ./stop.sh
+   ```
+
+### Running Locally (Without Dev Container)
 
 ```bash
-# Terminal 1: Start backend
-cd /workspaces/task-crate/backend
-python -m uvicorn main:app --host 0.0.0.0 --port 8000
-
-# Terminal 2: Start frontend
-cd /workspaces/task-crate
-npm run dev
-
-# Open http://localhost:8080 in your browser
-```
-
-### Option 2: Running Locally (Without Dev Container)
-
-```bash
-# 1. Install Ollama (on your Mac)
-curl -fsSL https://ollama.com/install.sh | sh
-ollama pull qwen2.5:7b-instruct
-ollama serve  # Keep this running
-
-# 2. Start backend (new terminal)
-cd backend
-python3 -m venv venv && source venv/bin/activate
-pip install -r requirements.txt
-python main.py
-
-# 3. Start frontend (new terminal)
+# 1. Install dependencies
 npm install
-npm run dev
+cd backend && pip install -r requirements.txt && cd ..
 
-# Open http://localhost:5173
+# 2. Start Ollama (in separate terminal)
+ollama serve
+
+# 3. Start the application
+./start.sh
+
+# 4. Open http://localhost:8080
 ```
 
 ## 🎬 Demo Flow
