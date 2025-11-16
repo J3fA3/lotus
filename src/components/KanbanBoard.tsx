@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Task, TaskStatus } from "@/types/task";
 import { TaskCard } from "./TaskCard";
-import { TaskDetailDialog } from "./TaskDetailDialog";
+import { TaskDetailSheet } from "./TaskDetailSheet";
 import { QuickAddTask } from "./QuickAddTask";
 import { AIInferenceDialog } from "./AIInferenceDialog";
 import { Button } from "./ui/button";
@@ -588,7 +588,7 @@ export const KanbanBoard = () => {
       />
 
       {selectedTask && (
-        <TaskDetailDialog
+        <TaskDetailSheet
           task={selectedTask}
           open={isDialogOpen}
           onOpenChange={setIsDialogOpen}

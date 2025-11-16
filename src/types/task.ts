@@ -11,6 +11,7 @@ export interface Task {
   description?: string;
   attachments: string[];
   comments: Comment[];
+  notes?: string;
   createdAt: string;
   updatedAt: string;
 }
