@@ -88,7 +88,10 @@ export const TaskDetailDialog = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto p-0 gap-0 border-border/50">
+      <DialogContent 
+        className="max-w-3xl max-h-[90vh] overflow-y-auto p-0 gap-0 border-border/50"
+        onOpenAutoFocus={(e) => e.preventDefault()}
+      >
         <DialogHeader className="px-8 pt-8 pb-6 border-b border-border/30">
           <DialogTitle className="sr-only">Task Details</DialogTitle>
           <div className="flex items-start justify-between gap-4">
@@ -98,7 +101,7 @@ export const TaskDetailDialog = ({
               className="text-2xl font-semibold border-0 px-0 focus-visible:ring-0 tracking-tight"
               placeholder="Task title"
               autoFocus={false}
-              onFocus={(e) => e.target.blur()}
+main
             />
             <Button
               variant="ghost"
