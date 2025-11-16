@@ -78,3 +78,50 @@ class HealthResponse(BaseModel):
     ollama_connected: bool
     database_connected: bool
     model: str
+
+
+class ShortcutConfigSchema(BaseModel):
+    """Keyboard shortcut configuration schema"""
+    id: str
+    category: Literal["global", "board", "task", "dialog", "message", "bulk"]
+    action: str
+    key: str
+    modifiers: List[str] = Field(default_factory=list)
+    enabled: bool = True
+    description: str
+    user_id: Optional[int] = None
+    is_default: bool = True
+    createdAt: str
+    updatedAt: str
+
+    class Config:
+        from_attributes = True
+
+
+class ShortcutCreateRequest(BaseModel):
+    """Request for creating or updating a shortcut"""
+    id: str
+    category: Literal["global", "board", "task", "dialog", "message", "bulk"]
+    action: str
+    key: str
+    modifiers: List[str] = Field(default_factory=list)
+    enabled: bool = True
+    description: str
+    user_id: Optional[int] = None
+
+
+class ShortcutUpdateRequest(BaseModel):
+    """Request for updating a shortcut"""
+    key: Optional[str] = None
+    modifiers: Optional[List[str]] = None
+    enabled: Optional[bool] = None
+
+
+class ShortcutBulkUpdateRequest(BaseModel):
+    """Request for bulk updating shortcuts"""
+    shortcuts: List[ShortcutCreateRequest]
+
+
+class ShortcutResetRequest(BaseModel):
+    """Request for resetting shortcuts"""
+    user_id: Optional[int] = None  # If provided, reset user overrides; if None, reset all
