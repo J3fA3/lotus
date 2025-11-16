@@ -20,14 +20,17 @@ export const QuickAddTask = ({ onAdd, onCancel, autoFocus = true }: QuickAddTask
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (title.trim()) {
-      onAdd(title.trim());
+    const trimmedTitle = title.trim();
+    
+    if (trimmedTitle) {
+      onAdd(trimmedTitle);
       setTitle("");
     }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Escape") {
+      e.preventDefault();
       onCancel();
     }
   };

@@ -40,17 +40,24 @@ export const TaskDetailDialog = ({
   const [newAttachment, setNewAttachment] = useState("");
 
   const handleUpdate = (updates: Partial<Task>) => {
-    const updated = { ...editedTask, ...updates, updatedAt: new Date().toISOString() };
+    const updated = { 
+      ...editedTask, 
+      ...updates, 
+      updatedAt: new Date().toISOString() 
+    };
     setEditedTask(updated);
     onUpdate(updated);
   };
 
   const handleAddComment = () => {
-    if (!newComment.trim()) return;
+    const trimmedComment = newComment.trim();
+    if (!trimmedComment) {
+      return;
+    }
 
     const comment: Comment = {
       id: crypto.randomUUID(),
-      text: newComment,
+      text: trimmedComment,
       author: editedTask.assignee,
       createdAt: new Date().toISOString(),
     };
@@ -60,14 +67,18 @@ export const TaskDetailDialog = ({
   };
 
   const handleAddAttachment = () => {
-    if (!newAttachment.trim()) return;
-    handleUpdate({ attachments: [...editedTask.attachments, newAttachment] });
+    const trimmedUrl = newAttachment.trim();
+    if (!trimmedUrl) {
+      return;
+    }
+    
+    handleUpdate({ attachments: [...editedTask.attachments, trimmedUrl] });
     setNewAttachment("");
   };
 
   const handleRemoveAttachment = (index: number) => {
-    const updated = editedTask.attachments.filter((_, i) => i !== index);
-    handleUpdate({ attachments: updated });
+    const updatedAttachments = editedTask.attachments.filter((_, i) => i !== index);
+    handleUpdate({ attachments: updatedAttachments });
   };
 
   return (
@@ -102,7 +113,7 @@ export const TaskDetailDialog = ({
               </Label>
               <Select
                 value={editedTask.status}
-                onValueChange={(value: any) => handleUpdate({ status: value })}
+                onValueChange={(value) => handleUpdate({ status: value as Task["status"] })}
               >
                 <SelectTrigger className="h-10 border-border/50 focus:border-primary/50 transition-colors">
                   <SelectValue />

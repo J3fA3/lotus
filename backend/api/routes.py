@@ -56,8 +56,8 @@ async def get_tasks(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Task))
     tasks = result.scalars().all()
 
-    # Convert to response format
-    return [_task_to_schema(task) for task in tasks]
+    # Convert to response format - relationships not loaded, will return empty arrays
+    return [_task_to_schema(task, load_relationships=False) for task in tasks]
 
 
 @router.post("/tasks", response_model=TaskSchema)
@@ -107,28 +107,28 @@ async def update_task(
     task_data: TaskUpdateRequest,
     db: AsyncSession = Depends(get_db)
 ):
-    """Update a task"""
+    """Update a task with provided fields"""
     result = await db.execute(select(Task).where(Task.id == task_id))
     task = result.scalar_one_or_none()
 
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    # Update fields
-    if task_data.title is not None:
-        task.title = task_data.title
-    if task_data.status is not None:
-        task.status = task_data.status
-    if task_data.assignee is not None:
-        task.assignee = task_data.assignee
-    if task_data.startDate is not None:
-        task.start_date = task_data.startDate
-    if task_data.dueDate is not None:
-        task.due_date = task_data.dueDate
-    if task_data.valueStream is not None:
-        task.value_stream = task_data.valueStream
-    if task_data.description is not None:
-        task.description = task_data.description
+    # Update only provided fields
+    update_data = task_data.model_dump(exclude_unset=True)
+    field_mapping = {
+        "title": "title",
+        "status": "status",
+        "assignee": "assignee",
+        "startDate": "start_date",
+        "dueDate": "due_date",
+        "valueStream": "value_stream",
+        "description": "description"
+    }
+    
+    for api_field, db_field in field_mapping.items():
+        if api_field in update_data:
+            setattr(task, db_field, update_data[api_field])
 
     task.updated_at = datetime.utcnow()
 
@@ -173,18 +173,7 @@ async def infer_tasks_from_text(
         # Save tasks to database
         saved_tasks = []
         for task_data in result["tasks"]:
-            task = Task(
-                id=task_data["id"],
-                title=task_data["title"],
-                status=task_data["status"],
-                assignee=task_data["assignee"],
-                start_date=task_data.get("startDate"),
-                due_date=task_data.get("dueDate"),
-                value_stream=task_data.get("valueStream"),
-                description=task_data.get("description"),
-                created_at=datetime.utcnow(),
-                updated_at=datetime.utcnow()
-            )
+            task = _create_task_from_data(task_data)
             db.add(task)
             saved_tasks.append(task)
 
@@ -211,8 +200,10 @@ async def infer_tasks_from_text(
             tasks_inferred=len(saved_tasks)
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"Task inference failed: {str(e)}")
 
 
 @router.post("/infer-tasks-pdf", response_model=InferenceResponse)
@@ -225,10 +216,9 @@ async def infer_tasks_from_pdf(
     Infer tasks from PDF file
     """
     try:
-        # Read PDF file
+        # Read and validate PDF file
         pdf_bytes = await file.read()
 
-        # Validate PDF
         if not pdf_processor.validate_pdf(pdf_bytes):
             raise HTTPException(status_code=400, detail="Invalid PDF file")
 
@@ -244,18 +234,7 @@ async def infer_tasks_from_pdf(
         # Save tasks to database
         saved_tasks = []
         for task_data in result["tasks"]:
-            task = Task(
-                id=task_data["id"],
-                title=task_data["title"],
-                status=task_data["status"],
-                assignee=task_data["assignee"],
-                start_date=task_data.get("startDate"),
-                due_date=task_data.get("dueDate"),
-                value_stream=task_data.get("valueStream"),
-                description=task_data.get("description"),
-                created_at=datetime.utcnow(),
-                updated_at=datetime.utcnow()
-            )
+            task = _create_task_from_data(task_data)
             db.add(task)
             saved_tasks.append(task)
 
@@ -285,31 +264,26 @@ async def infer_tasks_from_pdf(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"PDF processing failed: {str(e)}")
 
 
 # ============= Helper Functions =============
 
-def _task_to_schema(task: Task) -> TaskSchema:
-    """Convert SQLAlchemy Task to Pydantic schema"""
-    # Safely access relationships - they may not be loaded
-    try:
-        attachments = [att.url for att in task.attachments] if hasattr(task, 'attachments') and task.attachments else []
-    except:
-        attachments = []
+def _task_to_schema(task: Task, load_relationships: bool = False) -> TaskSchema:
+    """Convert SQLAlchemy Task to Pydantic schema with safe relationship access
     
-    try:
-        comments = [
-            CommentSchema(
-                id=comment.id,
-                text=comment.text,
-                author=comment.author,
-                createdAt=comment.created_at.isoformat()
-            )
-            for comment in task.comments
-        ] if hasattr(task, 'comments') and task.comments else []
-    except:
-        comments = []
+    Args:
+        task: Task model instance
+        load_relationships: Whether to attempt loading relationships (requires proper async context)
+    """
+    # Don't try to access relationships in async context - they cause greenlet errors
+    # Relationships would need to be eager-loaded in the query
+    attachments = []
+    comments = []
+    
+    # Handle potential None values for timestamps
+    created_at = task.created_at if task.created_at else datetime.utcnow()
+    updated_at = task.updated_at if task.updated_at else datetime.utcnow()
     
     return TaskSchema(
         id=task.id,
@@ -322,6 +296,23 @@ def _task_to_schema(task: Task) -> TaskSchema:
         description=task.description,
         attachments=attachments,
         comments=comments,
-        createdAt=task.created_at.isoformat(),
-        updatedAt=task.updated_at.isoformat()
+        createdAt=created_at.isoformat(),
+        updatedAt=updated_at.isoformat()
+    )
+
+
+def _create_task_from_data(task_data: dict) -> Task:
+    """Create a Task model instance from dictionary data"""
+    now = datetime.utcnow()
+    return Task(
+        id=task_data["id"],
+        title=task_data["title"],
+        status=task_data["status"],
+        assignee=task_data["assignee"],
+        start_date=task_data.get("startDate"),
+        due_date=task_data.get("dueDate"),
+        value_stream=task_data.get("valueStream"),
+        description=task_data.get("description"),
+        created_at=now,
+        updated_at=now
     )

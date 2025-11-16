@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useCallback } from "react";
 import {
   Dialog,
   DialogContent,
@@ -14,6 +14,16 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import { Sparkles, FileText, Loader2, CheckCircle, AlertCircle, Upload } from "lucide-react";
 import { inferTasksFromText, inferTasksFromPDF, InferenceResponse } from "@/api/tasks";
 import { toast } from "sonner";
+
+// Constants
+const MAX_PDF_SIZE = 10 * 1024 * 1024; // 10MB
+const CLOSE_DELAY = 1500; // ms
+const PLACEHOLDER_TEXT = `Paste Slack messages, meeting notes, emails, etc.
+
+Example:
+@john We need to update the API docs before Friday.
+@sarah Can someone review the auth PR?
+Let's schedule a meeting to discuss Q4 roadmap.`;
 
 interface AIInferenceDialogProps {
   open: boolean;
@@ -33,7 +43,16 @@ export const AIInferenceDialog = ({
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleInferFromText = async () => {
+  const handleClose = useCallback(() => {
+    setInputText("");
+    setSelectedFile(null);
+    setInferenceResult(null);
+    setError(null);
+    setIsInferring(false);
+    onOpenChange(false);
+  }, [onOpenChange]);
+
+  const handleInferFromText = useCallback(async () => {
     if (!inputText.trim()) {
       toast.error("Please enter some text to analyze");
       return;
@@ -46,16 +65,21 @@ export const AIInferenceDialog = ({
       const result = await inferTasksFromText(inputText);
       setInferenceResult(result);
 
-      if (result.tasks_inferred === 0) {
+      const taskCount = result.tasks_inferred;
+      if (taskCount === 0) {
         toast.info("No tasks found in the text");
       } else {
-        toast.success(`Found ${result.tasks_inferred} task${result.tasks_inferred > 1 ? 's' : ''}!`);
+        const taskWord = taskCount === 1 ? "task" : "tasks";
+        toast.success(`Found ${taskCount} ${taskWord}!`);
         onTasksInferred(result);
 
         // Close dialog after short delay
         setTimeout(() => {
-          handleClose();
-        }, 1500);
+          onOpenChange(false);
+          setInputText("");
+          setInferenceResult(null);
+          setError(null);
+        }, CLOSE_DELAY);
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Failed to infer tasks";
@@ -64,9 +88,9 @@ export const AIInferenceDialog = ({
     } finally {
       setIsInferring(false);
     }
-  };
+  }, [inputText, onTasksInferred, onOpenChange]);
 
-  const handleInferFromPDF = async () => {
+  const handleInferFromPDF = useCallback(async () => {
     if (!selectedFile) {
       toast.error("Please select a PDF file");
       return;
@@ -79,16 +103,21 @@ export const AIInferenceDialog = ({
       const result = await inferTasksFromPDF(selectedFile);
       setInferenceResult(result);
 
-      if (result.tasks_inferred === 0) {
+      const taskCount = result.tasks_inferred;
+      if (taskCount === 0) {
         toast.info("No tasks found in the PDF");
       } else {
-        toast.success(`Found ${result.tasks_inferred} task${result.tasks_inferred > 1 ? 's' : ''}!`);
+        const taskWord = taskCount === 1 ? "task" : "tasks";
+        toast.success(`Found ${taskCount} ${taskWord}!`);
         onTasksInferred(result);
 
         // Close dialog after short delay
         setTimeout(() => {
-          handleClose();
-        }, 1500);
+          onOpenChange(false);
+          setSelectedFile(null);
+          setInferenceResult(null);
+          setError(null);
+        }, CLOSE_DELAY);
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Failed to process PDF";
@@ -97,28 +126,28 @@ export const AIInferenceDialog = ({
     } finally {
       setIsInferring(false);
     }
-  };
+  }, [selectedFile, onTasksInferred, onOpenChange]);
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      if (file.type !== "application/pdf") {
-        toast.error("Please select a PDF file");
-        return;
-      }
-      setSelectedFile(file);
-      setError(null);
+    
+    if (!file) {
+      return;
     }
-  };
-
-  const handleClose = () => {
-    setInputText("");
-    setSelectedFile(null);
-    setInferenceResult(null);
+    
+    if (file.type !== "application/pdf") {
+      toast.error("Please select a PDF file");
+      return;
+    }
+    
+    if (file.size > MAX_PDF_SIZE) {
+      toast.error(`File is too large. Maximum size is ${MAX_PDF_SIZE / (1024 * 1024)}MB`);
+      return;
+    }
+    
+    setSelectedFile(file);
     setError(null);
-    setIsInferring(false);
-    onOpenChange(false);
-  };
+  }, []);
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
@@ -154,7 +183,7 @@ export const AIInferenceDialog = ({
                 id="input-text"
                 value={inputText}
                 onChange={(e) => setInputText(e.target.value)}
-                placeholder="Paste Slack messages, meeting notes, emails, etc.&#10;&#10;Example:&#10;@john We need to update the API docs before Friday.&#10;@sarah Can someone review the auth PR?&#10;Let's schedule a meeting to discuss Q4 roadmap."
+                placeholder={PLACEHOLDER_TEXT}
                 rows={12}
                 className="resize-none font-mono text-sm"
                 disabled={isInferring}

@@ -6,17 +6,26 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sess
 from sqlalchemy.orm import declarative_base
 from .models import Base
 
-# Get database URL from environment or use default
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./tasks.db")
+# Configuration
+DEFAULT_DATABASE_URL = "sqlite:///./tasks.db"
 
-# Convert sqlite:/// to sqlite+aiosqlite:/// for async support
-if DATABASE_URL.startswith("sqlite:///"):
-    DATABASE_URL = DATABASE_URL.replace("sqlite:///", "sqlite+aiosqlite:///")
+def get_database_url() -> str:
+    """Get configured database URL with async driver support"""
+    url = os.getenv("DATABASE_URL", DEFAULT_DATABASE_URL)
+    
+    # Convert sqlite:/// to sqlite+aiosqlite:/// for async support
+    if url.startswith("sqlite:///"):
+        url = url.replace("sqlite:///", "sqlite+aiosqlite:///")
+    
+    return url
+
+# Get database URL
+DATABASE_URL = get_database_url()
 
 # Create async engine
 engine = create_async_engine(
     DATABASE_URL,
-    echo=True if os.getenv("DEBUG") == "true" else False,
+    echo=os.getenv("DEBUG", "false").lower() == "true",
 )
 
 # Create async session maker

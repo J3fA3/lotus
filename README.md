@@ -13,7 +13,26 @@ A powerful task management app with **AI-powered task extraction** from text and
 
 ## 🚀 Quick Start
 
-**See [SETUP.md](./SETUP.md) for complete installation guide**
+**See [QUICKSTART.md](./QUICKSTART.md) for streamlined setup or [SETUP.md](./SETUP.md) for complete guide**
+
+### Option 1: Using Dev Container (Current Setup)
+
+```bash
+# 1. Install Ollama on your Mac (HOST machine, not dev container)
+curl -fsSL https://ollama.com/install.sh | sh
+ollama pull qwen2.5:7b-instruct
+ollama serve  # Keep this running
+
+# 2. In dev container - Start backend (Terminal 1)
+./start-backend.sh
+
+# 3. In dev container - Start frontend (Terminal 2)
+./start-frontend.sh
+
+# Open http://localhost:5173 in your Mac browser
+```
+
+### Option 2: Running Locally (Without Dev Container)
 
 ```bash
 # 1. Install Ollama (on your Mac)
@@ -57,65 +76,25 @@ Frontend (React + Vite) → Backend (FastAPI) → Ollama (Qwen 2.5)
    SQLite Database
 ```
 
-## 📚 Full Documentation
+## 📚 Documentation
 
+- **[GETTING_STARTED.md](./GETTING_STARTED.md)** - 🚀 **START HERE!** Quick 5-minute setup guide
+- **[QUICKSTART.md](./QUICKSTART.md)** - Streamlined setup instructions
 - **[SETUP.md](./SETUP.md)** - Complete setup guide with troubleshooting
 - **[backend/README.md](./backend/README.md)** - Backend API documentation
 - **API Docs** - http://localhost:8000/docs (when backend is running)
 
----
+## 🛠️ Helpful Scripts
 
-## Project info
-
-**URL**: https://lovable.dev/projects/0e90d6d8-b0b8-4b08-905c-6892833be7c7
-
-## How can I edit this code?
-
-There are several ways of editing your application.
-
-**Use Lovable**
-
-Simply visit the [Lovable Project](https://lovable.dev/projects/0e90d6d8-b0b8-4b08-905c-6892833be7c7) and start prompting.
-
-Changes made via Lovable will be committed automatically to this repo.
-
-**Use your preferred IDE**
-
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
-
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
-
-Follow these steps:
-
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
+```bash
+./health-check.sh      # Check if everything is set up correctly
+./start-backend.sh     # Start the FastAPI backend
+./start-frontend.sh    # Start the React frontend
 ```
 
-**Edit a file directly in GitHub**
+---
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
-
-**Use GitHub Codespaces**
-
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
-
-## What technologies are used for this project?
+## 🛠️ Technologies Used
 
 **Frontend:**
 - Vite
@@ -130,14 +109,23 @@ npm run dev
 - Ollama (Qwen 2.5 7B Instruct)
 - PyMuPDF (PDF processing)
 
-## How can I deploy this project?
+---
 
-Simply open [Lovable](https://lovable.dev/projects/0e90d6d8-b0b8-4b08-905c-6892833be7c7) and click on Share -> Publish.
+## 🔧 Development
 
-## Can I connect a custom domain to my Lovable project?
+### Local Development
 
-Yes, you can!
+```sh
+# Clone the repository
+git clone <YOUR_GIT_URL>
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+# Navigate to the project directory
+cd task-crate
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+# Install dependencies
+npm install
+
+# Start development servers
+./start-backend.sh   # Terminal 1
+./start-frontend.sh  # Terminal 2
+```

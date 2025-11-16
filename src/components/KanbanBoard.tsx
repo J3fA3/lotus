@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Task, TaskStatus } from "@/types/task";
 import { TaskCard } from "./TaskCard";
 import { TaskDetailDialog } from "./TaskDetailDialog";
@@ -10,11 +10,25 @@ import { toast } from "sonner";
 import * as tasksApi from "@/api/tasks";
 import { InferenceResponse } from "@/api/tasks";
 
+// Constants
 const COLUMNS: { id: TaskStatus; title: string }[] = [
   { id: "todo", title: "To-Do" },
   { id: "doing", title: "In Progress" },
   { id: "done", title: "Done" },
 ];
+
+const KEYBOARD_SHORTCUTS = {
+  TODO: "1",
+  DOING: "2",
+  DONE: "3",
+  HELP: "?",
+} as const;
+
+const TOAST_DURATION = {
+  SHORT: 2000,
+  MEDIUM: 3000,
+  LONG: 5000,
+} as const;
 
 export const KanbanBoard = () => {
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -31,39 +45,43 @@ export const KanbanBoard = () => {
   useEffect(() => {
     loadTasks();
     checkBackendHealth();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const checkBackendHealth = async () => {
+  const checkBackendHealth = useCallback(async () => {
     try {
       const health = await tasksApi.checkHealth();
       setBackendConnected(health.ollama_connected);
 
       if (!health.ollama_connected) {
         toast.warning("Ollama is not connected. AI features will not work.", {
-          duration: 5000,
+          duration: TOAST_DURATION.LONG,
         });
       }
     } catch (err) {
       console.error("Backend health check failed:", err);
+      setBackendConnected(false);
       toast.error("Backend not connected. Using demo mode.", {
         description: "Start the backend server to enable AI features.",
-        duration: 5000,
+        duration: TOAST_DURATION.LONG,
       });
     }
-  };
+  }, []);
 
-  const loadTasks = async () => {
+  const loadTasks = useCallback(async () => {
     setIsLoading(true);
     try {
       const fetchedTasks = await tasksApi.fetchTasks();
       setTasks(fetchedTasks);
     } catch (err) {
       console.error("Failed to load tasks:", err);
-      toast.error("Failed to load tasks from backend");
+      toast.error("Failed to load tasks from backend", {
+        description: err instanceof Error ? err.message : "Unknown error",
+      });
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
 
   // Global keyboard shortcuts
   useEffect(() => {
@@ -73,20 +91,22 @@ export const KanbanBoard = () => {
         return;
       }
 
-      // 1 = Add to To-Do, 2 = Add to In Progress, 3 = Add to Done
-      if (e.key === "1") {
+      const { key, shiftKey } = e;
+
+      // Quick add shortcuts
+      if (key === KEYBOARD_SHORTCUTS.TODO) {
         e.preventDefault();
         setQuickAddColumn("todo");
-        toast.success("Quick add: To-Do");
-      } else if (e.key === "2") {
+        toast.success("Quick add: To-Do", { duration: TOAST_DURATION.SHORT });
+      } else if (key === KEYBOARD_SHORTCUTS.DOING) {
         e.preventDefault();
         setQuickAddColumn("doing");
-        toast.success("Quick add: In Progress");
-      } else if (e.key === "3") {
+        toast.success("Quick add: In Progress", { duration: TOAST_DURATION.SHORT });
+      } else if (key === KEYBOARD_SHORTCUTS.DONE) {
         e.preventDefault();
         setQuickAddColumn("done");
-        toast.success("Quick add: Done");
-      } else if (e.key === "?" && e.shiftKey) {
+        toast.success("Quick add: Done", { duration: TOAST_DURATION.SHORT });
+      } else if (key === KEYBOARD_SHORTCUTS.HELP && shiftKey) {
         e.preventDefault();
         setShowShortcuts(!showShortcuts);
       }
@@ -101,82 +121,100 @@ export const KanbanBoard = () => {
     setIsDialogOpen(true);
   };
 
-  const handleQuickAddTask = async (status: TaskStatus, title: string) => {
+  const handleQuickAddTask = useCallback(async (status: TaskStatus, title: string) => {
     try {
       const newTask = await tasksApi.createTask({
         title,
         status,
         assignee: "You",
       });
-      setTasks([...tasks, newTask]);
+      setTasks((prev) => [...prev, newTask]);
       setQuickAddColumn(null);
-      toast.success("Task added");
+      toast.success("Task added", { duration: TOAST_DURATION.SHORT });
     } catch (err) {
       console.error("Failed to create task:", err);
-      toast.error("Failed to create task");
+      toast.error("Failed to create task", {
+        description: err instanceof Error ? err.message : "Unknown error",
+      });
     }
-  };
+  }, []);
 
-  const handleAddTask = (status: TaskStatus) => {
+  const handleAddTask = useCallback((status: TaskStatus) => {
     setQuickAddColumn(status);
-  };
+  }, []);
 
-  const handleUpdateTask = async (updatedTask: Task) => {
+  const handleUpdateTask = useCallback(async (updatedTask: Task) => {
     try {
       await tasksApi.updateTask(updatedTask.id, updatedTask);
-      setTasks(tasks.map((t) => (t.id === updatedTask.id ? updatedTask : t)));
+      setTasks((prev) => prev.map((t) => (t.id === updatedTask.id ? updatedTask : t)));
       setSelectedTask(updatedTask);
     } catch (err) {
       console.error("Failed to update task:", err);
-      toast.error("Failed to update task");
+      toast.error("Failed to update task", {
+        description: err instanceof Error ? err.message : "Unknown error",
+      });
     }
-  };
+  }, []);
 
-  const handleDeleteTask = async (taskId: string) => {
+  const handleDeleteTask = useCallback(async (taskId: string) => {
     try {
       await tasksApi.deleteTask(taskId);
-      setTasks(tasks.filter((t) => t.id !== taskId));
+      setTasks((prev) => prev.filter((t) => t.id !== taskId));
       setIsDialogOpen(false);
       setSelectedTask(null);
-      toast.success("Task deleted");
+      toast.success("Task deleted", { duration: TOAST_DURATION.SHORT });
     } catch (err) {
       console.error("Failed to delete task:", err);
-      toast.error("Failed to delete task");
+      toast.error("Failed to delete task", {
+        description: err instanceof Error ? err.message : "Unknown error",
+      });
     }
-  };
+  }, []);
 
-  const handleDragStart = (task: Task) => {
+  const handleDragStart = useCallback((task: Task) => {
     setDraggedTask(task);
-  };
+  }, []);
 
-  const handleDragOver = (e: React.DragEvent) => {
+  const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
-  };
+  }, []);
 
-  const handleDrop = async (status: TaskStatus) => {
-    if (draggedTask && draggedTask.status !== status) {
-      const updatedTask = { ...draggedTask, status, updatedAt: new Date().toISOString() };
-      try {
-        await tasksApi.updateTask(draggedTask.id, { status });
-        setTasks(tasks.map((t) => (t.id === draggedTask.id ? updatedTask : t)));
-      } catch (err) {
-        console.error("Failed to update task:", err);
-        toast.error("Failed to move task");
-      }
+  const handleDrop = useCallback(async (status: TaskStatus) => {
+    if (!draggedTask || draggedTask.status === status) {
+      setDraggedTask(null);
+      return;
+    }
+
+    const updatedTask = { ...draggedTask, status, updatedAt: new Date().toISOString() };
+    try {
+      await tasksApi.updateTask(draggedTask.id, { status });
+      setTasks((prev) => prev.map((t) => (t.id === draggedTask.id ? updatedTask : t)));
+      toast.success("Task moved", { duration: TOAST_DURATION.SHORT });
+    } catch (err) {
+      console.error("Failed to update task:", err);
+      toast.error("Failed to move task", {
+        description: err instanceof Error ? err.message : "Unknown error",
+      });
     }
     setDraggedTask(null);
-  };
+  }, [draggedTask]);
 
-  const handleTasksInferred = (result: InferenceResponse) => {
+  const handleTasksInferred = useCallback((result: InferenceResponse) => {
     // Add inferred tasks to the board
-    setTasks([...tasks, ...result.tasks]);
+    setTasks((prev) => [...prev, ...result.tasks]);
+    
+    const taskCount = result.tasks_inferred;
+    const taskWord = taskCount === 1 ? "task" : "tasks";
+    const timeInSeconds = (result.inference_time_ms / 1000).toFixed(1);
+    
     toast.success(
-      `Added ${result.tasks_inferred} task${result.tasks_inferred > 1 ? "s" : ""} to your board!`,
+      `Added ${taskCount} ${taskWord} to your board!`,
       {
-        description: `Processed in ${(result.inference_time_ms / 1000).toFixed(1)}s using ${result.model_used}`,
+        description: `Processed in ${timeInSeconds}s using ${result.model_used}`,
+        duration: TOAST_DURATION.MEDIUM,
       }
     );
-  };
+  }, []);
 
   return (
     <div className="min-h-screen bg-background">

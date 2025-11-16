@@ -11,11 +11,17 @@ from .prompts import get_task_extraction_prompt
 
 class TaskExtractor:
     """AI-powered task extraction using local LLM"""
+    
+    # Constants
+    DEFAULT_TEMPERATURE = 0.3
+    DEFAULT_TOP_P = 0.9
+    DEFAULT_MAX_TOKENS = 1000
+    REQUEST_TIMEOUT = 120.0
 
     def __init__(self, ollama_base_url: str, model: str):
         self.ollama_base_url = ollama_base_url
         self.model = model
-        self.client = httpx.AsyncClient(timeout=120.0)
+        self.client = httpx.AsyncClient(timeout=self.REQUEST_TIMEOUT)
 
     async def extract_tasks(self, input_text: str, assignee: str = "You") -> Dict:
         """
@@ -27,14 +33,20 @@ class TaskExtractor:
 
         Returns:
             Dict with tasks list and metadata
+        
+        Raises:
+            Exception: If task extraction fails
         """
+        if not input_text.strip():
+            raise ValueError("Input text cannot be empty")
+        
         start_time = time.time()
 
-        # Generate prompt
-        prompts = get_task_extraction_prompt(input_text)
-
-        # Call Ollama API
         try:
+            # Generate prompt
+            prompts = get_task_extraction_prompt(input_text)
+
+            # Call Ollama API
             response = await self._call_ollama(prompts["system"], prompts["user"])
 
             # Parse response
@@ -48,29 +60,43 @@ class TaskExtractor:
                 "model_used": self.model,
                 "tasks_inferred": len(tasks)
             }
+        except (httpx.ConnectError, httpx.HTTPError) as e:
+            raise Exception(f"Ollama connection error: {str(e)}")
+        except ValueError as e:
+            raise Exception(f"Invalid input: {str(e)}")
         except Exception as e:
             raise Exception(f"Task extraction failed: {str(e)}")
 
     async def _call_ollama(self, system_prompt: str, user_prompt: str) -> str:
-        """Call Ollama API"""
+        """Call Ollama API with formatted prompts
+        
+        Args:
+            system_prompt: System instruction prompt
+            user_prompt: User query prompt
+            
+        Returns:
+            LLM response text
+            
+        Raises:
+            Exception: If Ollama connection fails or returns an error
+        """
         url = f"{self.ollama_base_url}/api/generate"
 
         # Combine prompts for Qwen 2.5 format
-        full_prompt = f"""<|im_start|>system
-{system_prompt}<|im_end|>
-<|im_start|>user
-{user_prompt}<|im_end|>
-<|im_start|>assistant
-"""
+        full_prompt = (
+            f"<|im_start|>system\n{system_prompt}<|im_end|>\n"
+            f"<|im_start|>user\n{user_prompt}<|im_end|>\n"
+            f"<|im_start|>assistant\n"
+        )
 
         payload = {
             "model": self.model,
             "prompt": full_prompt,
             "stream": False,
             "options": {
-                "temperature": 0.3,  # Lower temp for more consistent JSON
-                "top_p": 0.9,
-                "num_predict": 1000,
+                "temperature": self.DEFAULT_TEMPERATURE,
+                "top_p": self.DEFAULT_TOP_P,
+                "num_predict": self.DEFAULT_MAX_TOKENS,
             }
         }
 
@@ -80,7 +106,7 @@ class TaskExtractor:
             result = response.json()
             return result.get("response", "")
         except httpx.ConnectError:
-            raise Exception("Cannot connect to Ollama. Make sure Ollama is running (ollama serve)")
+            raise Exception("Cannot connect to Ollama. Ensure Ollama is running (ollama serve)")
         except httpx.HTTPError as e:
             raise Exception(f"Ollama API error: {str(e)}")
 
@@ -95,38 +121,28 @@ class TaskExtractor:
         Returns:
             List of task dictionaries
         """
-        # Try to extract JSON from response
-        json_match = re.search(r'\{[\s\S]*\}', response)
-        if not json_match:
-            # Try to find just the tasks array
-            json_match = re.search(r'\[[\s\S]*\]', response)
-            if json_match:
-                response = f'{{"tasks": {json_match.group(0)}}}'
-            else:
-                return []
-        else:
-            response = json_match.group(0)
+        import uuid
+        from datetime import datetime
+        
+        # Extract JSON from response
+        json_text = self._extract_json_from_response(response)
+        if not json_text:
+            return []
 
         try:
-            data = json.loads(response)
+            data = json.loads(json_text)
             tasks_data = data.get("tasks", [])
 
             # Convert to frontend format
             tasks = []
+            now = datetime.utcnow().isoformat()
+            
             for task in tasks_data:
                 if not task.get("title"):
                     continue
 
-                # Generate ID
-                import uuid
-                task_id = str(uuid.uuid4())
-
-                # Build task object
-                from datetime import datetime
-                now = datetime.utcnow().isoformat()
-
                 formatted_task = {
-                    "id": task_id,
+                    "id": str(uuid.uuid4()),
                     "title": task["title"],
                     "status": "todo",  # All inferred tasks start as todo
                     "assignee": assignee,
@@ -145,18 +161,43 @@ class TaskExtractor:
             return tasks
         except json.JSONDecodeError as e:
             print(f"JSON parse error: {e}")
-            print(f"Response: {response}")
+            print(f"Response: {response[:200]}...")  # Only print first 200 chars
             return []
+    
+    def _extract_json_from_response(self, response: str) -> Optional[str]:
+        """Extract JSON from LLM response
+        
+        Args:
+            response: Raw LLM response
+            
+        Returns:
+            Extracted JSON string or None
+        """
+        # Try to extract full JSON object
+        json_match = re.search(r'\{[\s\S]*\}', response)
+        if json_match:
+            return json_match.group(0)
+        
+        # Try to find just the tasks array and wrap it
+        array_match = re.search(r'\[[\s\S]*\]', response)
+        if array_match:
+            return f'{{"tasks": {array_match.group(0)}}}'
+        
+        return None
 
     async def check_connection(self) -> bool:
-        """Check if Ollama is accessible"""
+        """Check if Ollama is accessible
+        
+        Returns:
+            True if Ollama is reachable, False otherwise
+        """
         try:
             url = f"{self.ollama_base_url}/api/tags"
             response = await self.client.get(url)
             return response.status_code == 200
-        except:
+        except Exception:
             return False
 
     async def close(self):
-        """Close HTTP client"""
+        """Close HTTP client and cleanup resources"""
         await self.client.aclose()

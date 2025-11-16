@@ -7,7 +7,9 @@ import fitz  # PyMuPDF
 
 
 class PDFProcessor:
-    """Process PDF files and extract text"""
+    """Process PDF files and extract text content"""
+    
+    MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 
     @staticmethod
     async def extract_text_from_pdf(pdf_bytes: bytes) -> str:
@@ -19,7 +21,16 @@ class PDFProcessor:
 
         Returns:
             Extracted text as string
+            
+        Raises:
+            Exception: If PDF processing fails
         """
+        if not pdf_bytes:
+            raise ValueError("PDF bytes cannot be empty")
+        
+        if len(pdf_bytes) > PDFProcessor.MAX_FILE_SIZE:
+            raise ValueError(f"PDF file too large. Maximum size: {PDFProcessor.MAX_FILE_SIZE / (1024*1024):.1f}MB")
+        
         try:
             # Open PDF from bytes
             doc = fitz.open(stream=pdf_bytes, filetype="pdf")
@@ -34,8 +45,9 @@ class PDFProcessor:
 
             doc.close()
 
-            full_text = "\n\n".join(text_parts)
-            return full_text
+            return "\n\n".join(text_parts)
+        except ValueError:
+            raise
         except Exception as e:
             raise Exception(f"PDF processing failed: {str(e)}")
 
@@ -48,12 +60,15 @@ class PDFProcessor:
             pdf_bytes: File content
 
         Returns:
-            True if valid PDF
+            True if valid PDF, False otherwise
         """
+        if not pdf_bytes or len(pdf_bytes) == 0:
+            return False
+        
         try:
             doc = fitz.open(stream=pdf_bytes, filetype="pdf")
             valid = len(doc) > 0
             doc.close()
             return valid
-        except:
+        except Exception:
             return False

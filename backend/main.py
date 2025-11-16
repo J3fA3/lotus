@@ -13,17 +13,27 @@ from api.routes import router
 # Load environment variables
 load_dotenv()
 
+# Configuration constants
+API_TITLE = "AI Task Inference API"
+API_DESCRIPTION = "Backend for AI-powered task management with Qwen 2.5"
+API_VERSION = "1.0.0"
+DEFAULT_OLLAMA_MODEL = "qwen2.5:7b-instruct"
+DEFAULT_OLLAMA_URL = "http://localhost:11434"
+DEFAULT_CORS_ORIGINS = "http://localhost:5173"
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup and shutdown events"""
+    """Manage application startup and shutdown"""
     # Startup
     print("🚀 Initializing database...")
     await init_db()
     print("✅ Database initialized")
 
-    print(f"🤖 AI Model: {os.getenv('OLLAMA_MODEL', 'qwen2.5:7b-instruct')}")
-    print(f"🔗 Ollama URL: {os.getenv('OLLAMA_BASE_URL', 'http://localhost:11434')}")
+    ollama_model = os.getenv("OLLAMA_MODEL", DEFAULT_OLLAMA_MODEL)
+    ollama_url = os.getenv("OLLAMA_BASE_URL", DEFAULT_OLLAMA_URL)
+    print(f"🤖 AI Model: {ollama_model}")
+    print(f"🔗 Ollama URL: {ollama_url}")
 
     yield
 
@@ -33,14 +43,14 @@ async def lifespan(app: FastAPI):
 
 # Create FastAPI app
 app = FastAPI(
-    title="AI Task Inference API",
-    description="Backend for AI-powered task management with Qwen 2.5",
-    version="1.0.0",
+    title=API_TITLE,
+    description=API_DESCRIPTION,
+    version=API_VERSION,
     lifespan=lifespan
 )
 
 # Configure CORS
-origins = os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")
+origins = os.getenv("CORS_ORIGINS", DEFAULT_CORS_ORIGINS).split(",")
 
 app.add_middleware(
     CORSMiddleware,
@@ -56,11 +66,12 @@ app.include_router(router, prefix="/api")
 
 @app.get("/")
 async def root():
-    """Root endpoint"""
+    """Root endpoint with API information"""
     return {
-        "message": "AI Task Inference API",
-        "version": "1.0.0",
-        "docs": "/docs"
+        "message": API_TITLE,
+        "version": API_VERSION,
+        "docs": "/docs",
+        "health": "/api/health"
     }
 
 
@@ -68,14 +79,16 @@ if __name__ == "__main__":
     import uvicorn
 
     host = os.getenv("API_HOST", "0.0.0.0")
-    port = int(os.getenv("API_PORT", 8000))
+    port = int(os.getenv("API_PORT", "8000"))
+    debug = os.getenv("DEBUG", "true").lower() == "true"
 
     print(f"\n🚀 Starting server on {host}:{port}")
-    print(f"📚 API Docs: http://localhost:{port}/docs\n")
+    print(f"📚 API Docs: http://localhost:{port}/docs")
+    print(f"🏥 Health Check: http://localhost:{port}/api/health\n")
 
     uvicorn.run(
         "main:app",
         host=host,
         port=port,
-        reload=os.getenv("DEBUG", "true") == "true"
+        reload=debug
     )
