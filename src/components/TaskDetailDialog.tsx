@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Task, Comment } from "@/types/task";
 import {
   Dialog,
@@ -38,6 +38,11 @@ export const TaskDetailDialog = ({
   const [editedTask, setEditedTask] = useState<Task>(task);
   const [newComment, setNewComment] = useState("");
   const [newAttachment, setNewAttachment] = useState("");
+
+  // Update editedTask when the task prop changes
+  useEffect(() => {
+    setEditedTask(task);
+  }, [task]);
 
   const handleUpdate = (updates: Partial<Task>) => {
     const updated = { 
@@ -92,6 +97,8 @@ export const TaskDetailDialog = ({
               onChange={(e) => handleUpdate({ title: e.target.value })}
               className="text-2xl font-semibold border-0 px-0 focus-visible:ring-0 tracking-tight"
               placeholder="Task title"
+              autoFocus={false}
+              onFocus={(e) => e.target.blur()}
             />
             <Button
               variant="ghost"

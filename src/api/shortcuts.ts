@@ -11,12 +11,8 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000
  */
 export async function fetchShortcuts(userId?: number): Promise<ShortcutConfig[]> {
   try {
-    const url = new URL(`${API_BASE_URL}/shortcuts`);
-    if (userId) {
-      url.searchParams.append('user_id', userId.toString());
-    }
-
-    const response = await fetch(url.toString());
+    const urlString = `${API_BASE_URL}/shortcuts${userId ? `?user_id=${userId}` : ''}`;
+    const response = await fetch(urlString);
 
     if (!response.ok) {
       throw new Error(`Failed to fetch shortcuts: ${response.statusText}`);
@@ -64,12 +60,8 @@ export async function updateShortcut(
   userId?: number
 ): Promise<ShortcutConfig> {
   try {
-    const url = new URL(`${API_BASE_URL}/shortcuts/${shortcutId}`);
-    if (userId) {
-      url.searchParams.append('user_id', userId.toString());
-    }
-
-    const response = await fetch(url.toString(), {
+    const urlString = `${API_BASE_URL}/shortcuts/${shortcutId}${userId ? `?user_id=${userId}` : ''}`;
+    const response = await fetch(urlString, {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",
@@ -146,12 +138,8 @@ export async function resetShortcuts(userId?: number): Promise<void> {
  */
 export async function exportShortcuts(userId?: number): Promise<any> {
   try {
-    const url = new URL(`${API_BASE_URL}/shortcuts/export`);
-    if (userId) {
-      url.searchParams.append('user_id', userId.toString());
-    }
-
-    const response = await fetch(url.toString());
+    const urlString = `${API_BASE_URL}/shortcuts/export${userId ? `?user_id=${userId}` : ''}`;
+    const response = await fetch(urlString);
 
     if (!response.ok) {
       throw new Error(`Failed to export shortcuts: ${response.statusText}`);
