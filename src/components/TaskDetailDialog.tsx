@@ -39,7 +39,7 @@ export const TaskDetailDialog = ({
   const [newComment, setNewComment] = useState("");
   const [newAttachment, setNewAttachment] = useState("");
 
-  // Update editedTask when task prop changes
+  // Update editedTask when the task prop changes
   useEffect(() => {
     setEditedTask(task);
   }, [task]);
@@ -101,6 +101,7 @@ export const TaskDetailDialog = ({
               className="text-2xl font-semibold border-0 px-0 focus-visible:ring-0 tracking-tight"
               placeholder="Task title"
               autoFocus={false}
+main
             />
             <Button
               variant="ghost"

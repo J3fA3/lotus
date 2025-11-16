@@ -2,7 +2,7 @@
 API routes for task management and AI inference
 """
 import os
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -16,10 +16,16 @@ from api.schemas import (
     InferenceRequest,
     InferenceResponse,
     HealthResponse,
-    CommentSchema
+    CommentSchema,
+    ShortcutConfigSchema,
+    ShortcutCreateRequest,
+    ShortcutUpdateRequest,
+    ShortcutBulkUpdateRequest,
+    ShortcutResetRequest
 )
 from db.database import get_db
-from db.models import Task, Comment, Attachment, InferenceHistory
+from db.models import Task, Comment, Attachment, InferenceHistory, ShortcutConfig
+from db.default_shortcuts import get_default_shortcuts
 from agents.task_extractor import TaskExtractor
 from agents.pdf_processor import PDFProcessor
 
@@ -267,6 +273,264 @@ async def infer_tasks_from_pdf(
         raise HTTPException(status_code=500, detail=f"PDF processing failed: {str(e)}")
 
 
+# ============= Keyboard Shortcuts =============
+
+@router.get("/shortcuts", response_model=List[ShortcutConfigSchema])
+async def get_shortcuts(
+    user_id: Optional[int] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get all keyboard shortcuts
+    Returns defaults merged with user overrides if user_id is provided
+    """
+    # Get all shortcuts from database
+    result = await db.execute(select(ShortcutConfig))
+    db_shortcuts = result.scalars().all()
+
+    # If no shortcuts in DB, seed with defaults
+    if not db_shortcuts:
+        await seed_default_shortcuts(db)
+        result = await db.execute(select(ShortcutConfig))
+        db_shortcuts = result.scalars().all()
+
+    # Convert to schemas
+    shortcuts = [_shortcut_to_schema(s) for s in db_shortcuts]
+
+    # If user_id provided, filter to show only defaults and user overrides
+    if user_id is not None:
+        shortcuts = [s for s in shortcuts if s.user_id is None or s.user_id == user_id]
+
+    return shortcuts
+
+
+@router.get("/shortcuts/defaults", response_model=List[ShortcutConfigSchema])
+async def get_default_shortcuts_api(db: AsyncSession = Depends(get_db)):
+    """Get default keyboard shortcuts"""
+    result = await db.execute(
+        select(ShortcutConfig).where(ShortcutConfig.user_id == None)
+    )
+    shortcuts = result.scalars().all()
+
+    # If no defaults, seed them
+    if not shortcuts:
+        await seed_default_shortcuts(db)
+        result = await db.execute(
+            select(ShortcutConfig).where(ShortcutConfig.user_id == None)
+        )
+        shortcuts = result.scalars().all()
+
+    return [_shortcut_to_schema(s) for s in shortcuts]
+
+
+@router.put("/shortcuts/{shortcut_id}", response_model=ShortcutConfigSchema)
+async def update_shortcut(
+    shortcut_id: str,
+    update_data: ShortcutUpdateRequest,
+    user_id: Optional[int] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Update a specific shortcut
+    If user_id is provided, creates a user override
+    """
+    # Find the shortcut
+    result = await db.execute(
+        select(ShortcutConfig).where(ShortcutConfig.id == shortcut_id)
+    )
+    shortcut = result.scalar_one_or_none()
+
+    if not shortcut:
+        raise HTTPException(status_code=404, detail="Shortcut not found")
+
+    # If user_id provided and this is a default, create user override
+    if user_id is not None and shortcut.user_id is None:
+        # Create new user override
+        user_shortcut = ShortcutConfig(
+            id=f"{shortcut_id}_user_{user_id}",
+            category=shortcut.category,
+            action=shortcut.action,
+            key=update_data.key if update_data.key else shortcut.key,
+            modifiers=update_data.modifiers if update_data.modifiers is not None else shortcut.modifiers,
+            enabled=update_data.enabled if update_data.enabled is not None else shortcut.enabled,
+            description=shortcut.description,
+            user_id=user_id,
+            is_default=False,
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow()
+        )
+        db.add(user_shortcut)
+        await db.commit()
+        await db.refresh(user_shortcut)
+        return _shortcut_to_schema(user_shortcut)
+
+    # Otherwise update existing
+    if update_data.key is not None:
+        shortcut.key = update_data.key
+    if update_data.modifiers is not None:
+        shortcut.modifiers = update_data.modifiers
+    if update_data.enabled is not None:
+        shortcut.enabled = update_data.enabled
+
+    shortcut.updated_at = datetime.utcnow()
+
+    await db.commit()
+    await db.refresh(shortcut)
+
+    return _shortcut_to_schema(shortcut)
+
+
+@router.post("/shortcuts/bulk-update")
+async def bulk_update_shortcuts(
+    request: ShortcutBulkUpdateRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """Bulk update or create shortcuts"""
+    updated_shortcuts = []
+
+    for shortcut_data in request.shortcuts:
+        # Check if shortcut exists
+        result = await db.execute(
+            select(ShortcutConfig).where(ShortcutConfig.id == shortcut_data.id)
+        )
+        existing = result.scalar_one_or_none()
+
+        if existing:
+            # Update existing
+            existing.key = shortcut_data.key
+            existing.modifiers = shortcut_data.modifiers
+            existing.enabled = shortcut_data.enabled
+            existing.updated_at = datetime.utcnow()
+            updated_shortcuts.append(existing)
+        else:
+            # Create new
+            new_shortcut = ShortcutConfig(
+                id=shortcut_data.id,
+                category=shortcut_data.category,
+                action=shortcut_data.action,
+                key=shortcut_data.key,
+                modifiers=shortcut_data.modifiers,
+                enabled=shortcut_data.enabled,
+                description=shortcut_data.description,
+                user_id=shortcut_data.user_id,
+                is_default=shortcut_data.user_id is None,
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow()
+            )
+            db.add(new_shortcut)
+            updated_shortcuts.append(new_shortcut)
+
+    await db.commit()
+
+    return {
+        "message": f"Updated {len(updated_shortcuts)} shortcuts",
+        "count": len(updated_shortcuts)
+    }
+
+
+@router.post("/shortcuts/reset")
+async def reset_shortcuts(
+    request: ShortcutResetRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Reset shortcuts to defaults
+    If user_id provided, removes user overrides
+    If user_id is None, resets all shortcuts
+    """
+    if request.user_id is not None:
+        # Delete user overrides
+        result = await db.execute(
+            select(ShortcutConfig).where(ShortcutConfig.user_id == request.user_id)
+        )
+        user_shortcuts = result.scalars().all()
+
+        for shortcut in user_shortcuts:
+            await db.delete(shortcut)
+
+        await db.commit()
+        return {"message": f"Reset shortcuts for user {request.user_id}"}
+    else:
+        # Delete all and reseed
+        await db.execute("DELETE FROM shortcut_configs")
+        await seed_default_shortcuts(db)
+        return {"message": "Reset all shortcuts to defaults"}
+
+
+@router.get("/shortcuts/export")
+async def export_shortcuts(
+    user_id: Optional[int] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """Export shortcut configuration as JSON"""
+    query = select(ShortcutConfig)
+    if user_id is not None:
+        query = query.where(
+            (ShortcutConfig.user_id == None) | (ShortcutConfig.user_id == user_id)
+        )
+
+    result = await db.execute(query)
+    shortcuts = result.scalars().all()
+
+    return {
+        "version": "1.0",
+        "exported_at": datetime.utcnow().isoformat(),
+        "user_id": user_id,
+        "shortcuts": [_shortcut_to_dict(s) for s in shortcuts]
+    }
+
+
+@router.post("/shortcuts/import")
+async def import_shortcuts(
+    config: dict,
+    db: AsyncSession = Depends(get_db)
+):
+    """Import shortcut configuration from JSON"""
+    try:
+        shortcuts_data = config.get("shortcuts", [])
+        imported_count = 0
+
+        for shortcut_data in shortcuts_data:
+            # Check if exists
+            result = await db.execute(
+                select(ShortcutConfig).where(ShortcutConfig.id == shortcut_data["id"])
+            )
+            existing = result.scalar_one_or_none()
+
+            if existing:
+                # Update
+                existing.key = shortcut_data["key"]
+                existing.modifiers = shortcut_data["modifiers"]
+                existing.enabled = shortcut_data["enabled"]
+                existing.updated_at = datetime.utcnow()
+            else:
+                # Create
+                new_shortcut = ShortcutConfig(
+                    id=shortcut_data["id"],
+                    category=shortcut_data["category"],
+                    action=shortcut_data["action"],
+                    key=shortcut_data["key"],
+                    modifiers=shortcut_data["modifiers"],
+                    enabled=shortcut_data["enabled"],
+                    description=shortcut_data["description"],
+                    user_id=shortcut_data.get("user_id"),
+                    is_default=shortcut_data.get("is_default", True),
+                    created_at=datetime.utcnow(),
+                    updated_at=datetime.utcnow()
+                )
+                db.add(new_shortcut)
+
+            imported_count += 1
+
+        await db.commit()
+        return {
+            "message": "Shortcuts imported successfully",
+            "imported_count": imported_count
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Import failed: {str(e)}")
+
+
 # ============= Helper Functions =============
 
 def _task_to_schema(task: Task, load_relationships: bool = False) -> TaskSchema:
@@ -316,3 +580,61 @@ def _create_task_from_data(task_data: dict) -> Task:
         created_at=now,
         updated_at=now
     )
+
+
+def _shortcut_to_schema(shortcut: ShortcutConfig) -> ShortcutConfigSchema:
+    """Convert SQLAlchemy ShortcutConfig to Pydantic schema"""
+    created_at = shortcut.created_at if shortcut.created_at else datetime.utcnow()
+    updated_at = shortcut.updated_at if shortcut.updated_at else datetime.utcnow()
+
+    return ShortcutConfigSchema(
+        id=shortcut.id,
+        category=shortcut.category,
+        action=shortcut.action,
+        key=shortcut.key,
+        modifiers=shortcut.modifiers if shortcut.modifiers else [],
+        enabled=shortcut.enabled,
+        description=shortcut.description,
+        user_id=shortcut.user_id,
+        is_default=shortcut.is_default,
+        createdAt=created_at.isoformat(),
+        updatedAt=updated_at.isoformat()
+    )
+
+
+def _shortcut_to_dict(shortcut: ShortcutConfig) -> dict:
+    """Convert ShortcutConfig to dictionary for export"""
+    return {
+        "id": shortcut.id,
+        "category": shortcut.category,
+        "action": shortcut.action,
+        "key": shortcut.key,
+        "modifiers": shortcut.modifiers if shortcut.modifiers else [],
+        "enabled": shortcut.enabled,
+        "description": shortcut.description,
+        "user_id": shortcut.user_id,
+        "is_default": shortcut.is_default
+    }
+
+
+async def seed_default_shortcuts(db: AsyncSession):
+    """Seed database with default shortcuts"""
+    defaults = get_default_shortcuts()
+
+    for shortcut_data in defaults:
+        shortcut = ShortcutConfig(
+            id=shortcut_data["id"],
+            category=shortcut_data["category"],
+            action=shortcut_data["action"],
+            key=shortcut_data["key"],
+            modifiers=shortcut_data["modifiers"],
+            enabled=shortcut_data["enabled"],
+            description=shortcut_data["description"],
+            user_id=None,
+            is_default=True,
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow()
+        )
+        db.add(shortcut)
+
+    await db.commit()

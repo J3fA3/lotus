@@ -2,7 +2,7 @@
 Database models for task management
 """
 from datetime import datetime
-from sqlalchemy import Column, String, DateTime, ForeignKey, Text, Integer
+from sqlalchemy import Column, String, DateTime, ForeignKey, Text, Integer, Boolean, JSON
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 
@@ -64,3 +64,20 @@ class InferenceHistory(Base):
     model_used = Column(String, nullable=False)
     inference_time = Column(Integer, nullable=True)  # milliseconds
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class ShortcutConfig(Base):
+    """Keyboard shortcut configuration with remote sync support"""
+    __tablename__ = "shortcut_configs"
+
+    id = Column(String, primary_key=True)  # unique identifier for the shortcut action
+    category = Column(String, nullable=False)  # global, board, task, dialog, message
+    action = Column(String, nullable=False)  # new_task, delete_task, etc.
+    key = Column(String, nullable=False)  # n, d, Enter, etc.
+    modifiers = Column(JSON, default=list)  # ["ctrl", "shift", "alt", "meta"]
+    enabled = Column(Boolean, default=True)
+    description = Column(Text, nullable=False)
+    user_id = Column(Integer, nullable=True)  # NULL = global default, specific user ID for overrides
+    is_default = Column(Boolean, default=True)  # True if this is a default config
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
