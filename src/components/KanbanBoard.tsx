@@ -4,8 +4,9 @@ import { TaskCard } from "./TaskCard";
 import { TaskDetailDialog } from "./TaskDetailDialog";
 import { QuickAddTask } from "./QuickAddTask";
 import { AIInferenceDialog } from "./AIInferenceDialog";
+import { ShortcutSettings } from "./ShortcutSettings";
 import { Button } from "./ui/button";
-import { Plus, Keyboard, Sparkles, Loader2 } from "lucide-react";
+import { Plus, Keyboard, Sparkles, Loader2, Settings2 } from "lucide-react";
 import { toast } from "sonner";
 import * as tasksApi from "@/api/tasks";
 import { InferenceResponse } from "@/api/tasks";
@@ -40,6 +41,7 @@ export const KanbanBoard = () => {
   const [quickAddColumn, setQuickAddColumn] = useState<TaskStatus | null>(null);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [isAIDialogOpen, setIsAIDialogOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [backendConnected, setBackendConnected] = useState(false);
 
@@ -128,6 +130,10 @@ export const KanbanBoard = () => {
 
   useRegisterShortcut('toggle_help', () => {
     setShowShortcuts(!showShortcuts);
+  });
+
+  useRegisterShortcut('open_settings', () => {
+    setIsSettingsOpen(true);
   });
 
   // Column navigation
@@ -363,6 +369,15 @@ export const KanbanBoard = () => {
               <Keyboard className="h-4 w-4" />
               <span className="text-xs">Shortcuts</span>
             </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setIsSettingsOpen(true)}
+              className="text-muted-foreground hover:text-foreground gap-2"
+            >
+              <Settings2 className="h-4 w-4" />
+              <span className="text-xs">Settings</span>
+            </Button>
           </div>
         </div>
 
@@ -422,10 +437,22 @@ export const KanbanBoard = () => {
                 </div>
               </div>
             </div>
-            <div className="mt-4 pt-4 border-t border-border/30">
+            <div className="mt-4 pt-4 border-t border-border/30 flex items-center justify-between">
               <p className="text-xs text-muted-foreground">
                 💡 Tip: Use arrow keys (↑↓←→) or Vim keys (h/j/k/l) for navigation. Press Enter to open tasks.
               </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setShowShortcuts(false);
+                  setIsSettingsOpen(true);
+                }}
+                className="gap-2"
+              >
+                <Settings2 className="h-3 w-3" />
+                <span className="text-xs">Customize Shortcuts</span>
+              </Button>
             </div>
           </div>
         )}
@@ -522,6 +549,11 @@ export const KanbanBoard = () => {
           onDelete={handleDeleteTask}
         />
       )}
+
+      <ShortcutSettings
+        open={isSettingsOpen}
+        onOpenChange={setIsSettingsOpen}
+      />
     </div>
   );
 };
