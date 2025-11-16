@@ -27,6 +27,7 @@ class TaskSchema(BaseModel):
     dueDate: Optional[str] = None
     valueStream: Optional[str] = None
     description: Optional[str] = None
+    notes: Optional[str] = None
     attachments: List[str] = Field(default_factory=list)
     comments: List[CommentSchema] = Field(default_factory=list)
     createdAt: str
@@ -56,6 +57,9 @@ class TaskUpdateRequest(BaseModel):
     dueDate: Optional[str] = None
     valueStream: Optional[str] = None
     description: Optional[str] = None
+    notes: Optional[str] = None
+    comments: Optional[List[dict]] = None
+    attachments: Optional[List[str]] = None
 
 
 class InferenceRequest(BaseModel):

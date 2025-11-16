@@ -16,15 +16,6 @@ DEFAULT_SHORTCUTS: List[Dict[str, Any]] = [
         "description": "Toggle keyboard shortcuts help dialog",
     },
     {
-        "id": "global_search",
-        "category": "global",
-        "action": "open_search",
-        "key": "/",
-        "modifiers": [],
-        "enabled": True,
-        "description": "Open search/command palette",
-    },
-    {
         "id": "global_command_palette",
         "category": "global",
         "action": "command_palette",
@@ -32,15 +23,6 @@ DEFAULT_SHORTCUTS: List[Dict[str, Any]] = [
         "modifiers": ["ctrl"],
         "enabled": True,
         "description": "Open command palette",
-    },
-    {
-        "id": "global_escape",
-        "category": "global",
-        "action": "escape",
-        "key": "Escape",
-        "modifiers": [],
-        "enabled": True,
-        "description": "Close dialogs or cancel operations",
     },
     {
         "id": "global_settings",
@@ -220,15 +202,6 @@ DEFAULT_SHORTCUTS: List[Dict[str, Any]] = [
         "description": "Create new task in current column",
     },
     {
-        "id": "task_edit",
-        "category": "task",
-        "action": "edit_task",
-        "key": "e",
-        "modifiers": [],
-        "enabled": True,
-        "description": "Edit selected task",
-    },
-    {
         "id": "task_delete",
         "category": "task",
         "action": "delete_task",
@@ -238,22 +211,13 @@ DEFAULT_SHORTCUTS: List[Dict[str, Any]] = [
         "description": "Delete selected task",
     },
     {
-        "id": "task_complete",
+        "id": "task_toggle_complete",
         "category": "task",
         "action": "toggle_complete",
-        "key": "c",
-        "modifiers": [],
-        "enabled": True,
-        "description": "Toggle task completion",
-    },
-    {
-        "id": "task_archive",
-        "category": "task",
-        "action": "archive_task",
         "key": "x",
         "modifiers": [],
         "enabled": True,
-        "description": "Archive selected task",
+        "description": "Toggle task completion",
     },
     {
         "id": "task_duplicate",
@@ -272,15 +236,6 @@ DEFAULT_SHORTCUTS: List[Dict[str, Any]] = [
         "modifiers": [],
         "enabled": True,
         "description": "Move task to different column",
-    },
-    {
-        "id": "task_priority",
-        "category": "task",
-        "action": "cycle_priority",
-        "key": "p",
-        "modifiers": [],
-        "enabled": True,
-        "description": "Cycle task priority",
     },
 
     # ============= Task Detail Dialog Shortcuts =============
@@ -364,6 +319,24 @@ DEFAULT_SHORTCUTS: List[Dict[str, Any]] = [
         "modifiers": ["ctrl"],
         "enabled": True,
         "description": "Delete current task",
+    },
+    {
+        "id": "dialog_toggle_view",
+        "category": "dialog",
+        "action": "toggle_view_mode",
+        "key": "e",
+        "modifiers": ["ctrl"],
+        "enabled": True,
+        "description": "Toggle between peek and expanded view",
+    },
+    {
+        "id": "dialog_full_page",
+        "category": "dialog",
+        "action": "open_full_page",
+        "key": "f",
+        "modifiers": ["ctrl", "shift"],
+        "enabled": True,
+        "description": "Open task in full page view",
     },
 
     # ============= Message Menu Shortcuts =============

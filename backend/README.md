@@ -48,11 +48,24 @@ API Documentation: http://localhost:8000/docs
 ## API Endpoints
 
 ### Task Management
-- `GET /api/tasks` - Get all tasks
+- `GET /api/tasks` - Get all tasks with comments and attachments
 - `POST /api/tasks` - Create a task
-- `GET /api/tasks/{id}` - Get specific task
-- `PUT /api/tasks/{id}` - Update task
-- `DELETE /api/tasks/{id}` - Delete task
+- `GET /api/tasks/{id}` - Get specific task with relationships
+- `PUT /api/tasks/{id}` - Update task (supports comments, attachments, notes)
+- `DELETE /api/tasks/{id}` - Delete task (cascade deletes comments/attachments)
+
+**Update Request Example:**
+```json
+{
+  "title": "Update docs",
+  "status": "doing",
+  "notes": "Remember to update changelog",
+  "comments": [
+    {"id": "1", "text": "Started work", "author": "User", "createdAt": "2025-11-16T10:00:00Z"}
+  ],
+  "attachments": ["https://example.com/file.pdf"]
+}
+```
 
 ### AI Inference
 - `POST /api/infer-tasks` - Infer tasks from text
@@ -73,19 +86,29 @@ API Documentation: http://localhost:8000/docs
 
 ```
 backend/
-├── main.py              # FastAPI app entry
+├── main.py                    # FastAPI app entry point
 ├── api/
-│   ├── routes.py        # API endpoints
-│   └── schemas.py       # Pydantic models
+│   ├── routes.py             # API endpoints (uses eager loading)
+│   └── schemas.py            # Pydantic request/response models
 ├── agents/
-│   ├── task_extractor.py   # AI task extraction
-│   ├── pdf_processor.py    # PDF parsing
-│   └── prompts.py          # LLM prompts
+│   ├── task_extractor.py     # AI task extraction via Ollama
+│   ├── pdf_processor.py      # PDF parsing with PyMuPDF
+│   └── prompts.py            # LLM system prompts
 ├── db/
-│   ├── database.py      # SQLite connection
-│   └── models.py        # SQLAlchemy models
-└── requirements.txt
+│   ├── database.py           # Async SQLite connection
+│   ├── models.py             # SQLAlchemy ORM models
+│   └── default_shortcuts.py  # Default keyboard shortcuts
+├── requirements.txt          # Python dependencies
+└── .env.example              # Environment template
 ```
+
+## Database Models
+
+- **Task** - Main task entity with notes field
+- **Comment** - Task comments (one-to-many relationship)
+- **Attachment** - Task attachments (one-to-many relationship)
+- **InferenceHistory** - AI inference audit log
+- **ShortcutConfig** - User keyboard shortcut preferences
 
 ## Testing
 

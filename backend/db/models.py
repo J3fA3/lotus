@@ -1,5 +1,11 @@
 """
-Database models for task management
+Database Models for Task Management
+
+SQLAlchemy ORM models with relationships and cascade deletes.
+All models use async-compatible patterns for use with aiosqlite.
+
+Important: When querying tasks, use selectinload() to eager-load
+relationships (comments, attachments) to avoid greenlet errors.
 """
 from datetime import datetime
 from sqlalchemy import Column, String, DateTime, ForeignKey, Text, Integer, Boolean, JSON
@@ -10,7 +16,12 @@ Base = declarative_base()
 
 
 class Task(Base):
-    """Task model matching frontend Task interface"""
+    """Main task entity with support for comments, attachments, and notes.
+    
+    Relationships:
+    - comments: One-to-many with Comment (cascade delete)
+    - attachments: One-to-many with Attachment (cascade delete)
+    """
     __tablename__ = "tasks"
 
     id = Column(String, primary_key=True)
@@ -21,6 +32,7 @@ class Task(Base):
     due_date = Column(String, nullable=True)
     value_stream = Column(String, nullable=True)
     description = Column(Text, nullable=True)
+    notes = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

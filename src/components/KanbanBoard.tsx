@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { Task, TaskStatus } from "@/types/task";
 import { TaskCard } from "./TaskCard";
 import { TaskDetailSheet } from "./TaskDetailSheet";
+import { TaskFullPage } from "./TaskFullPage";
 import { QuickAddTask } from "./QuickAddTask";
 import { AIInferenceDialog } from "./AIInferenceDialog";
 import { Button } from "./ui/button";
@@ -36,6 +37,8 @@ export const KanbanBoard = () => {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isFullPageOpen, setIsFullPageOpen] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
   const [draggedTask, setDraggedTask] = useState<Task | null>(null);
   const [quickAddColumn, setQuickAddColumn] = useState<TaskStatus | null>(null);
   const [showShortcuts, setShowShortcuts] = useState(false);
@@ -181,13 +184,6 @@ export const KanbanBoard = () => {
     setNavigationMode(true);
   });
 
-  useRegisterShortcut('edit_task', () => {
-    const task = getFocusedTask();
-    if (task) {
-      handleTaskClick(task);
-    }
-  });
-
   useRegisterShortcut('delete_task', () => {
     const task = getFocusedTask();
     if (task) {
@@ -232,9 +228,52 @@ export const KanbanBoard = () => {
     }
   });
 
-  const handleTaskClick = (task: Task) => {
+  // View mode shortcuts
+  useRegisterShortcut('toggle_view_mode', () => {
+    if (isDialogOpen && selectedTask) {
+      setIsExpanded(!isExpanded);
+      toast.success(isExpanded ? "Peek mode" : "Expanded view", { duration: TOAST_DURATION.SHORT });
+    }
+  });
+
+  useRegisterShortcut('open_full_page', () => {
+    if (isDialogOpen && selectedTask && !isFullPageOpen) {
+      setIsDialogOpen(false);
+      setIsFullPageOpen(true);
+      toast.success("Full page view", { duration: TOAST_DURATION.SHORT });
+    }
+  });
+
+  const handleTaskClick = (task: Task, columnIndex?: number, taskIndex?: number) => {
+    // Update task first (triggers skeleton if different task)
     setSelectedTask(task);
-    setIsDialogOpen(true);
+    
+    // Only open dialog if it's closed, otherwise just switch the task
+    if (!isDialogOpen) {
+      setIsDialogOpen(true);
+    }
+    
+    // Enable navigation mode and set focus to clicked task
+    setNavigationMode(true);
+    
+    // If column and task indices provided, use them; otherwise find them
+    if (columnIndex !== undefined && taskIndex !== undefined) {
+      setFocusedColumn(columnIndex);
+      setFocusedTaskIndex(taskIndex);
+    } else {
+      // Find the task's position
+      const foundColumn = COLUMNS.findIndex(col => {
+        const columnTasks = tasks.filter(t => t.status === col.id);
+        return columnTasks.some(t => t.id === task.id);
+      });
+      
+      if (foundColumn !== -1) {
+        const columnTasks = tasks.filter(t => t.status === COLUMNS[foundColumn].id);
+        const foundTaskIndex = columnTasks.findIndex(t => t.id === task.id);
+        setFocusedColumn(foundColumn);
+        setFocusedTaskIndex(foundTaskIndex);
+      }
+    }
   };
 
   const handleQuickAddTask = useCallback(async (status: TaskStatus, title: string) => {
@@ -348,17 +387,34 @@ export const KanbanBoard = () => {
     if (e.altKey) modifiers.push('alt');
     if (e.metaKey) modifiers.push('meta');
 
+    // Check for conflicts with existing shortcuts
+    const newKey = e.key.toLowerCase();
+    const conflictingShortcut = shortcuts.find(s => 
+      s.id !== shortcutId && 
+      s.enabled &&
+      s.key.toLowerCase() === newKey &&
+      JSON.stringify(s.modifiers.sort()) === JSON.stringify(modifiers.sort())
+    );
+
+    if (conflictingShortcut) {
+      toast.error(`This shortcut is already used for "${conflictingShortcut.description}"`, {
+        duration: 4000,
+      });
+      setEditingShortcut(null);
+      return;
+    }
+
     // Update shortcut
     updateShortcut(shortcutId, {
       key: e.key,
       modifiers: modifiers as any,
     }).then(() => {
       setEditingShortcut(null);
-      toast.success('Shortcut updated');
-    }).catch(() => {
-      toast.error('Failed to update shortcut');
+    }).catch((err) => {
+      console.error('Failed to update shortcut:', err);
+      setEditingShortcut(null);
     });
-  }, [updateShortcut]);
+  }, [updateShortcut, shortcuts]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -405,7 +461,7 @@ export const KanbanBoard = () => {
                 Click any shortcut to edit
               </span>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
               {/* Board Navigation */}
               <div>
                 <h4 className="text-xs font-semibold text-foreground/80 mb-2">Board Navigation</h4>
@@ -413,15 +469,15 @@ export const KanbanBoard = () => {
                   {shortcuts.filter(s => s.category === 'board' && s.enabled).slice(0, 8).map(shortcut => (
                     <div key={shortcut.id} className="flex items-center gap-2">
                       {editingShortcut === shortcut.id ? (
-                        <div
-                          className="px-2 py-1 bg-primary/10 border-2 border-primary rounded text-[10px] font-mono min-w-[3rem] text-center cursor-text"
-                          tabIndex={0}
+                        <input
+                          type="text"
+                          readOnly
+                          className="px-2 py-1 bg-primary/10 border-2 border-primary rounded text-[10px] font-mono min-w-[3rem] text-center outline-none text-muted-foreground"
+                          value="Press key..."
                           onKeyDown={(e) => handleShortcutKeyDown(e, shortcut.id)}
                           onBlur={() => setEditingShortcut(null)}
                           autoFocus
-                        >
-                          <span className="text-muted-foreground animate-pulse">Press key...</span>
-                        </div>
+                        />
                       ) : (
                         <kbd
                           className="px-2 py-1 bg-background border border-border rounded text-[10px] font-mono min-w-[3rem] text-center cursor-pointer hover:bg-muted transition-colors"
@@ -443,15 +499,15 @@ export const KanbanBoard = () => {
                   {shortcuts.filter(s => s.category === 'task' && s.enabled).slice(0, 8).map(shortcut => (
                     <div key={shortcut.id} className="flex items-center gap-2">
                       {editingShortcut === shortcut.id ? (
-                        <div
-                          className="px-2 py-1 bg-primary/10 border-2 border-primary rounded text-[10px] font-mono min-w-[3rem] text-center cursor-text"
-                          tabIndex={0}
+                        <input
+                          type="text"
+                          readOnly
+                          className="px-2 py-1 bg-primary/10 border-2 border-primary rounded text-[10px] font-mono min-w-[3rem] text-center outline-none text-muted-foreground"
+                          value="Press key..."
                           onKeyDown={(e) => handleShortcutKeyDown(e, shortcut.id)}
                           onBlur={() => setEditingShortcut(null)}
                           autoFocus
-                        >
-                          <span className="text-muted-foreground animate-pulse">Press key...</span>
-                        </div>
+                        />
                       ) : (
                         <kbd
                           className="px-2 py-1 bg-background border border-border rounded text-[10px] font-mono min-w-[3rem] text-center cursor-pointer hover:bg-muted transition-colors"
@@ -470,18 +526,48 @@ export const KanbanBoard = () => {
               <div>
                 <h4 className="text-xs font-semibold text-foreground/80 mb-2">Quick Actions</h4>
                 <div className="space-y-1.5">
-                  {shortcuts.filter(s => s.category === 'task' && s.enabled).slice(8, 16).map(shortcut => (
+                  {shortcuts.filter(s => s.category === 'task' && s.enabled && !['archive_task', 'cycle_priority'].includes(s.action)).slice(8, 16).map(shortcut => (
                     <div key={shortcut.id} className="flex items-center gap-2">
                       {editingShortcut === shortcut.id ? (
-                        <div
-                          className="px-2 py-1 bg-primary/10 border-2 border-primary rounded text-[10px] font-mono min-w-[3rem] text-center cursor-text"
-                          tabIndex={0}
+                        <input
+                          type="text"
+                          readOnly
+                          className="px-2 py-1 bg-primary/10 border-2 border-primary rounded text-[10px] font-mono min-w-[3rem] text-center outline-none text-muted-foreground"
+                          value="Press key..."
                           onKeyDown={(e) => handleShortcutKeyDown(e, shortcut.id)}
                           onBlur={() => setEditingShortcut(null)}
                           autoFocus
+                        />
+                      ) : (
+                        <kbd
+                          className="px-2 py-1 bg-background border border-border rounded text-[10px] font-mono min-w-[3rem] text-center cursor-pointer hover:bg-muted transition-colors"
+                          onClick={() => setEditingShortcut(shortcut.id)}
                         >
-                          <span className="text-muted-foreground animate-pulse">Press key...</span>
-                        </div>
+                          {getShortcutDisplay(shortcut)}
+                        </kbd>
+                      )}
+                      <span className="text-xs text-muted-foreground">{shortcut.description}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* View Modes */}
+              <div>
+                <h4 className="text-xs font-semibold text-foreground/80 mb-2">View Modes</h4>
+                <div className="space-y-1.5">
+                  {shortcuts.filter(s => s.category === 'dialog' && ['toggle_view_mode', 'open_full_page'].includes(s.action) && s.enabled).map(shortcut => (
+                    <div key={shortcut.id} className="flex items-center gap-2">
+                      {editingShortcut === shortcut.id ? (
+                        <input
+                          type="text"
+                          readOnly
+                          className="px-2 py-1 bg-primary/10 border-2 border-primary rounded text-[10px] font-mono min-w-[3rem] text-center outline-none text-muted-foreground"
+                          value="Press key..."
+                          onKeyDown={(e) => handleShortcutKeyDown(e, shortcut.id)}
+                          onBlur={() => setEditingShortcut(null)}
+                          autoFocus
+                        />
                       ) : (
                         <kbd
                           className="px-2 py-1 bg-background border border-border rounded text-[10px] font-mono min-w-[3rem] text-center cursor-pointer hover:bg-muted transition-colors"
@@ -564,11 +650,11 @@ export const KanbanBoard = () => {
                     return (
                       <div
                         key={task.id}
-                        className={`${isFocused ? 'ring-2 ring-primary ring-offset-2 rounded-lg' : ''}`}
+                        className={`transition-all duration-200 ${isFocused ? 'ring-2 ring-primary ring-offset-2 rounded-lg' : ''}`}
                       >
                         <TaskCard
                           task={task}
-                          onClick={() => handleTaskClick(task)}
+                          onClick={() => handleTaskClick(task, columnIndex, taskIndex)}
                           onDragStart={() => handleDragStart(task)}
                         />
                       </div>
@@ -587,13 +673,28 @@ export const KanbanBoard = () => {
         onTasksInferred={handleTasksInferred}
       />
 
-      {selectedTask && (
+      {selectedTask && !isFullPageOpen && (
         <TaskDetailSheet
           task={selectedTask}
           open={isDialogOpen}
           onOpenChange={setIsDialogOpen}
           onUpdate={handleUpdateTask}
           onDelete={handleDeleteTask}
+          isExpanded={isExpanded}
+          onToggleExpanded={() => setIsExpanded(!isExpanded)}
+          onFullPage={() => {
+            setIsDialogOpen(false);
+            setIsFullPageOpen(true);
+          }}
+        />
+      )}
+
+      {selectedTask && isFullPageOpen && (
+        <TaskFullPage
+          task={selectedTask}
+          onUpdate={handleUpdateTask}
+          onDelete={handleDeleteTask}
+          onClose={() => setIsFullPageOpen(false)}
         />
       )}
     </div>

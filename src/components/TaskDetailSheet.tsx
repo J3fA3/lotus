@@ -17,7 +17,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "./ui/select";
-import { Calendar, Paperclip, MessageSquare, Trash2, X, User, Maximize2, Minimize2, FileText } from "lucide-react";
+import { Skeleton } from "./ui/skeleton";
+import { Calendar, Paperclip, MessageSquare, Trash2, X, User, Maximize2, Minimize2, FileText, Expand } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
 
@@ -27,6 +28,9 @@ interface TaskDetailSheetProps {
   onOpenChange: (open: boolean) => void;
   onUpdate: (task: Task) => void;
   onDelete: (taskId: string) => void;
+  isExpanded?: boolean;
+  onToggleExpanded?: () => void;
+  onFullPage?: () => void;
 }
 
 export const TaskDetailSheet = ({
@@ -35,17 +39,43 @@ export const TaskDetailSheet = ({
   onOpenChange,
   onUpdate,
   onDelete,
+  isExpanded: isExpandedProp = false,
+  onToggleExpanded,
+  onFullPage,
 }: TaskDetailSheetProps) => {
   const [editedTask, setEditedTask] = useState<Task>(task);
   const [newComment, setNewComment] = useState("");
   const [newAttachment, setNewAttachment] = useState("");
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(isExpandedProp);
+  const [isTransitioning, setIsTransitioning] = useState(false);
   const notesRef = useRef<HTMLTextAreaElement>(null);
+  const previousTaskIdRef = useRef<string>(task.id);
 
-  // Update editedTask when the task prop changes
+  // Update editedTask when the task prop changes with skeleton transition
   useEffect(() => {
-    setEditedTask(task);
+    // Check if task actually changed (different ID)
+    if (task.id !== previousTaskIdRef.current) {
+      // Show skeleton briefly for smooth transition
+      setIsTransitioning(true);
+      
+      // Quick skeleton flash (150ms) then update content
+      const timer = setTimeout(() => {
+        setEditedTask(task);
+        previousTaskIdRef.current = task.id;
+        setIsTransitioning(false);
+      }, 150);
+
+      return () => clearTimeout(timer);
+    } else {
+      // Same task, just update the data (in-place edits)
+      setEditedTask(task);
+    }
   }, [task]);
+
+  // Sync local isExpanded with parent prop
+  useEffect(() => {
+    setIsExpanded(isExpandedProp);
+  }, [isExpandedProp]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -61,8 +91,22 @@ export const TaskDetailSheet = ({
       // Cmd/Ctrl + E to toggle expand
       if ((e.metaKey || e.ctrlKey) && e.key === "e") {
         e.preventDefault();
-        setIsExpanded(!isExpanded);
+        if (onToggleExpanded) {
+          onToggleExpanded();
+        } else {
+          setIsExpanded(!isExpanded);
+        }
         toast.success(isExpanded ? "Peek mode" : "Expanded view");
+        return;
+      }
+
+      // Cmd/Ctrl + Shift + F for full page
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === "F") {
+        e.preventDefault();
+        if (onFullPage) {
+          onFullPage();
+          toast.success("Full page view");
+        }
         return;
       }
 
@@ -77,7 +121,7 @@ export const TaskDetailSheet = ({
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [open, isExpanded, onOpenChange]);
+  }, [open, isExpanded, onOpenChange, onToggleExpanded, onFullPage]);
 
   const handleUpdate = (updates: Partial<Task>) => {
     const updated = { 
@@ -132,10 +176,10 @@ export const TaskDetailSheet = ({
   };
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
+    <Sheet open={open} onOpenChange={onOpenChange} modal={false}>
       <SheetContent 
         side="right"
-        className={`p-0 border-l border-border/30 transition-all duration-300 ease-out task-sheet-scroll overflow-y-auto ${
+        className={`p-0 border-l border-border/30 transition-all duration-500 ease-[cubic-bezier(0.34,1.56,0.64,1)] task-sheet-scroll overflow-y-auto shadow-2xl ${
           isExpanded ? "w-full sm:max-w-[900px]" : "w-full sm:max-w-[600px]"
         }`}
         onOpenAutoFocus={(e) => e.preventDefault()}
@@ -144,20 +188,44 @@ export const TaskDetailSheet = ({
         <SheetHeader className="sticky top-0 z-10 bg-background/95 backdrop-blur-sm px-8 py-6 border-b border-border/30">
           <SheetTitle className="sr-only">Task Details</SheetTitle>
           <div className="flex items-center justify-between gap-4">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
               <Button
                 variant="ghost"
                 size="icon"
                 onClick={() => {
-                  setIsExpanded(!isExpanded);
+                  if (onToggleExpanded) {
+                    onToggleExpanded();
+                  } else {
+                    setIsExpanded(!isExpanded);
+                  }
                   toast.success(isExpanded ? "Peek mode" : "Expanded view");
                 }}
-                className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-lg transition-all"
+                className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-lg transition-all duration-200 hover:scale-105 active:scale-95"
                 title={isExpanded ? "Minimize (Cmd/Ctrl+E)" : "Expand (Cmd/Ctrl+E)"}
               >
-                {isExpanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+                <div className={`transition-all duration-300 ${isExpanded ? 'rotate-0' : 'rotate-0'}`}>
+                  {isExpanded ? (
+                    <Minimize2 className="h-4 w-4 transition-transform duration-300" />
+                  ) : (
+                    <Maximize2 className="h-4 w-4 transition-transform duration-300" />
+                  )}
+                </div>
               </Button>
-              <span className="text-xs text-muted-foreground">
+              {onFullPage && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => {
+                    onFullPage();
+                    toast.success("Full page view");
+                  }}
+                  className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-lg transition-all duration-200 hover:scale-105 active:scale-95"
+                  title="Full page (Cmd/Ctrl+Shift+E)"
+                >
+                  <Expand className="h-4 w-4 transition-transform duration-300 hover:rotate-45" />
+                </Button>
+              )}
+              <span className="text-xs text-muted-foreground transition-all duration-300">
                 {isExpanded ? "Expanded" : "Peek"}
               </span>
             </div>
@@ -166,30 +234,93 @@ export const TaskDetailSheet = ({
               variant="ghost"
               size="icon"
               onClick={() => onDelete(task.id)}
-              className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg transition-all"
+              className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg transition-all duration-200 hover:scale-105 active:scale-95"
               title="Delete task"
             >
-              <Trash2 className="h-4 w-4" />
+              <Trash2 className="h-4 w-4 transition-transform duration-200 hover:rotate-12" />
             </Button>
           </div>
         </SheetHeader>
 
         {/* Content */}
         <div className="px-8 py-6 space-y-8">
-          {/* Title */}
-          <div>
-            <Input
-              value={editedTask.title}
-              onChange={(e) => handleUpdate({ title: e.target.value })}
-              className="text-3xl font-semibold border-0 px-0 focus-visible:ring-0 tracking-tight bg-transparent"
-              placeholder="Task title"
-              autoFocus={false}
-            />
-          </div>
+          {isTransitioning ? (
+            /* Skeleton Loading State */
+            <div className="space-y-8 animate-in fade-in duration-150">
+              {/* Title Skeleton */}
+              <div className="space-y-3">
+                <Skeleton className={`${isExpanded ? "h-12" : "h-10"} w-3/4 transition-all duration-300`} />
+              </div>
+
+              {/* Properties Grid Skeleton */}
+              <div className={`grid gap-6 ${isExpanded ? "grid-cols-3" : "grid-cols-2"}`}>
+                <div className="space-y-3">
+                  <Skeleton className="h-3 w-16" />
+                  <Skeleton className="h-10 w-full" />
+                </div>
+                <div className="space-y-3">
+                  <Skeleton className="h-3 w-24" />
+                  <Skeleton className="h-10 w-full" />
+                </div>
+                {isExpanded && (
+                  <div className="space-y-3">
+                    <Skeleton className="h-3 w-20" />
+                    <Skeleton className="h-10 w-full" />
+                  </div>
+                )}
+              </div>
+
+              {/* Dates Skeleton */}
+              <div className="grid grid-cols-2 gap-6">
+                <div className="space-y-3">
+                  <Skeleton className="h-3 w-20" />
+                  <Skeleton className="h-10 w-full" />
+                </div>
+                <div className="space-y-3">
+                  <Skeleton className="h-3 w-20" />
+                  <Skeleton className="h-10 w-full" />
+                </div>
+              </div>
+
+              {/* Description Skeleton */}
+              <div className="space-y-3">
+                <Skeleton className="h-3 w-24" />
+                <Skeleton className={`w-full ${isExpanded ? "h-32" : "h-24"}`} />
+              </div>
+
+              {/* Attachments Skeleton */}
+              <div className="space-y-3">
+                <Skeleton className="h-3 w-28" />
+                <Skeleton className="h-10 w-full" />
+              </div>
+
+              {/* Notes Skeleton */}
+              <div className="space-y-3">
+                <Skeleton className="h-3 w-16" />
+                <Skeleton className={`w-full ${isExpanded ? "h-[500px]" : "h-[400px]"}`} />
+              </div>
+            </div>
+          ) : (
+            /* Actual Content */
+            <div className="space-y-8 animate-in fade-in duration-200">
+              {/* Title */}
+              <div className="transition-all duration-500">
+                <Input
+                  value={editedTask.title}
+                  onChange={(e) => handleUpdate({ title: e.target.value })}
+                  className={`font-semibold border-0 px-0 focus-visible:ring-0 tracking-tight bg-transparent transition-all duration-500 ease-[cubic-bezier(0.34,1.56,0.64,1)] ${
+                    isExpanded ? "text-4xl" : "text-3xl"
+                  }`}
+                  placeholder="Task title"
+                  autoFocus={false}
+                />
+              </div>
 
           {/* Properties Grid */}
-          <div className="grid grid-cols-2 gap-6">
-            <div className="space-y-3">
+          <div className={`grid gap-6 transition-all duration-500 ease-[cubic-bezier(0.34,1.56,0.64,1)] ${
+            isExpanded ? "grid-cols-3" : "grid-cols-2"
+          }`}>
+            <div className="space-y-3 transition-all duration-300">
               <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                 Status
               </Label>
@@ -197,7 +328,7 @@ export const TaskDetailSheet = ({
                 value={editedTask.status}
                 onValueChange={(value) => handleUpdate({ status: value as Task["status"] })}
               >
-                <SelectTrigger className="h-10 border-border/50 focus:border-primary/50 transition-all">
+                <SelectTrigger className="h-10 border-border/50 focus:border-primary/50 transition-all duration-200 hover:border-primary/30">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -208,7 +339,7 @@ export const TaskDetailSheet = ({
               </Select>
             </div>
 
-            <div className="space-y-3">
+            <div className="space-y-3 transition-all duration-300">
               <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                 Value Stream
               </Label>
@@ -216,14 +347,28 @@ export const TaskDetailSheet = ({
                 value={editedTask.valueStream || ""}
                 onChange={(e) => handleUpdate({ valueStream: e.target.value })}
                 placeholder="e.g., Marketing, Development"
-                className="h-10 border-border/50 focus:border-primary/50 transition-all"
+                className="h-10 border-border/50 focus:border-primary/50 transition-all duration-200 hover:border-primary/30"
               />
             </div>
+
+            {isExpanded && (
+              <div className="space-y-3 animate-in fade-in slide-in-from-right-3 duration-500">
+                <Label className="flex items-center gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  <User className="h-3.5 w-3.5 opacity-60" />
+                  Assignee
+                </Label>
+                <Input
+                  value={editedTask.assignee}
+                  onChange={(e) => handleUpdate({ assignee: e.target.value })}
+                  className="h-10 border-border/50 focus:border-primary/50 transition-all duration-200 hover:border-primary/30"
+                />
+              </div>
+            )}
           </div>
 
           {/* Dates */}
-          <div className="grid grid-cols-2 gap-6">
-            <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-6 transition-all duration-300">
+            <div className="space-y-3 transition-all duration-300">
               <Label className="flex items-center gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
                 <Calendar className="h-3.5 w-3.5 opacity-60" />
                 Start Date
@@ -232,11 +377,11 @@ export const TaskDetailSheet = ({
                 type="date"
                 value={editedTask.startDate || ""}
                 onChange={(e) => handleUpdate({ startDate: e.target.value })}
-                className="h-10 border-border/50 focus:border-primary/50 transition-all"
+                className="h-10 border-border/50 focus:border-primary/50 transition-all duration-200 hover:border-primary/30"
               />
             </div>
 
-            <div className="space-y-3">
+            <div className="space-y-3 transition-all duration-300">
               <Label className="flex items-center gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
                 <Calendar className="h-3.5 w-3.5 opacity-60" />
                 Due Date
@@ -245,26 +390,28 @@ export const TaskDetailSheet = ({
                 type="date"
                 value={editedTask.dueDate || ""}
                 onChange={(e) => handleUpdate({ dueDate: e.target.value })}
-                className="h-10 border-border/50 focus:border-primary/50 transition-all"
+                className="h-10 border-border/50 focus:border-primary/50 transition-all duration-200 hover:border-primary/30"
               />
             </div>
           </div>
 
-          {/* Assignee */}
-          <div className="space-y-3">
-            <Label className="flex items-center gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-              <User className="h-3.5 w-3.5 opacity-60" />
-              Assignee
-            </Label>
-            <Input
-              value={editedTask.assignee}
-              onChange={(e) => handleUpdate({ assignee: e.target.value })}
-              className="h-10 border-border/50 focus:border-primary/50 transition-all"
-            />
-          </div>
+          {/* Assignee - only show in peek mode since it's in the grid for expanded */}
+          {!isExpanded && (
+            <div className="space-y-3 transition-all duration-300">
+              <Label className="flex items-center gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                <User className="h-3.5 w-3.5 opacity-60" />
+                Assignee
+              </Label>
+              <Input
+                value={editedTask.assignee}
+                onChange={(e) => handleUpdate({ assignee: e.target.value })}
+                className="h-10 border-border/50 focus:border-primary/50 transition-all duration-200 hover:border-primary/30"
+              />
+            </div>
+          )}
 
           {/* Description */}
-          <div className="space-y-3">
+          <div className="space-y-3 transition-all duration-300">
             <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
               Description
             </Label>
@@ -272,8 +419,8 @@ export const TaskDetailSheet = ({
               value={editedTask.description || ""}
               onChange={(e) => handleUpdate({ description: e.target.value })}
               placeholder="Add a detailed description..."
-              rows={4}
-              className="resize-none border-border/50 focus:border-primary/50 transition-all leading-relaxed"
+              rows={isExpanded ? 6 : 4}
+              className="resize-none border-border/50 focus:border-primary/50 transition-all duration-500 ease-[cubic-bezier(0.34,1.56,0.64,1)] leading-relaxed hover:border-primary/30"
             />
           </div>
 
@@ -320,81 +467,72 @@ export const TaskDetailSheet = ({
             )}
           </div>
 
-          {/* Comments */}
+          {/* Comments - Chat-style */}
           <div className="space-y-4">
             <Label className="flex items-center gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
               <MessageSquare className="h-3.5 w-3.5 opacity-60" />
               Comments
             </Label>
-            <div className="space-y-3">
-              {editedTask.comments.map((comment) => (
-                <div key={comment.id} className="p-4 bg-muted/20 rounded-lg border border-border/10">
-                  <div className="flex items-center justify-between mb-2.5">
-                    <span className="text-sm font-medium text-foreground">{comment.author}</span>
-                    <span className="text-xs text-muted-foreground font-light">
-                      {format(new Date(comment.createdAt), "MMM d, h:mm a")}
-                    </span>
+            {editedTask.comments.length > 0 && (
+              <div className="space-y-3">
+                {editedTask.comments.map((comment) => (
+                  <div key={comment.id} className="flex gap-3">
+                    <div className="flex-shrink-0 w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center">
+                      <User className="h-3.5 w-3.5 text-primary" />
+                    </div>
+                    <div className="flex-1 space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-foreground">{comment.author}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {format(new Date(comment.createdAt), "MMM d")}
+                        </span>
+                      </div>
+                      <p className="text-sm text-foreground/90 leading-relaxed">{comment.text}</p>
+                    </div>
                   </div>
-                  <p className="text-sm text-foreground/90 leading-relaxed">{comment.text}</p>
-                </div>
-              ))}
-            </div>
-            <div className="flex gap-2">
+                ))}
+              </div>
+            )}
+            <div className="flex gap-3 items-start">
+              <div className="flex-shrink-0 w-7 h-7 rounded-full bg-muted flex items-center justify-center mt-1">
+                <User className="h-3.5 w-3.5 text-muted-foreground" />
+              </div>
               <Textarea
                 value={newComment}
                 onChange={(e) => setNewComment(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleAddComment();
+                  }
+                }}
                 placeholder="Add a comment..."
-                rows={3}
-                className="resize-none border-border/50 focus:border-primary/50 transition-all leading-relaxed"
+                rows={1}
+                className="flex-1 resize-none border-0 border-b border-border/30 focus:border-primary/50 transition-all leading-relaxed rounded-none px-0 focus-visible:ring-0 focus-visible:ring-offset-0"
+                style={{ minHeight: '28px' }}
               />
-              <Button 
-                onClick={handleAddComment} 
-                size="sm"
-                className="h-auto px-5 bg-primary hover:bg-primary/90 transition-all"
-              >
-                Add
-              </Button>
             </div>
           </div>
 
-          {/* Divider */}
-          <div className="relative py-6">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-border/20"></div>
-            </div>
-            <div className="relative flex justify-center">
-              <span className="bg-background px-4 text-xs text-muted-foreground uppercase tracking-wider">
-                Document
-              </span>
-            </div>
-          </div>
-
-          {/* Notes / Document Editor */}
-          <div className="space-y-4 pb-12">
-            <Label className="flex items-center gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-              <FileText className="h-3.5 w-3.5 opacity-60" />
-              Notes
-              <span className="text-[10px] normal-case opacity-60 ml-auto">(Cmd/Ctrl+D to focus)</span>
-            </Label>
+          {/* Notes - No Header Divider */}
+          <div className="space-y-3 pb-12 transition-all duration-500">
             <Textarea
               ref={notesRef}
               value={editedTask.notes || ""}
               onChange={handleNotesChange}
-              placeholder="Write your notes, thoughts, or documentation here...
-
-This is your freeform space to:
-• Document decisions and context
-• Brainstorm ideas
-• Track progress
-• Add meeting notes
-• Whatever helps you work better"
-              className="min-h-[400px] resize-none border-border/30 focus:border-primary/50 transition-all leading-relaxed text-base p-6 rounded-xl"
+              placeholder="Write your notes, thoughts, or documentation here..."
+              className={`resize-none border-border/30 focus:border-primary/50 transition-all duration-500 ease-[cubic-bezier(0.34,1.56,0.64,1)] leading-relaxed text-base p-6 rounded-lg hover:border-primary/30 ${
+                isExpanded ? "min-h-[400px]" : "min-h-[300px]"
+              }`}
               style={{ 
                 overflow: "hidden",
                 fontFamily: "'Inter', sans-serif"
               }}
             />
+            <span className="text-xs text-muted-foreground">Cmd/Ctrl+D to focus notes</span>
           </div>
+            </div>
+          )}
         </div>
       </SheetContent>
     </Sheet>

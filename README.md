@@ -1,35 +1,56 @@
-# 🤖 AI Task Inference - Notion-like Kanban with Local AI
+# 🚀 Task Crate - AI-Powered Task Management
 
-A powerful task management app with **AI-powered task extraction** from text and PDFs - completely free and running locally!
+A modern task management application featuring a Notion-style Kanban board with local AI-powered task extraction, keyboard shortcuts, and multiple view modes.
 
-## ✨ Features
+## ✨ Key Features
 
-- 🎯 **Notion-like Kanban Board** - Beautiful drag-and-drop interface
-- 🤖 **AI Task Inference** - Paste Slack messages, meeting notes, or upload PDFs - AI extracts tasks automatically
-- 🔒 **100% Local & Free** - Uses Qwen 2.5 via Ollama, no API keys needed
-- 💾 **Persistent Storage** - SQLite database, tasks never lost
-- ⚡ **Fast & Modern** - React + TypeScript + FastAPI
-- 🎨 **Beautiful UI** - shadcn/ui components with Tailwind CSS
+- 🎯 **Kanban Board** - Drag-and-drop interface with todo/doing/done columns
+- 🤖 **AI Task Extraction** - Extract tasks from text or PDFs using local LLM (Ollama + Qwen 2.5)
+- ⌨️ **45 Keyboard Shortcuts** - Configurable shortcuts with conflict detection
+- 👁️ **Multiple View Modes** - Peek (side sheet), Extended, and Full Page views
+- 💬 **Notion-Style Comments** - Chat interface with Enter to send
+- 📎 **Attachments & Notes** - Full task metadata with persistence
+- 💾 **SQLite Database** - All data persists across sessions
+- 🔒 **100% Local & Free** - No API keys, runs entirely on your machine
 
 ## 🚀 Quick Start
 
-**See [QUICKSTART.md](./QUICKSTART.md) for streamlined setup or [SETUP.md](./SETUP.md) for complete guide**
+### Prerequisites
 
-### Option 1: Using Dev Container (Current Setup)
+1. **Install Ollama on your host machine** (not in dev container):
+   ```bash
+   # macOS/Linux
+   curl -fsSL https://ollama.com/install.sh | sh
+   
+   # Pull the model
+   ollama pull qwen2.5:7b-instruct
+   ```
+
+2. **Set up SSH tunnel** (for dev container access):
+   ```bash
+   # On host machine, create ~/.ssh/config entry:
+   Host devcontainer
+       HostName localhost
+       Port 2222
+       User vscode
+       RemoteForward 11434 127.0.0.1:11434
+   
+   # Start Ollama service
+   ollama serve
+   ```
+
+### Running the Application
 
 ```bash
-# 1. Install Ollama on your Mac (HOST machine, not dev container)
-curl -fsSL https://ollama.com/install.sh | sh
-ollama pull qwen2.5:7b-instruct
-ollama serve  # Keep this running
+# Terminal 1: Start backend
+cd /workspaces/task-crate/backend
+python -m uvicorn main:app --host 0.0.0.0 --port 8000
 
-# 2. In dev container - Start backend (Terminal 1)
-./start-backend.sh
+# Terminal 2: Start frontend
+cd /workspaces/task-crate
+npm run dev
 
-# 3. In dev container - Start frontend (Terminal 2)
-./start-frontend.sh
-
-# Open http://localhost:5173 in your Mac browser
+# Open http://localhost:8080 in your browser
 ```
 
 ### Option 2: Running Locally (Without Dev Container)
@@ -71,61 +92,94 @@ npm run dev
 ## 🏗️ Architecture
 
 ```
-Frontend (React + Vite) → Backend (FastAPI) → Ollama (Qwen 2.5)
-        ↓
-   SQLite Database
+┌─────────────────┐
+│  React Frontend │ :8080
+│  (TypeScript)   │
+└────────┬────────┘
+         │ HTTP + Proxy
+         ▼
+┌─────────────────┐
+│  FastAPI Server │ :8000
+│  (Python 3.12)  │
+└────┬───────┬────┘
+     │       │
+     │       └──────► Ollama :11434 (SSH tunnel)
+     │                Qwen 2.5 7B
+     ▼
+┌─────────────────┐
+│ SQLite Database │
+│  (tasks.db)     │
+└─────────────────┘
 ```
+
+## 🛠️ Tech Stack
+
+**Frontend:**
+- React 18 + TypeScript
+- Vite (build tool)
+- shadcn/ui + Radix UI (components)
+- Tailwind CSS (styling)
+- React Router (navigation)
+
+**Backend:**
+- FastAPI (Python web framework)
+- SQLAlchemy 2.0 (async ORM)
+- SQLite + aiosqlite (database)
+- Ollama (LLM interface)
+- PyMuPDF (PDF processing)
+
+**AI/ML:**
+- Ollama 0.3.3
+- Qwen 2.5 7B Instruct (local LLM)
 
 ## 📚 Documentation
 
-- **[GETTING_STARTED.md](./GETTING_STARTED.md)** - 🚀 **START HERE!** Quick 5-minute setup guide
-- **[QUICKSTART.md](./QUICKSTART.md)** - Streamlined setup instructions
-- **[SETUP.md](./SETUP.md)** - Complete setup guide with troubleshooting
+- **[docs/SETUP.md](./docs/SETUP.md)** - Complete setup guide
+- **[docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)** - System design and data models
 - **[backend/README.md](./backend/README.md)** - Backend API documentation
-- **API Docs** - http://localhost:8000/docs (when backend is running)
+- **API Docs** - http://localhost:8000/docs (interactive Swagger UI)
 
-## 🛠️ Helpful Scripts
-
-```bash
-./health-check.sh      # Check if everything is set up correctly
-./start-backend.sh     # Start the FastAPI backend
-./start-frontend.sh    # Start the React frontend
-```
-
----
-
-## 🛠️ Technologies Used
-
-**Frontend:**
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
-
-**Backend:**
-- Python FastAPI
-- SQLite
-- Ollama (Qwen 2.5 7B Instruct)
-- PyMuPDF (PDF processing)
-
----
+### Recent Changes
+- **Data Persistence** - Fixed comments, attachments, and notes persistence
+- **Keyboard Shortcuts** - 45 configurable shortcuts with conflict detection
+- **View Modes** - Added peek, extended, and full-page task views
 
 ## 🔧 Development
 
-### Local Development
-
-```sh
-# Clone the repository
-git clone <YOUR_GIT_URL>
-
-# Navigate to the project directory
-cd task-crate
-
-# Install dependencies
+```bash
+# Install frontend dependencies
 npm install
 
-# Start development servers
-./start-backend.sh   # Terminal 1
-./start-frontend.sh  # Terminal 2
+# Install backend dependencies
+cd backend
+pip install -r requirements.txt
+
+# Run tests (when available)
+pytest backend/tests
+
+# Check backend health
+curl http://localhost:8000/api/health
 ```
+
+## 📦 Database Schema
+
+```sql
+-- Core tables
+tasks              # Main task data with notes
+comments           # Task comments (1-to-many)
+attachments        # Task attachments (1-to-many)
+inference_history  # AI inference logs
+shortcut_config    # User keyboard shortcuts
+```
+
+## 🤝 Contributing
+
+1. Create a feature branch: `git checkout -b feature/your-feature`
+2. Make your changes
+3. Test thoroughly
+4. Commit: `git commit -m "feat: description"`
+5. Push and create PR
+
+## 📝 License
+
+MIT License - See LICENSE file for details

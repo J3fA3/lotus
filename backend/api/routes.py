@@ -1,11 +1,21 @@
 """
-API routes for task management and AI inference
+API Routes for Task Management and AI Inference
+
+This module provides FastAPI endpoints for:
+- Task CRUD operations with comments, attachments, and notes
+- AI-powered task extraction from text and PDFs
+- Keyboard shortcut configuration
+- System health checks
+
+All task queries use eager loading (selectinload) to avoid async relationship issues.
+Comments and attachments are stored in separate tables with cascade delete.
 """
 import os
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, text, delete
+from sqlalchemy.orm import selectinload
 import uuid
 from datetime import datetime
 
@@ -59,11 +69,14 @@ async def health_check():
 @router.get("/tasks", response_model=List[TaskSchema])
 async def get_tasks(db: AsyncSession = Depends(get_db)):
     """Get all tasks"""
-    result = await db.execute(select(Task))
+    result = await db.execute(
+        select(Task)
+        .options(selectinload(Task.comments), selectinload(Task.attachments))
+    )
     tasks = result.scalars().all()
 
-    # Convert to response format - relationships not loaded, will return empty arrays
-    return [_task_to_schema(task, load_relationships=False) for task in tasks]
+    # Convert to response format with loaded relationships
+    return [_task_to_schema(task, load_relationships=True) for task in tasks]
 
 
 @router.post("/tasks", response_model=TaskSchema)
@@ -84,6 +97,7 @@ async def create_task(
         due_date=task_data.dueDate,
         value_stream=task_data.valueStream,
         description=task_data.description,
+        notes=task_data.notes,
         created_at=now,
         updated_at=now
     )
@@ -98,13 +112,17 @@ async def create_task(
 @router.get("/tasks/{task_id}", response_model=TaskSchema)
 async def get_task(task_id: str, db: AsyncSession = Depends(get_db)):
     """Get a specific task"""
-    result = await db.execute(select(Task).where(Task.id == task_id))
+    result = await db.execute(
+        select(Task)
+        .where(Task.id == task_id)
+        .options(selectinload(Task.comments), selectinload(Task.attachments))
+    )
     task = result.scalar_one_or_none()
 
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    return _task_to_schema(task)
+    return _task_to_schema(task, load_relationships=True)
 
 
 @router.put("/tasks/{task_id}", response_model=TaskSchema)
@@ -114,7 +132,11 @@ async def update_task(
     db: AsyncSession = Depends(get_db)
 ):
     """Update a task with provided fields"""
-    result = await db.execute(select(Task).where(Task.id == task_id))
+    result = await db.execute(
+        select(Task)
+        .where(Task.id == task_id)
+        .options(selectinload(Task.comments), selectinload(Task.attachments))
+    )
     task = result.scalar_one_or_none()
 
     if not task:
@@ -129,12 +151,42 @@ async def update_task(
         "startDate": "start_date",
         "dueDate": "due_date",
         "valueStream": "value_stream",
-        "description": "description"
+        "description": "description",
+        "notes": "notes"
     }
     
     for api_field, db_field in field_mapping.items():
         if api_field in update_data:
             setattr(task, db_field, update_data[api_field])
+
+    # Handle comments - full replacement strategy
+    # Delete all existing comments and recreate from request
+    # This ensures frontend state is source of truth
+    if "comments" in update_data and update_data["comments"] is not None:
+        # Delete existing comments (cascade handled by DB)
+        await db.execute(delete(Comment).where(Comment.task_id == task_id))
+        # Recreate all comments from request
+        for comment_data in update_data["comments"]:
+            comment = Comment(
+                id=comment_data.get("id", str(uuid.uuid4())),
+                task_id=task_id,
+                text=comment_data["text"],
+                author=comment_data["author"],
+                created_at=datetime.fromisoformat(comment_data["createdAt"].replace("Z", "+00:00")) if "createdAt" in comment_data else datetime.utcnow()
+            )
+            db.add(comment)
+
+    # Handle attachments - replace all
+    if "attachments" in update_data and update_data["attachments"] is not None:
+        # Delete existing attachments
+        await db.execute(delete(Attachment).where(Attachment.task_id == task_id))
+        # Add new attachments
+        for attachment_url in update_data["attachments"]:
+            attachment = Attachment(
+                task_id=task_id,
+                url=attachment_url
+            )
+            db.add(attachment)
 
     task.updated_at = datetime.utcnow()
 
@@ -452,7 +504,8 @@ async def reset_shortcuts(
         return {"message": f"Reset shortcuts for user {request.user_id}"}
     else:
         # Delete all and reseed
-        await db.execute("DELETE FROM shortcut_configs")
+        await db.execute(text("DELETE FROM shortcut_configs"))
+        await db.commit()
         await seed_default_shortcuts(db)
         return {"message": "Reset all shortcuts to defaults"}
 
@@ -534,16 +587,28 @@ async def import_shortcuts(
 # ============= Helper Functions =============
 
 def _task_to_schema(task: Task, load_relationships: bool = False) -> TaskSchema:
-    """Convert SQLAlchemy Task to Pydantic schema with safe relationship access
+    """Convert SQLAlchemy Task model to Pydantic TaskSchema.
+    
+    Important: Relationships (comments, attachments) must be eager-loaded in the
+    query using selectinload() to avoid greenlet errors in async context.
     
     Args:
-        task: Task model instance
-        load_relationships: Whether to attempt loading relationships (requires proper async context)
+        task: SQLAlchemy Task instance with eager-loaded relationships
+        load_relationships: Legacy parameter, kept for compatibility
+    
+    Returns:
+        TaskSchema with all fields including comments and attachments
     """
-    # Don't try to access relationships in async context - they cause greenlet errors
-    # Relationships would need to be eager-loaded in the query
-    attachments = []
-    comments = []
+    # Access relationships - they MUST be eager-loaded in the query
+    attachments = [att.url for att in task.attachments] if hasattr(task, 'attachments') and task.attachments else []
+    comments = [
+        CommentSchema(
+            id=comment.id,
+            text=comment.text,
+            author=comment.author,
+            createdAt=comment.created_at.isoformat() if comment.created_at else datetime.utcnow().isoformat()
+        ) for comment in task.comments
+    ] if hasattr(task, 'comments') and task.comments else []
     
     # Handle potential None values for timestamps
     created_at = task.created_at if task.created_at else datetime.utcnow()
@@ -558,6 +623,7 @@ def _task_to_schema(task: Task, load_relationships: bool = False) -> TaskSchema:
         dueDate=task.due_date,
         valueStream=task.value_stream,
         description=task.description,
+        notes=task.notes,
         attachments=attachments,
         comments=comments,
         createdAt=created_at.isoformat(),

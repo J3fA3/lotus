@@ -79,14 +79,15 @@ export function ShortcutProvider({ children, userId }: ShortcutProviderProps) {
           userId
         );
 
-        // Update local state
+        // Update local state with the full updated object
         setShortcuts((prev) =>
           prev.map((s) => (s.id === id ? { ...s, ...updated } : s))
         );
 
-        toast.success('Shortcut updated successfully');
+        toast.success('Shortcut updated', { duration: 2000 });
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Failed to update shortcut';
+        console.error('Shortcut update error:', err);
         toast.error(message);
         throw err;
       }
