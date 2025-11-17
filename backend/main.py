@@ -11,6 +11,7 @@ from db.database import init_db
 from api.routes import router
 from services.knowledge_graph_scheduler import scheduler
 from services.knowledge_graph_config import config as kg_config
+from api.knowledge_graphql_schema import create_graphql_router
 
 # Load environment variables
 load_dotenv()
@@ -79,16 +80,29 @@ app.add_middleware(
 # Include routes
 app.include_router(router, prefix="/api")
 
+# Include GraphQL endpoint (if enabled)
+if kg_config.GRAPHQL_ENABLED:
+    graphql_router = create_graphql_router()
+    if graphql_router:
+        app.include_router(graphql_router, prefix="/api", tags=["GraphQL"])
+        print(f"🔷 GraphQL enabled at /api{kg_config.GRAPHQL_PATH}")
+
 
 @app.get("/")
 async def root():
     """Root endpoint with API information"""
-    return {
+    response = {
         "message": API_TITLE,
         "version": API_VERSION,
         "docs": "/docs",
         "health": "/api/health"
     }
+
+    if kg_config.GRAPHQL_ENABLED:
+        response["graphql"] = f"/api{kg_config.GRAPHQL_PATH}"
+        response["graphql_playground"] = f"/api{kg_config.GRAPHQL_PATH}"
+
+    return response
 
 
 if __name__ == "__main__":
@@ -100,7 +114,12 @@ if __name__ == "__main__":
 
     print(f"\n🚀 Starting server on {host}:{port}")
     print(f"📚 API Docs: http://localhost:{port}/docs")
-    print(f"🏥 Health Check: http://localhost:{port}/api/health\n")
+    print(f"🏥 Health Check: http://localhost:{port}/api/health")
+
+    if kg_config.GRAPHQL_ENABLED:
+        print(f"🔷 GraphQL Playground: http://localhost:{port}/api{kg_config.GRAPHQL_PATH}")
+
+    print()
 
     uvicorn.run(
         "main:app",
