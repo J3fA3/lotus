@@ -22,3 +22,9 @@ python-multipart==0.0.12
 
 # Utilities
 python-dotenv==1.0.1
+
+# Advanced Knowledge Graph Features
+sentence-transformers==3.3.1  # Semantic similarity with embeddings
+strawberry-graphql[fastapi]==0.239.3  # GraphQL API
+apscheduler==3.10.4  # Background task scheduling for decay
+numpy==1.26.4  # Vector operations

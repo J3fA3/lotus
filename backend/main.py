@@ -9,6 +9,8 @@ from dotenv import load_dotenv
 
 from db.database import init_db
 from api.routes import router
+from services.knowledge_graph_scheduler import scheduler
+from services.knowledge_graph_config import config as kg_config
 
 # Load environment variables
 load_dotenv()
@@ -35,9 +37,23 @@ async def lifespan(app: FastAPI):
     print(f"🤖 AI Model: {ollama_model}")
     print(f"🔗 Ollama URL: {ollama_url}")
 
+    # Start Knowledge Graph scheduler if decay is enabled
+    if kg_config.DECAY_ENABLED:
+        print(f"⏰ Starting Knowledge Graph scheduler...")
+        print(f"   Decay updates every {kg_config.DECAY_UPDATE_INTERVAL_HOURS}h")
+        print(f"   Half-life: {kg_config.DECAY_HALF_LIFE_DAYS} days")
+        scheduler.start()
+        print("✅ Scheduler started")
+    else:
+        print("⚠️  Knowledge Graph decay disabled")
+
     yield
 
     # Shutdown
+    if kg_config.DECAY_ENABLED and scheduler.is_running:
+        print("⏰ Stopping Knowledge Graph scheduler...")
+        scheduler.stop()
+
     print("👋 Shutting down...")
 
 

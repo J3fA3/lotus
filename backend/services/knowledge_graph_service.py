@@ -17,11 +17,12 @@ Key Principles:
 
 from typing import List, Dict, Optional, Tuple
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_, or_
+from sqlalchemy import select, func, and_, or_, update
 from datetime import datetime, timedelta
 import difflib
 import re
 import json
+import math
 
 from db.models import Entity, Relationship
 from db.knowledge_graph_models import (
@@ -31,6 +32,8 @@ from db.knowledge_graph_models import (
     TeamStructureEvolution,
     KnowledgeGraphStats
 )
+from services.knowledge_graph_config import config
+from services.knowledge_graph_embeddings import embedding_service
 
 
 class KnowledgeGraphService:
@@ -816,3 +819,297 @@ class KnowledgeGraphService:
             "top_mentioned": top_nodes,
             "timestamp": datetime.utcnow().isoformat()
         }
+
+    # ========================================================================
+    # ADVANCED FEATURE 1: CONFIDENCE DECAY OVER TIME
+    # ========================================================================
+
+    def calculate_decayed_strength(
+        self,
+        original_strength: float,
+        last_seen: datetime,
+        current_time: Optional[datetime] = None,
+        half_life_days: Optional[float] = None
+    ) -> float:
+        """Calculate strength with temporal decay applied.
+
+        Uses exponential decay based on half-life:
+        strength_decayed = strength * (0.5 ^ (days_elapsed / half_life))
+
+        Args:
+            original_strength: Original relationship strength (0.0-1.0)
+            last_seen: When relationship was last observed
+            current_time: Current time (defaults to now)
+            half_life_days: Half-life in days (defaults to config)
+
+        Returns:
+            Decayed strength (0.0-1.0)
+        """
+        if not config.DECAY_ENABLED:
+            return original_strength
+
+        if current_time is None:
+            current_time = datetime.utcnow()
+
+        if half_life_days is None:
+            half_life_days = config.DECAY_HALF_LIFE_DAYS
+
+        # Calculate days elapsed
+        days_elapsed = (current_time - last_seen).total_seconds() / 86400.0
+
+        if days_elapsed <= 0:
+            return original_strength
+
+        # Apply exponential decay
+        decay_factor = math.pow(0.5, days_elapsed / half_life_days)
+        decayed_strength = original_strength * decay_factor
+
+        # Apply minimum threshold
+        return max(decayed_strength, 0.0)
+
+    async def apply_decay_to_edge(self, edge: KnowledgeEdge) -> Dict[str, float]:
+        """Apply temporal decay to a single edge.
+
+        Returns:
+            Dict with original_strength, decayed_strength, decay_amount
+        """
+        original_strength = edge.strength
+        decayed_strength = self.calculate_decayed_strength(
+            original_strength,
+            edge.last_seen
+        )
+
+        decay_amount = original_strength - decayed_strength
+
+        # Update edge if significant decay occurred
+        if decay_amount > 0.01:  # More than 1% decay
+            edge.strength = decayed_strength
+            await self.db.flush()
+
+        return {
+            "edge_id": edge.id,
+            "original_strength": original_strength,
+            "decayed_strength": decayed_strength,
+            "decay_amount": decay_amount,
+            "days_since_seen": (datetime.utcnow() - edge.last_seen).days
+        }
+
+    async def apply_decay_to_all_edges(self) -> Dict[str, Any]:
+        """Apply temporal decay to all edges in the knowledge graph.
+
+        This should be run periodically (e.g., daily) to keep strength scores current.
+
+        Returns:
+            Statistics about decay operation
+        """
+        # Get all edges
+        result = await self.db.execute(select(KnowledgeEdge))
+        edges = result.scalars().all()
+
+        stats = {
+            "total_edges": len(edges),
+            "edges_decayed": 0,
+            "edges_below_threshold": 0,
+            "total_decay_amount": 0.0,
+            "avg_decay_per_edge": 0.0,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+
+        decay_results = []
+
+        for edge in edges:
+            decay_info = await self.apply_decay_to_edge(edge)
+            decay_results.append(decay_info)
+
+            if decay_info["decay_amount"] > 0.01:
+                stats["edges_decayed"] += 1
+                stats["total_decay_amount"] += decay_info["decay_amount"]
+
+            if decay_info["decayed_strength"] < config.DECAY_MIN_STRENGTH:
+                stats["edges_below_threshold"] += 1
+
+        if stats["edges_decayed"] > 0:
+            stats["avg_decay_per_edge"] = stats["total_decay_amount"] / stats["edges_decayed"]
+
+        await self.db.commit()
+
+        stats["decay_results"] = decay_results[:10]  # Return first 10 for inspection
+
+        return stats
+
+    async def get_stale_relationships(
+        self,
+        threshold: Optional[float] = None,
+        days_inactive: Optional[int] = None
+    ) -> List[Dict]:
+        """Get relationships that have decayed below threshold or are inactive.
+
+        Args:
+            threshold: Strength threshold (defaults to config)
+            days_inactive: Days since last seen (defaults to 2x half-life)
+
+        Returns:
+            List of stale relationships with details
+        """
+        if threshold is None:
+            threshold = config.DECAY_MIN_STRENGTH
+
+        if days_inactive is None:
+            days_inactive = int(config.DECAY_HALF_LIFE_DAYS * 2)
+
+        cutoff_date = datetime.utcnow() - timedelta(days=days_inactive)
+
+        # Query edges below threshold or inactive
+        result = await self.db.execute(
+            select(KnowledgeEdge, KnowledgeNode.canonical_name.label("subject_name"))
+            .join(KnowledgeNode, KnowledgeEdge.subject_node_id == KnowledgeNode.id)
+            .where(
+                or_(
+                    KnowledgeEdge.strength < threshold,
+                    KnowledgeEdge.last_seen < cutoff_date
+                )
+            )
+            .order_by(KnowledgeEdge.strength.asc())
+        )
+
+        stale_rels = []
+        for edge, subject_name in result.all():
+            # Get object name
+            obj_result = await self.db.execute(
+                select(KnowledgeNode.canonical_name)
+                .where(KnowledgeNode.id == edge.object_node_id)
+            )
+            object_name = obj_result.scalar_one()
+
+            # Calculate decayed strength
+            decayed_strength = self.calculate_decayed_strength(
+                edge.strength,
+                edge.last_seen
+            )
+
+            stale_rels.append({
+                "subject": subject_name,
+                "predicate": edge.predicate,
+                "object": object_name,
+                "original_strength": edge.strength,
+                "decayed_strength": decayed_strength,
+                "last_seen": edge.last_seen.isoformat(),
+                "days_inactive": (datetime.utcnow() - edge.last_seen).days,
+                "is_stale": decayed_strength < threshold
+            })
+
+        return stale_rels
+
+    async def prune_stale_relationships(
+        self,
+        threshold: Optional[float] = None
+    ) -> Dict[str, Any]:
+        """Remove relationships that have decayed below threshold.
+
+        Args:
+            threshold: Strength threshold for removal (defaults to config)
+
+        Returns:
+            Statistics about pruning operation
+        """
+        if threshold is None:
+            threshold = config.DECAY_MIN_STRENGTH
+
+        # First apply decay to all edges
+        await self.apply_decay_to_all_edges()
+
+        # Count edges to be removed
+        count_result = await self.db.execute(
+            select(func.count(KnowledgeEdge.id))
+            .where(KnowledgeEdge.strength < threshold)
+        )
+        edges_to_remove = count_result.scalar()
+
+        # Delete edges below threshold
+        await self.db.execute(
+            update(KnowledgeEdge)
+            .where(KnowledgeEdge.strength < threshold)
+            .values(strength=0.0)  # Mark as pruned rather than deleting
+        )
+
+        await self.db.commit()
+
+        return {
+            "edges_pruned": edges_to_remove,
+            "threshold": threshold,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+
+    # ========================================================================
+    # ADVANCED FEATURE 2: SEMANTIC SIMILARITY WITH EMBEDDINGS
+    # ========================================================================
+
+    async def _find_candidates_with_embeddings(
+        self,
+        entity: Entity,
+        same_type_nodes: List[KnowledgeNode]
+    ) -> List[Tuple[KnowledgeNode, float]]:
+        """Find candidate nodes using semantic similarity.
+
+        Args:
+            entity: The entity to match
+            same_type_nodes: List of nodes of the same type
+
+        Returns:
+            List of (node, similarity_score) tuples
+        """
+        if not embedding_service.is_available():
+            return []
+
+        candidates = []
+
+        # Generate embedding for entity name
+        entity_emb = embedding_service.generate_embedding(entity.name)
+        if entity_emb is None:
+            return candidates
+
+        # Calculate similarity with each candidate
+        for node in same_type_nodes:
+            node_emb = embedding_service.generate_embedding(node.canonical_name)
+            if node_emb is None:
+                continue
+
+            similarity = embedding_service.calculate_similarity(entity_emb, node_emb)
+
+            if similarity >= config.SEMANTIC_SIMILARITY_THRESHOLD:
+                candidates.append((node, similarity))
+
+        # Sort by similarity descending
+        candidates.sort(key=lambda x: x[1], reverse=True)
+
+        return candidates
+
+    def _calculate_combined_similarity(
+        self,
+        entity: Entity,
+        node: KnowledgeNode,
+        string_similarity: float,
+        semantic_similarity: Optional[float] = None
+    ) -> float:
+        """Combine string and semantic similarity scores.
+
+        Uses weighted average:
+        - If semantic similarity available: 60% string, 40% semantic
+        - Otherwise: 100% string
+
+        Args:
+            entity: Entity to match
+            node: Candidate node
+            string_similarity: String-based similarity score
+            semantic_similarity: Optional semantic similarity score
+
+        Returns:
+            Combined similarity score
+        """
+        if semantic_similarity is None:
+            return string_similarity
+
+        # Weighted average: prioritize string similarity but boost with semantic
+        combined = (0.6 * string_similarity) + (0.4 * semantic_similarity)
+
+        return min(combined, 1.0)
