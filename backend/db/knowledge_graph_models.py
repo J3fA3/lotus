@@ -223,7 +223,7 @@ class TeamStructureEvolution(Base):
     # Indexes
     __table_args__ = (
         Index('idx_structure_type_name', 'structure_type', 'structure_name'),
-        Index('idx_mention_count', 'mention_count'),
+        Index('idx_team_mention_count', 'mention_count'),
     )
 
 

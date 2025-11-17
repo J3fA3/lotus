@@ -15,7 +15,7 @@ Key Principles:
 - Maintains historical context
 """
 
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, or_, update
 from datetime import datetime, timedelta

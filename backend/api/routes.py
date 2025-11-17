@@ -113,7 +113,7 @@ async def create_task(
 
     db.add(task)
     await db.commit()
-    await db.refresh(task)
+    await db.refresh(task, ['attachments', 'comments'])
 
     return _task_to_schema(task)
 
