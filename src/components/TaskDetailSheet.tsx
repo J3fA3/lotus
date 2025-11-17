@@ -25,6 +25,7 @@ import { toast } from "sonner";
 import { DocumentUpload } from "./DocumentUpload";
 import { DocumentList } from "./DocumentList";
 import { uploadDocument, listDocuments } from "@/api/tasks";
+import { ValueStreamCombobox } from "./ValueStreamCombobox";
 
 interface TaskDetailSheetProps {
   task: Task;
@@ -387,11 +388,11 @@ export const TaskDetailSheet = ({
               <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                 Value Stream
               </Label>
-              <Input
+              <ValueStreamCombobox
                 value={editedTask.valueStream || ""}
-                onChange={(e) => handleUpdate({ valueStream: e.target.value })}
-                placeholder="e.g., Marketing, Development"
-                className="h-10 border-border/50 focus:border-primary/50 transition-all duration-200 hover:border-primary/30"
+                onChange={(value) => handleUpdate({ valueStream: value })}
+                placeholder="Select or create value stream..."
+                className="w-full"
               />
             </div>
 

@@ -60,3 +60,11 @@ export interface KnowledgeBaseSummary {
   by_extension: Record<string, number>;
   last_updated: string;
 }
+
+export interface ValueStream {
+  id: string;
+  name: string;
+  color?: string;
+  createdAt: string;
+  updatedAt: string;
+}
