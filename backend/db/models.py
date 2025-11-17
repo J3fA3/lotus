@@ -93,3 +93,43 @@ class ShortcutConfig(Base):
     is_default = Column(Boolean, default=True)  # True if this is a default config
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class Document(Base):
+    """
+    Document storage model
+
+    Tracks uploaded documents with their metadata and relationships.
+    Physical files are stored on disk using DocumentStorage.
+    """
+    __tablename__ = "documents"
+
+    id = Column(String, primary_key=True)  # UUID
+    file_id = Column(String, nullable=False, unique=True)  # Storage file ID
+    original_filename = Column(String, nullable=False)
+    file_extension = Column(String, nullable=False)  # .pdf, .docx, etc.
+    mime_type = Column(String, nullable=True)
+    file_hash = Column(String, nullable=False)  # SHA-256 hash
+    size_bytes = Column(Integer, nullable=False)
+    storage_path = Column(String, nullable=False)  # Relative path in storage
+    category = Column(String, nullable=False)  # tasks, inference, knowledge
+
+    # Extracted content for search and AI
+    extracted_text = Column(Text, nullable=True)
+    text_preview = Column(String, nullable=True)  # First 500 chars
+
+    # Metadata
+    page_count = Column(Integer, nullable=True)  # For PDFs
+    metadata = Column(JSON, default=dict)  # Additional metadata
+
+    # Relationships
+    task_id = Column(String, ForeignKey("tasks.id", ondelete="CASCADE"), nullable=True)
+    inference_history_id = Column(Integer, ForeignKey("inference_history.id", ondelete="SET NULL"), nullable=True)
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    task = relationship("Task", backref="documents")
+    inference_history = relationship("InferenceHistory", backref="documents")
