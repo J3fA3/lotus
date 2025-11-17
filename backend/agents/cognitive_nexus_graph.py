@@ -48,7 +48,11 @@ class CognitiveNexusState(TypedDict):
     # Extracted data (from agents)
     extracted_entities: List[Dict]  # [{"name": "...", "type": "...", "confidence": 0.0-1.0}]
     inferred_relationships: List[Dict]  # [{"subject": "...", "predicate": "...", "object": "..."}]
-    generated_tasks: List[Dict]
+    generated_tasks: List[Dict]  # DEPRECATED: Use task_operations instead
+
+    # NEW: Task Integration (from Task Integration Agent)
+    existing_tasks: List[Dict]  # Tasks from database for matching
+    task_operations: List[Dict]  # [{"operation": "CREATE|UPDATE|COMMENT|ENRICH", "task_id": ..., "data": {...}}]
 
     # Quality metrics (from agent self-evaluation)
     entity_quality: float
@@ -460,84 +464,189 @@ async def relationship_synthesis_agent(state: CognitiveNexusState) -> Dict:
 
 
 # ============================================================================
-# AGENT 4: TASK INTELLIGENCE
+# AGENT 4: TASK INTEGRATION (UNIFIED CONTEXT-TO-TASK SYSTEM)
 # ============================================================================
 
-TASK_GENERATION_PROMPT = """Extract actionable tasks from conversation using provided context.
+TASK_INTEGRATION_PROMPT = """Analyze this conversation and determine how it should integrate with existing tasks.
 
-Known People: {people}
-Known Projects: {projects}
-
-Conversation:
+**CONTEXT TO ANALYZE:**
 {text}
 
-For each task:
-- Title: Concise action
-- Assignee: From known people (or "Unknown" if unclear)
-- Project: From known projects (or "General" if unclear)
-- Due date: ISO format YYYY-MM-DD (or null)
-- Priority: high/medium/low
+**EXTRACTED ENTITIES:**
+People: {people}
+Projects: {projects}
+Dates: {dates}
+
+**EXISTING TASKS:**
+{existing_tasks}
+
+**YOUR JOB:**
+For each piece of actionable content or context in the conversation, decide ONE operation:
+
+1. **CREATE** - New task needed (actionable item not covered by existing tasks)
+2. **UPDATE** - Updates existing task (new deadline, scope change, status update)
+3. **COMMENT** - Adds context to existing task (progress update, discussion, clarification)
+4. **ENRICH** - Just knowledge graph enrichment (no task action needed)
+
+**DECISION CRITERIA:**
+- CREATE if: Clear new action item not covered by existing tasks
+- UPDATE if: Changes core task properties (deadline, assignee, description, status)
+- COMMENT if: Related discussion/update but doesn't change task core
+- ENRICH if: Just contextual information with no task implications
 
 Output ONLY this JSON format:
 {{
-  "tasks": [
+  "operations": [
     {{
-      "title": "Send prototypes to Andy",
-      "assignee": "Jef Adriaenssens",
-      "project": "Just Deals",
-      "due_date": "2025-11-20",
-      "priority": "high"
+      "operation": "CREATE",
+      "task_id": null,
+      "reasoning": "New action item: send prototypes to Andy by Friday",
+      "data": {{
+        "title": "Send prototypes to Andy",
+        "assignee": "Jef Adriaenssens",
+        "project": "Just Deals",
+        "due_date": "2025-11-20",
+        "priority": "high",
+        "description": "Send design prototypes for review"
+      }}
+    }},
+    {{
+      "operation": "COMMENT",
+      "task_id": "task-123",
+      "reasoning": "Progress update on CRESCO data pipeline task",
+      "data": {{
+        "text": "Jef mentioned the API integration is 80% complete",
+        "author": "Cognitive Nexus"
+      }}
+    }},
+    {{
+      "operation": "UPDATE",
+      "task_id": "task-456",
+      "reasoning": "Deadline moved from Nov 20 to Nov 26",
+      "data": {{
+        "due_date": "2025-11-26",
+        "notes": "Deadline extended per meeting discussion"
+      }}
+    }},
+    {{
+      "operation": "ENRICH",
+      "task_id": null,
+      "reasoning": "General discussion about team structure, no task action needed",
+      "data": {{}}
     }}
   ]
 }}
 
-DO NOT include explanation.
+**CRITICAL RULES:**
+- If no actionable content: return ENRICH operation only
+- Match task_id carefully based on project/person/topic
+- Don't create duplicate tasks for same action
+- Prefer COMMENT/UPDATE over CREATE when task exists
+- Be conservative: when in doubt, use ENRICH
+
+DO NOT include explanation outside JSON.
 """
 
 
-async def task_intelligence_agent(state: CognitiveNexusState) -> Dict:
-    """Agent 4: Generates context-aware tasks using extracted entities.
+def calculate_task_similarity(context_project: str, context_person: str, task: Dict) -> float:
+    """Calculate similarity between context and existing task.
 
-    This agent uses the entities (people, projects) from earlier agents
-    to generate tasks with intelligent assignee and project suggestions.
-    It evaluates quality based on how many tasks have correct assignees
-    and project assignments.
+    Considers project name, assignee, and topic overlap.
 
     Returns:
-        State updates with tasks and quality score
+        Similarity score 0.0-1.0
+    """
+    score = 0.0
+
+    # Project match (40% weight)
+    task_project = task.get("value_stream", "") or task.get("description", "")
+    if context_project and context_project.lower() in task_project.lower():
+        score += 0.4
+    elif context_project and task.get("title", ""):
+        # Check title for project mention
+        if context_project.lower() in task["title"].lower():
+            score += 0.2
+
+    # Assignee match (30% weight)
+    task_assignee = task.get("assignee", "")
+    if context_person and context_person.lower() in task_assignee.lower():
+        score += 0.3
+
+    # Title/description keyword overlap (30% weight)
+    # This would benefit from semantic similarity but keeping it simple for now
+    context_keywords = set(context_project.lower().split() if context_project else [])
+    task_keywords = set((task.get("title", "") + " " + task.get("description", "")).lower().split())
+    if context_keywords and task_keywords:
+        overlap = len(context_keywords & task_keywords) / max(len(context_keywords), 1)
+        score += 0.3 * overlap
+
+    return min(score, 1.0)
+
+
+async def task_integration_agent(state: CognitiveNexusState) -> Dict:
+    """Agent 4: Unified Task Integration Agent - Creates OR updates tasks intelligently.
+
+    This is the critical agent that makes the system "living" - it doesn't just
+    create tasks, it understands when to:
+    - CREATE new tasks
+    - UPDATE existing tasks with new information
+    - ADD COMMENTS to existing tasks
+    - Just ENRICH knowledge graph without task action
+
+    The agent analyzes:
+    1. Extracted entities (people, projects, dates)
+    2. Existing tasks from database
+    3. Relationships between entities
+    4. Context implications
+
+    Then decides the best operations to perform.
+
+    Returns:
+        State updates with task_operations and quality score
     """
     reasoning = []
     entities = state["extracted_entities"]
+    relationships = state["inferred_relationships"]
+    existing_tasks = state.get("existing_tasks", [])
 
-    # Agent queries context for people and projects
+    # Extract context elements
     people = [e["name"] for e in entities if e["type"] == "PERSON"]
     projects = [e["name"] for e in entities if e["type"] == "PROJECT"]
+    dates = [e["name"] for e in entities if e["type"] == "DATE"]
 
-    reasoning.append(f"→ Context available: {len(people)} people, {len(projects)} projects")
+    reasoning.append(f"→ Analyzing context: {len(people)} people, {len(projects)} projects, {len(dates)} dates")
+    reasoning.append(f"→ Found {len(existing_tasks)} existing tasks to consider")
 
-    # Agent decides on context mode
-    if len(people) == 0:
-        reasoning.append("→ No people identified → assignees will default to 'Unknown'")
-        context_mode = "minimal"
+    # Build existing tasks summary for LLM
+    existing_tasks_summary = ""
+    if existing_tasks:
+        task_summaries = []
+        for task in existing_tasks[:10]:  # Limit to 10 most recent for context
+            summary = f"ID:{task['id'][:8]} | {task['title']} | Assignee:{task.get('assignee', 'None')} | Project:{task.get('value_stream', 'None')}"
+            task_summaries.append(summary)
+        existing_tasks_summary = "\n".join(task_summaries)
+        reasoning.append(f"→ Including {len(task_summaries)} recent tasks in analysis")
     else:
-        context_mode = "rich"
-        reasoning.append(f"→ Rich context available → will suggest from: {', '.join(people)}")
+        existing_tasks_summary = "No existing tasks"
+        reasoning.append("→ No existing tasks → any actionable items will be CREATE operations")
 
-    # Call Qwen 2.5 via Ollama
-    tasks = []
+    # Call Qwen 2.5 for intelligent task integration
+    operations = []
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=45.0) as client:
             response = await client.post(
                 "http://localhost:11434/api/generate",
                 json={
                     "model": "qwen2.5:7b-instruct",
-                    "prompt": TASK_GENERATION_PROMPT.format(
+                    "prompt": TASK_INTEGRATION_PROMPT.format(
+                        text=state["raw_context"],
                         people=", ".join(people) if people else "None",
                         projects=", ".join(projects) if projects else "None",
-                        text=state["raw_context"]
+                        dates=", ".join(dates) if dates else "None",
+                        existing_tasks=existing_tasks_summary
                     ),
                     "stream": False,
-                    "options": {"temperature": 0.2}
+                    "options": {"temperature": 0.3}  # Slightly higher for creative task matching
                 }
             )
 
@@ -549,27 +658,65 @@ async def task_intelligence_agent(state: CognitiveNexusState) -> Dict:
                 response_text = response_text.split("```json")[1].split("```")[0]
 
             data = json.loads(response_text.strip())
-            tasks = data.get("tasks", [])
+            operations = data.get("operations", [])
 
-            reasoning.append(f"→ Generated {len(tasks)} tasks from LLM")
+            reasoning.append(f"→ LLM proposed {len(operations)} operations")
+
+            # Log operation breakdown
+            op_counts = {}
+            for op in operations:
+                op_type = op.get("operation", "UNKNOWN")
+                op_counts[op_type] = op_counts.get(op_type, 0) + 1
+
+            for op_type, count in op_counts.items():
+                reasoning.append(f"  • {op_type}: {count}")
 
     except Exception as e:
-        reasoning.append(f"→ Task generation failed: {str(e)}")
-        tasks = []
+        reasoning.append(f"→ Task integration failed: {str(e)}")
+        operations = [{"operation": "ENRICH", "task_id": None, "reasoning": "Error in processing", "data": {}}]
 
-    # Agent evaluates task quality
-    tasks_with_assignees = sum(1 for t in tasks if t.get("assignee") != "Unknown")
-    tasks_with_projects = sum(1 for t in tasks if t.get("project") != "General")
+    # Validate and enhance operations
+    validated_operations = []
+    for op in operations:
+        operation_type = op.get("operation", "ENRICH")
 
-    # Quality based on context-aware assignments
-    quality = (tasks_with_assignees + tasks_with_projects) / (2 * max(len(tasks), 1)) if tasks else 0.0
+        # Validate task_id exists if UPDATE or COMMENT
+        if operation_type in ["UPDATE", "COMMENT"]:
+            task_id = op.get("task_id")
+            if task_id and not any(t["id"] == task_id for t in existing_tasks):
+                reasoning.append(f"⚠ Task ID {task_id} not found, converting {operation_type} to ENRICH")
+                operation_type = "ENRICH"
+                op["operation"] = "ENRICH"
+                op["reasoning"] = f"Task ID not found: {op.get('reasoning', '')}"
 
-    reasoning.append(f"→ Tasks with correct assignees: {tasks_with_assignees}/{len(tasks)}")
-    reasoning.append(f"→ Tasks with correct projects: {tasks_with_projects}/{len(tasks)}")
-    reasoning.append(f"→ Task quality: {quality:.2f}")
+        validated_operations.append(op)
+
+    # Calculate quality based on operation appropriateness
+    create_count = sum(1 for op in validated_operations if op["operation"] == "CREATE")
+    update_count = sum(1 for op in validated_operations if op["operation"] == "UPDATE")
+    comment_count = sum(1 for op in validated_operations if op["operation"] == "COMMENT")
+    enrich_count = sum(1 for op in validated_operations if op["operation"] == "ENRICH")
+
+    # Quality: reward appropriate mix of operations
+    # If all ENRICH with entities present -> low quality (missed opportunities)
+    # If balanced operations -> high quality
+    has_entities = len(people) + len(projects) > 0
+    total_ops = len(validated_operations)
+
+    if total_ops == 0:
+        quality = 0.0
+    elif has_entities and enrich_count == total_ops:
+        quality = 0.3  # Low quality: missed task opportunities
+    elif create_count + update_count + comment_count > 0:
+        quality = min(0.7 + (0.3 * (create_count + update_count + comment_count) / total_ops), 1.0)
+    else:
+        quality = 0.5
+
+    reasoning.append(f"→ Task integration quality: {quality:.2f}")
 
     return {
-        "generated_tasks": tasks,
+        "task_operations": validated_operations,
+        "generated_tasks": [],  # Deprecated, kept for compatibility
         "task_quality": quality,
         "reasoning_steps": reasoning
     }
@@ -586,7 +733,7 @@ def create_cognitive_nexus_graph():
     1. Context Analysis Agent - decides strategy
     2. Entity Extraction Agent - extracts entities with retry logic
     3. Relationship Synthesis Agent - infers relationships
-    4. Task Intelligence Agent - generates context-aware tasks
+    4. Task Integration Agent - intelligently creates OR updates tasks
 
     The graph includes conditional routing for entity extraction retry loops.
 
@@ -599,7 +746,7 @@ def create_cognitive_nexus_graph():
     workflow.add_node("analyze_context", context_analysis_agent)
     workflow.add_node("extract_entities", entity_extraction_agent)
     workflow.add_node("infer_relationships", relationship_synthesis_agent)
-    workflow.add_node("generate_tasks", task_intelligence_agent)
+    workflow.add_node("integrate_tasks", task_integration_agent)
 
     # Define linear flow
     workflow.set_entry_point("analyze_context")
@@ -622,8 +769,8 @@ def create_cognitive_nexus_graph():
     )
 
     # Continue linear flow
-    workflow.add_edge("infer_relationships", "generate_tasks")
-    workflow.add_edge("generate_tasks", END)
+    workflow.add_edge("infer_relationships", "integrate_tasks")
+    workflow.add_edge("integrate_tasks", END)
 
     # Compile and return
     return workflow.compile()
@@ -633,20 +780,31 @@ def create_cognitive_nexus_graph():
 # PUBLIC API
 # ============================================================================
 
-async def process_context(text: str, source_type: str = "manual", source_identifier: Optional[str] = None) -> Dict:
+async def process_context(
+    text: str,
+    source_type: str = "manual",
+    source_identifier: Optional[str] = None,
+    existing_tasks: Optional[List[Dict]] = None
+) -> Dict:
     """Process context through the cognitive nexus agent graph.
 
-    This is the main entry point for the agentic system. It creates
-    the initial state, runs all agents through the graph, and returns
-    the final state with entities, relationships, tasks, and reasoning.
+    This is the main entry point for the unified task management system.
+    It creates the initial state, runs all agents through the graph, and
+    returns the final state with entities, relationships, task operations,
+    and reasoning.
 
     Args:
         text: The raw context to process
         source_type: Type of source ("slack", "transcript", "manual")
         source_identifier: Optional identifier for the source
+        existing_tasks: List of existing tasks for smart integration
 
     Returns:
-        Final state dictionary with all extracted data and reasoning
+        Final state dictionary with:
+        - extracted_entities: Entities found in context
+        - inferred_relationships: Relationships between entities
+        - task_operations: CREATE/UPDATE/COMMENT/ENRICH operations
+        - reasoning_steps: Transparent agent decision-making
     """
     graph = create_cognitive_nexus_graph()
 
@@ -660,7 +818,9 @@ async def process_context(text: str, source_type: str = "manual", source_identif
         # Initialize optional fields
         "extracted_entities": [],
         "inferred_relationships": [],
-        "generated_tasks": [],
+        "generated_tasks": [],  # Deprecated
+        "existing_tasks": existing_tasks or [],  # NEW: For task integration
+        "task_operations": [],  # NEW: Smart task operations
         "entity_quality": 0.0,
         "relationship_quality": 0.0,
         "task_quality": 0.0,

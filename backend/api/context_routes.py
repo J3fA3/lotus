@@ -15,11 +15,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict
 import json
+from datetime import datetime
 
 from db.database import get_db
-from db.models import ContextItem, Entity, Relationship
+from db.models import ContextItem, Entity, Relationship, Task, Comment
 from agents.cognitive_nexus_graph import process_context
 from services.knowledge_graph_service import KnowledgeGraphService
+import uuid
 
 
 # ============================================================================
@@ -47,7 +49,9 @@ class ContextIngestResponse(BaseModel):
     context_item_id: int
     entities_extracted: int
     relationships_inferred: int
-    tasks_generated: int
+    tasks_created: int
+    tasks_updated: int
+    comments_added: int
     quality_metrics: Dict[str, float]
     reasoning_steps: List[str]
 
@@ -94,18 +98,43 @@ async def ingest_context(
     Process context through the LangGraph agent system.
 
     This endpoint:
-    1. Runs the context through all 4 agents (analysis, extraction, relationships, tasks)
-    2. Stores results in the database
-    3. Returns quality metrics and reasoning trace
+    1. Queries existing tasks for intelligent task integration
+    2. Runs the context through all 4 agents (analysis, extraction, relationships, task integration)
+    3. Stores results in the database
+    4. Executes task operations (CREATE/UPDATE/COMMENT/ENRICH)
+    5. Returns quality metrics and reasoning trace
 
     The system uses self-evaluation and retry loops to ensure quality.
     """
     try:
-        # Run LangGraph agents
+        # Query existing tasks for task integration agent
+        result = await db.execute(
+            select(Task)
+            .order_by(Task.updated_at.desc())
+            .limit(50)  # Consider last 50 tasks for matching
+        )
+        existing_tasks_models = result.scalars().all()
+
+        # Convert to dict format for agent
+        existing_tasks = [
+            {
+                "id": task.id,
+                "title": task.title,
+                "assignee": task.assignee,
+                "value_stream": task.value_stream,
+                "description": task.description,
+                "status": task.status,
+                "due_date": task.due_date  # Already a string in the model
+            }
+            for task in existing_tasks_models
+        ]
+
+        # Run LangGraph agents with existing tasks
         final_state = await process_context(
             text=request.content,
             source_type=request.source_type,
-            source_identifier=request.source_identifier
+            source_identifier=request.source_identifier,
+            existing_tasks=existing_tasks
         )
 
         # Create ContextItem
@@ -172,13 +201,79 @@ async def ingest_context(
                     context_item_id=context_item.id
                 )
 
+        # Execute task operations (CREATE/UPDATE/COMMENT/ENRICH)
+        task_operations = final_state.get("task_operations", [])
+        tasks_created = 0
+        tasks_updated = 0
+        comments_added = 0
+
+        for operation in task_operations:
+            op_type = operation.get("operation")
+            task_id = operation.get("task_id")
+            data = operation.get("data", {})
+
+            if op_type == "CREATE":
+                # Create new task
+                new_task = Task(
+                    id=str(uuid.uuid4()),
+                    title=data.get("title", "Untitled Task"),
+                    assignee=data.get("assignee", "Unknown"),
+                    value_stream=data.get("project", "General"),
+                    due_date=data.get("due_date"),  # Already in string format
+                    description=data.get("description", ""),
+                    notes=data.get("notes", ""),
+                    status="todo",
+                    created_at=datetime.utcnow(),
+                    updated_at=datetime.utcnow()
+                )
+                db.add(new_task)
+                await db.flush()
+                tasks_created += 1
+
+            elif op_type == "UPDATE" and task_id:
+                # Update existing task
+                task_result = await db.execute(select(Task).where(Task.id == task_id))
+                task = task_result.scalar_one_or_none()
+                if task:
+                    if "due_date" in data:
+                        task.due_date = data["due_date"]  # Already in string format
+                    if "description" in data:
+                        task.description = data["description"]
+                    if "notes" in data:
+                        # Append to existing notes
+                        existing_notes = task.notes or ""
+                        task.notes = f"{existing_notes}\n\n{data['notes']}" if existing_notes else data["notes"]
+                    if "status" in data:
+                        task.status = data["status"]
+                    if "title" in data:
+                        task.title = data["title"]
+                    task.updated_at = datetime.utcnow()
+                    tasks_updated += 1
+
+            elif op_type == "COMMENT" and task_id:
+                # Add comment to existing task
+                comment = Comment(
+                    id=str(uuid.uuid4()),
+                    task_id=task_id,
+                    text=data.get("text", ""),
+                    author=data.get("author", "Cognitive Nexus"),
+                    created_at=datetime.utcnow()
+                )
+                db.add(comment)
+                await db.flush()
+                comments_added += 1
+
+            # ENRICH operation: no task action needed (knowledge graph already updated)
+
         await db.commit()
 
         return ContextIngestResponse(
             context_item_id=context_item.id,
             entities_extracted=len(final_state.get("extracted_entities", [])),
             relationships_inferred=len(final_state.get("inferred_relationships", [])),
-            tasks_generated=len(final_state.get("generated_tasks", [])),
+            tasks_created=tasks_created,
+            tasks_updated=tasks_updated,
+            comments_added=comments_added,
             quality_metrics={
                 "entity_quality": final_state.get("entity_quality", 0.0),
                 "relationship_quality": final_state.get("relationship_quality", 0.0),
