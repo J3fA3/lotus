@@ -40,13 +40,15 @@ from db.default_shortcuts import get_default_shortcuts
 from agents.task_extractor import TaskExtractor
 from agents.pdf_processor import PDFProcessor
 
-# Import Cognitive Nexus context router
+# Import Cognitive Nexus routers
 from api.context_routes import router as context_router
+from api.knowledge_routes import router as knowledge_router
 
 router = APIRouter()
 
-# Include Cognitive Nexus context routes
+# Include Cognitive Nexus routes
 router.include_router(context_router)
+router.include_router(knowledge_router)
 
 # Initialize AI components
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")

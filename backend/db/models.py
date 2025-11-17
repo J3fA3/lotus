@@ -169,7 +169,7 @@ class Entity(Base):
     name = Column(String(255), nullable=False, index=True)
     type = Column(String(50), nullable=False, index=True)  # PERSON, PROJECT, TEAM, DATE
     confidence = Column(Float, nullable=True, default=1.0)
-    metadata = Column(JSON, nullable=True)  # Team metadata: pillar, team_name, role
+    entity_metadata = Column(JSON, nullable=True)  # Team metadata: pillar, team_name, role
     context_item_id = Column(Integer, ForeignKey("context_items.id", ondelete="CASCADE"), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
 

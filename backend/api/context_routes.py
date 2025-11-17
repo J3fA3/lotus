@@ -19,6 +19,7 @@ import json
 from db.database import get_db
 from db.models import ContextItem, Entity, Relationship
 from agents.cognitive_nexus_graph import process_context
+from services.knowledge_graph_service import KnowledgeGraphService
 
 
 # ============================================================================
@@ -122,34 +123,54 @@ async def ingest_context(
         db.add(context_item)
         await db.flush()
 
-        # Store entities
-        entity_map = {}
+        # Initialize Knowledge Graph Service
+        kg_service = KnowledgeGraphService(db)
+
+        # Store entities and merge into knowledge graph
+        entity_map = {}  # Maps entity name -> entity object
         for entity_data in final_state.get("extracted_entities", []):
             entity = Entity(
                 name=entity_data["name"],
                 type=entity_data["type"],
                 confidence=entity_data.get("confidence", 1.0),
-                metadata=entity_data.get("metadata"),  # Store team metadata
+                entity_metadata=entity_data.get("metadata"),  # Store team metadata
                 context_item_id=context_item.id
             )
             db.add(entity)
             await db.flush()
-            entity_map[entity_data["name"]] = entity.id
 
-        # Store relationships
+            # Merge entity into knowledge graph (cross-context persistence!)
+            await kg_service.merge_entity_to_knowledge_graph(entity)
+
+            entity_map[entity_data["name"]] = entity
+
+        # Store relationships and aggregate into knowledge graph
         for rel_data in final_state.get("inferred_relationships", []):
             subject_name = rel_data.get("subject")
             object_name = rel_data.get("object")
 
             if subject_name in entity_map and object_name in entity_map:
+                subject_entity = entity_map[subject_name]
+                object_entity = entity_map[object_name]
+
                 relationship = Relationship(
-                    subject_entity_id=entity_map[subject_name],
+                    subject_entity_id=subject_entity.id,
                     predicate=rel_data["predicate"],
-                    object_entity_id=entity_map[object_name],
+                    object_entity_id=object_entity.id,
                     confidence=rel_data.get("confidence", 1.0),
                     context_item_id=context_item.id
                 )
                 db.add(relationship)
+                await db.flush()
+
+                # Aggregate relationship into knowledge graph (track strength over time!)
+                await kg_service.aggregate_relationship(
+                    subject_entity=subject_entity,
+                    predicate=rel_data["predicate"],
+                    object_entity=object_entity,
+                    confidence=rel_data.get("confidence", 1.0),
+                    context_item_id=context_item.id
+                )
 
         await db.commit()
 
