@@ -3,13 +3,23 @@
  */
 
 /**
+ * Team metadata for hierarchical team entities
+ */
+export interface TeamMetadata {
+  pillar?: string;        // e.g., "Customer Pillar", "Partner Pillar"
+  team_name?: string;     // e.g., "Menu Team", "Search Team"
+  role?: string;          // e.g., "Engineering", "Product", "Research"
+}
+
+/**
  * Entity extracted by the Entity Extraction Agent
  */
 export interface Entity {
   id: number;
   name: string;
-  type: "PERSON" | "PROJECT" | "COMPANY" | "DATE";
+  type: "PERSON" | "PROJECT" | "TEAM" | "DATE";
   confidence: number;
+  metadata?: TeamMetadata;  // Optional team hierarchy metadata
   created_at: string;
 }
 

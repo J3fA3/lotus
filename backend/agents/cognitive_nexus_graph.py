@@ -179,14 +179,14 @@ SIMPLE_ENTITY_PROMPT = """Extract entities from text. Output JSON only.
 Entity Types:
 - PERSON: Full names (e.g., "Jef Adriaenssens")
 - PROJECT: Project names (e.g., "CRESCO", "Just Deals")
-- COMPANY: Organizations (e.g., "Co-op", "Sainsbury's")
+- TEAM: Organizational teams/pillars/roles (e.g., "Customer Pillar", "Menu Team", "Engineering")
 - DATE: Deadlines (e.g., "November 26th", "tomorrow")
 
 TEXT:
 {text}
 
 Output ONLY this JSON format:
-{{"entities": [{{"name": "...", "type": "PERSON|PROJECT|COMPANY|DATE"}}, ...]}}
+{{"entities": [{{"name": "Menu Team", "type": "TEAM"}}, {{"name": "Jef", "type": "PERSON"}}, ...]}}
 
 DO NOT include explanation.
 """
@@ -196,20 +196,35 @@ DETAILED_ENTITY_PROMPT = """You are an expert entity extractor. Extract ALL enti
 Entity Types & Examples:
 - PERSON: Full names only. "Jef Adriaenssens", "Andy Maclean", NOT "Jef"
 - PROJECT: Project codenames. "CRESCO", "Just Deals", "RF16"
-- COMPANY: Organizations. "Co-op", "Sainsbury's", "Google", "JustEat Takeaway"
+- TEAM: Organizational teams with hierarchy metadata
+  * Pillars: "Customer Pillar", "Partner Pillar", "Ventures Pillar"
+  * Teams: "Menu Team", "Search Team", "Platform Team", "Growth Team"
+  * Roles/Contexts: "Engineering", "Product", "Research", "Sales", "Design"
+  * Can include metadata: {{"pillar": "Customer Pillar", "team_name": "Menu Team", "role": "Engineering"}}
 - DATE: Specific dates or deadline phrases. "November 26th", "end of next week", "tomorrow", "Friday"
 
 Rules:
 1. Extract full names, not nicknames
-2. Normalize capitalization (e.g., "co-op" → "Co-op")
-3. Include all mentioned entities, even if repeated
-4. Only extract explicitly mentioned entities
+2. For TEAM entities, capture hierarchy when mentioned:
+   - If "Customer Pillar's Menu Team" → extract "Menu Team" with pillar metadata
+   - If "Engineering team" → extract "Engineering" as TEAM with role metadata
+   - If "Product" → extract as TEAM with role="Product"
+3. Normalize capitalization
+4. Include all mentioned entities, even if repeated
+5. Only extract explicitly mentioned entities
 
 TEXT:
 {text}
 
-Output ONLY this JSON format:
-{{"entities": [{{"name": "Jef Adriaenssens", "type": "PERSON"}}, {{"name": "CRESCO", "type": "PROJECT"}}, ...]}}
+Output ONLY this JSON format with optional metadata:
+{{
+  "entities": [
+    {{"name": "Jef Adriaenssens", "type": "PERSON"}},
+    {{"name": "CRESCO", "type": "PROJECT"}},
+    {{"name": "Menu Team", "type": "TEAM", "metadata": {{"pillar": "Customer Pillar", "team_name": "Menu Team"}}}},
+    {{"name": "Engineering", "type": "TEAM", "metadata": {{"role": "Engineering"}}}}
+  ]
+}}
 
 DO NOT include explanation or commentary.
 """
@@ -280,7 +295,7 @@ async def entity_extraction_agent(state: CognitiveNexusState) -> Dict:
         issues.append(f"Only found {len(entities)}/{expected_count} expected entities")
 
     # Check for proper entity types
-    valid_types = {"PERSON", "PROJECT", "COMPANY", "DATE"}
+    valid_types = {"PERSON", "PROJECT", "TEAM", "DATE"}
     invalid_entities = [e for e in entities if e.get("type") not in valid_types]
     if invalid_entities:
         issues.append(f"{len(invalid_entities)} entities have invalid types")

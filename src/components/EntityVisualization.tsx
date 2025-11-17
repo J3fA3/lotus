@@ -24,7 +24,7 @@ export const EntityVisualization = ({
         return <User className="h-4 w-4" />;
       case "PROJECT":
         return <Briefcase className="h-4 w-4" />;
-      case "COMPANY":
+      case "TEAM":
         return <Building className="h-4 w-4" />;
       case "DATE":
         return <Calendar className="h-4 w-4" />;
@@ -39,7 +39,7 @@ export const EntityVisualization = ({
         return "bg-blue-100 text-blue-800 border-blue-300";
       case "PROJECT":
         return "bg-purple-100 text-purple-800 border-purple-300";
-      case "COMPANY":
+      case "TEAM":
         return "bg-green-100 text-green-800 border-green-300";
       case "DATE":
         return "bg-orange-100 text-orange-800 border-orange-300";
@@ -72,7 +72,17 @@ export const EntityVisualization = ({
     return acc;
   }, {} as Record<string, Entity[]>);
 
-  const entityTypes = ["PERSON", "PROJECT", "COMPANY", "DATE"];
+  const entityTypes = ["PERSON", "PROJECT", "TEAM", "DATE"];
+
+  // Format team metadata for display
+  const formatTeamMetadata = (metadata: any): string => {
+    if (!metadata) return "";
+    const parts = [];
+    if (metadata.pillar) parts.push(metadata.pillar);
+    if (metadata.team_name) parts.push(metadata.team_name);
+    if (metadata.role) parts.push(metadata.role);
+    return parts.join(" / ");
+  };
 
   return (
     <Card>
@@ -110,18 +120,24 @@ export const EntityVisualization = ({
                   </div>
                   <div className="flex flex-wrap gap-2 pl-6">
                     {typeEntities.map((entity) => (
-                      <Badge
-                        key={entity.id}
-                        variant="outline"
-                        className={`${getEntityColor(entity.type)} px-3 py-1`}
-                      >
-                        {entity.name}
-                        {entity.confidence < 1.0 && (
-                          <span className="ml-1 text-xs opacity-70">
-                            ({(entity.confidence * 100).toFixed(0)}%)
+                      <div key={entity.id} className="flex flex-col gap-0.5">
+                        <Badge
+                          variant="outline"
+                          className={`${getEntityColor(entity.type)} px-3 py-1`}
+                        >
+                          {entity.name}
+                          {entity.confidence < 1.0 && (
+                            <span className="ml-1 text-xs opacity-70">
+                              ({(entity.confidence * 100).toFixed(0)}%)
+                            </span>
+                          )}
+                        </Badge>
+                        {entity.type === "TEAM" && entity.metadata && (
+                          <span className="text-xs text-muted-foreground pl-1">
+                            {formatTeamMetadata(entity.metadata)}
                           </span>
                         )}
-                      </Badge>
+                      </div>
                     ))}
                   </div>
                 </div>
@@ -170,7 +186,7 @@ export const EntityVisualization = ({
 
         <div className="pt-4 border-t mt-4">
           <div className="text-xs text-muted-foreground">
-            <strong>Smart Extraction:</strong> Agents use context complexity to choose between fast and detailed extraction strategies.
+            <strong>Smart Extraction:</strong> Agents extract hierarchical team data (pillars, teams, roles) and use context complexity to choose between fast and detailed extraction strategies.
           </div>
         </div>
       </CardContent>

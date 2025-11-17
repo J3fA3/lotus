@@ -139,8 +139,24 @@ class ContextItem(Base):
 class Entity(Base):
     """Stores entities extracted by the Entity Extraction Agent.
 
-    Entities are named entities like people, projects, companies, or dates
+    Entities are named entities like people, projects, teams, or dates
     that are extracted from context using the LangGraph agent system.
+
+    Entity Types:
+    - PERSON: People (e.g., "Jef Adriaenssens", "Andy Maclean")
+    - PROJECT: Projects (e.g., "CRESCO", "Just Deals")
+    - TEAM: Organizational teams with hierarchical metadata
+      * Pillar level: "Customer Pillar", "Partner Pillar", "Ventures Pillar"
+      * Team level: "Menu Team", "Search Team", "Platform Team"
+      * Role/Context: "Engineering", "Product", "Research", "Sales"
+    - DATE: Deadlines and dates (e.g., "November 26th", "Friday")
+
+    Team Metadata (JSON):
+    {
+        "pillar": "Customer Pillar",  # Optional
+        "team_name": "Menu Team",     # Optional
+        "role": "Engineering"          # Optional: engineering, product, research, sales, etc.
+    }
 
     Relationships:
     - context_item: Many-to-one with ContextItem
@@ -151,8 +167,9 @@ class Entity(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String(255), nullable=False, index=True)
-    type = Column(String(50), nullable=False, index=True)  # PERSON, PROJECT, COMPANY, DATE
+    type = Column(String(50), nullable=False, index=True)  # PERSON, PROJECT, TEAM, DATE
     confidence = Column(Float, nullable=True, default=1.0)
+    metadata = Column(JSON, nullable=True)  # Team metadata: pillar, team_name, role
     context_item_id = Column(Integer, ForeignKey("context_items.id", ondelete="CASCADE"), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
 

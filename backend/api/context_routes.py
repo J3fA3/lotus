@@ -129,6 +129,7 @@ async def ingest_context(
                 name=entity_data["name"],
                 type=entity_data["type"],
                 confidence=entity_data.get("confidence", 1.0),
+                metadata=entity_data.get("metadata"),  # Store team metadata
                 context_item_id=context_item.id
             )
             db.add(entity)
