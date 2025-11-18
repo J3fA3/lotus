@@ -12,6 +12,7 @@ import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import type { TaskProposal } from "../api/assistant";
 import { format } from "date-fns";
+import "./rich-text-editor.css";
 
 interface ProposedTaskCardProps {
   task: TaskProposal;
@@ -79,9 +80,10 @@ const ProposedTaskCard: React.FC<ProposedTaskCardProps> = ({
       {/* Main content */}
       <div className="pl-3">
         <div className="flex items-start justify-between gap-3 mb-3">
-          <h3 className="font-medium text-[15px] text-card-foreground leading-snug tracking-tight group-hover:text-lotus-green transition-colors duration-300 flex-1">
-            {task.title}
-          </h3>
+          <h3
+            className="font-medium text-[15px] text-card-foreground leading-snug tracking-tight group-hover:text-lotus-green transition-colors duration-300 flex-1"
+            dangerouslySetInnerHTML={{ __html: task.title }}
+          />
 
           {/* Confidence indicator */}
           <div className="flex items-center gap-1.5 flex-shrink-0">

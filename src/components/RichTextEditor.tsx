@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useEditor, EditorContent, Editor, Extension } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { Table } from '@tiptap/extension-table';
@@ -15,6 +15,7 @@ import Suggestion from '@tiptap/suggestion';
 
 import { SlashCommandMenu, MenuItem } from './RichTextEditorMenu';
 import { WordArt, WORD_ART_STYLES } from './WordArtExtension';
+import { TableMenu } from './TableMenu';
 import './rich-text-editor.css';
 
 const lowlight = createLowlight(common);
@@ -438,9 +439,32 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
   }, [content, editor]);
 
   const variantClass = variant === 'full' ? 'full-featured' : variant === 'title' ? 'title' : 'minimal';
+  const [showTableMenu, setShowTableMenu] = useState(false);
+
+  // Check if we're in a table
+  useEffect(() => {
+    if (!editor) return;
+
+    const updateTableState = () => {
+      setShowTableMenu(editor.isActive('table'));
+    };
+
+    editor.on('selectionUpdate', updateTableState);
+    editor.on('transaction', updateTableState);
+
+    return () => {
+      editor.off('selectionUpdate', updateTableState);
+      editor.off('transaction', updateTableState);
+    };
+  }, [editor]);
 
   return (
     <div className={`rich-text-editor ${variantClass} ${className}`}>
+      {editor && variant === 'full' && showTableMenu && (
+        <div className="mb-2">
+          <TableMenu editor={editor} />
+        </div>
+      )}
       <EditorContent editor={editor} />
     </div>
   );
