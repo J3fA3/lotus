@@ -5,7 +5,7 @@ export interface MenuItem {
   title: string;
   description: string;
   icon: string;
-  command: (editor: Editor) => void;
+  command: ({ editor, range }: { editor: Editor; range: any }) => void;
   keywords?: string[];
 }
 

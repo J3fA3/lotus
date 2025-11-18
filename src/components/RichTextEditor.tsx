@@ -39,8 +39,13 @@ const getMenuItems = (editor: Editor, variant?: string): MenuItem[] => {
         description: 'Retro-styled text formatting',
         icon: style.preview,
         keywords: ['wordart', 'word', 'art', 'style', 'retro', style.name.toLowerCase()],
-        command: (editor) => {
-          editor.chain().focus().setWordArt(style.id).run();
+        command: ({ editor, range }) => {
+          editor
+            .chain()
+            .focus()
+            .deleteRange(range)
+            .setWordArt(style.id)
+            .run();
         },
       });
     });
@@ -51,8 +56,13 @@ const getMenuItems = (editor: Editor, variant?: string): MenuItem[] => {
       description: 'Remove Word Art styling',
       icon: 'T',
       keywords: ['plain', 'text', 'normal', 'remove', 'clear'],
-      command: (editor) => {
-        editor.chain().focus().setParagraph().run();
+      command: ({ editor, range }) => {
+        editor
+          .chain()
+          .focus()
+          .deleteRange(range)
+          .setParagraph()
+          .run();
       },
     });
 
@@ -67,8 +77,13 @@ const getMenuItems = (editor: Editor, variant?: string): MenuItem[] => {
       description: 'Large section heading',
       icon: 'H1',
       keywords: ['h1', 'heading', 'title', 'large'],
-      command: (editor) => {
-        editor.chain().focus().toggleHeading({ level: 1 }).run();
+      command: ({ editor, range }) => {
+        editor
+          .chain()
+          .focus()
+          .deleteRange(range)
+          .setHeading({ level: 1 })
+          .run();
       },
     },
     {
@@ -76,8 +91,13 @@ const getMenuItems = (editor: Editor, variant?: string): MenuItem[] => {
       description: 'Medium section heading',
       icon: 'H2',
       keywords: ['h2', 'heading', 'subtitle', 'medium'],
-      command: (editor) => {
-        editor.chain().focus().toggleHeading({ level: 2 }).run();
+      command: ({ editor, range }) => {
+        editor
+          .chain()
+          .focus()
+          .deleteRange(range)
+          .setHeading({ level: 2 })
+          .run();
       },
     },
     {
@@ -85,8 +105,13 @@ const getMenuItems = (editor: Editor, variant?: string): MenuItem[] => {
       description: 'Small section heading',
       icon: 'H3',
       keywords: ['h3', 'heading', 'small'],
-      command: (editor) => {
-        editor.chain().focus().toggleHeading({ level: 3 }).run();
+      command: ({ editor, range }) => {
+        editor
+          .chain()
+          .focus()
+          .deleteRange(range)
+          .setHeading({ level: 3 })
+          .run();
       },
     },
 
@@ -96,8 +121,13 @@ const getMenuItems = (editor: Editor, variant?: string): MenuItem[] => {
       description: 'Create a bullet point list',
       icon: '•',
       keywords: ['bullet', 'list', 'ul', 'unordered'],
-      command: (editor) => {
-        editor.chain().focus().toggleBulletList().run();
+      command: ({ editor, range }) => {
+        editor
+          .chain()
+          .focus()
+          .deleteRange(range)
+          .toggleBulletList()
+          .run();
       },
     },
     {
@@ -105,8 +135,13 @@ const getMenuItems = (editor: Editor, variant?: string): MenuItem[] => {
       description: 'Create a numbered list',
       icon: '1.',
       keywords: ['number', 'list', 'ol', 'ordered'],
-      command: (editor) => {
-        editor.chain().focus().toggleOrderedList().run();
+      command: ({ editor, range }) => {
+        editor
+          .chain()
+          .focus()
+          .deleteRange(range)
+          .toggleOrderedList()
+          .run();
       },
     },
 
@@ -116,8 +151,13 @@ const getMenuItems = (editor: Editor, variant?: string): MenuItem[] => {
       description: 'Insert a code block with syntax highlighting',
       icon: '</>',
       keywords: ['code', 'block', 'programming', 'syntax'],
-      command: (editor) => {
-        editor.chain().focus().toggleCodeBlock().run();
+      command: ({ editor, range }) => {
+        editor
+          .chain()
+          .focus()
+          .deleteRange(range)
+          .toggleCodeBlock()
+          .run();
       },
     },
 
@@ -127,8 +167,13 @@ const getMenuItems = (editor: Editor, variant?: string): MenuItem[] => {
       description: 'Insert a blockquote',
       icon: '"',
       keywords: ['quote', 'blockquote', 'citation'],
-      command: (editor) => {
-        editor.chain().focus().toggleBlockquote().run();
+      command: ({ editor, range }) => {
+        editor
+          .chain()
+          .focus()
+          .deleteRange(range)
+          .toggleBlockquote()
+          .run();
       },
     },
 
@@ -138,8 +183,13 @@ const getMenuItems = (editor: Editor, variant?: string): MenuItem[] => {
       description: 'Insert a horizontal line',
       icon: '—',
       keywords: ['divider', 'line', 'hr', 'separator'],
-      command: (editor) => {
-        editor.chain().focus().setHorizontalRule().run();
+      command: ({ editor, range }) => {
+        editor
+          .chain()
+          .focus()
+          .deleteRange(range)
+          .setHorizontalRule()
+          .run();
       },
     }
   );
@@ -151,8 +201,13 @@ const getMenuItems = (editor: Editor, variant?: string): MenuItem[] => {
       description: 'Retro-styled text formatting',
       icon: style.preview,
       keywords: ['wordart', 'word', 'art', 'style', 'retro', style.name.toLowerCase()],
-      command: (editor) => {
-        editor.chain().focus().setWordArt(style.id).run();
+      command: ({ editor, range }) => {
+        editor
+          .chain()
+          .focus()
+          .deleteRange(range)
+          .setWordArt(style.id)
+          .run();
       },
     });
   });
@@ -164,8 +219,13 @@ const getMenuItems = (editor: Editor, variant?: string): MenuItem[] => {
       description: 'Insert a table',
       icon: '⊞',
       keywords: ['table', 'grid', 'spreadsheet'],
-      command: (editor) => {
-        editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
+      command: ({ editor, range }) => {
+        editor
+          .chain()
+          .focus()
+          .deleteRange(range)
+          .insertTable({ rows: 3, cols: 3, withHeaderRow: true })
+          .run();
       },
     });
   }
@@ -184,6 +244,8 @@ const createSlashCommand = (variant?: string) => Extension.create({
         char: '/',
         startOfLine: false,
         command: ({ editor, range, props }: any) => {
+          // props is the selected menu item
+          // Execute the item's command with editor and range
           props.command({ editor, range });
         },
         items: ({ query, editor }: { query: string; editor: Editor }) => {
@@ -205,22 +267,7 @@ const createSlashCommand = (variant?: string) => Extension.create({
               component = new ReactRenderer(SlashCommandMenu, {
                 props: {
                   ...props,
-                  items: getMenuItems(props.editor, variant).map((item) => ({
-                    ...item,
-                    command: () => {
-                      // Delete the slash and query text FIRST, then execute command
-                      props.editor
-                        .chain()
-                        .focus()
-                        .deleteRange(props.range)
-                        .run();
-
-                      // Small delay to ensure deletion completes before command
-                      setTimeout(() => {
-                        item.command(props.editor);
-                      }, 10);
-                    },
-                  })),
+                  items: getMenuItems(props.editor, variant),
                 },
                 editor: props.editor,
               });
@@ -243,22 +290,7 @@ const createSlashCommand = (variant?: string) => Extension.create({
             onUpdate(props: any) {
               component.updateProps({
                 ...props,
-                items: getMenuItems(props.editor, variant).map((item) => ({
-                  ...item,
-                  command: () => {
-                    // Delete the slash and query text FIRST, then execute command
-                    props.editor
-                      .chain()
-                      .focus()
-                      .deleteRange(props.range)
-                      .run();
-
-                    // Small delay to ensure deletion completes before command
-                    setTimeout(() => {
-                      item.command(props.editor);
-                    }, 10);
-                  },
-                })),
+                items: getMenuItems(props.editor, variant),
               });
 
               if (!props.clientRect) {
