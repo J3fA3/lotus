@@ -4,6 +4,7 @@ import { TaskCard } from "./TaskCard";
 import { TaskDetailSheet } from "./TaskDetailSheet";
 import { TaskFullPage } from "./TaskFullPage";
 import { QuickAddTask } from "./QuickAddTask";
+import { TaskSearchBar } from "./TaskSearchBar";
 import LotusDialog from "./LotusDialog";
 import { Button } from "./ui/button";
 import { Plus, Keyboard } from "lucide-react";
@@ -54,6 +55,11 @@ export const KanbanBoard = () => {
   const [focusedTaskIndex, setFocusedTaskIndex] = useState<number>(0);
   const [navigationMode, setNavigationMode] = useState(false); // Track if we're in keyboard navigation mode
 
+  // Search state
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<Set<string>>(new Set()); // Set of task IDs matching search
+  const [isSearching, setIsSearching] = useState(false);
+
   const { shortcuts, getShortcutByAction, updateShortcut } = useShortcuts();
 
   // Load tasks from backend on mount
@@ -98,11 +104,72 @@ export const KanbanBoard = () => {
     }
   }, []);
 
+  // Handle search
+  const handleSearch = useCallback(async (query: string) => {
+    console.log('[KanbanBoard] handleSearch called with query:', query);
+    setSearchQuery(query);
+
+    // If query is empty, clear search results
+    if (!query.trim()) {
+      console.log('[KanbanBoard] Empty query, clearing results');
+      setSearchResults(new Set());
+      setIsSearching(false);
+      return;
+    }
+
+    setIsSearching(true);
+    console.log('[KanbanBoard] Starting search for:', query);
+
+    try {
+      const response = await tasksApi.searchTasks(query, 50, 0.3);
+      console.log('[KanbanBoard] Search response:', response);
+
+      const matchingTaskIds = new Set(response.results.map(r => r.task.id));
+      console.log('[KanbanBoard] Matching task IDs:', Array.from(matchingTaskIds));
+
+      setSearchResults(matchingTaskIds);
+
+      // Show feedback if no results
+      if (matchingTaskIds.size === 0) {
+        toast.info("No matching tasks found", {
+          description: "Try different search terms",
+          duration: 2000,
+        });
+      } else {
+        console.log(`[KanbanBoard] Found ${matchingTaskIds.size} matching tasks`);
+      }
+    } catch (err) {
+      console.error("[KanbanBoard] Search failed:", err);
+      toast.error("Search failed", {
+        description: err instanceof Error ? err.message : "Unknown error",
+        duration: 3000,
+      });
+      setSearchResults(new Set());
+    } finally {
+      setIsSearching(false);
+    }
+  }, []);
+
   // Helper function to get tasks in current column
   const getColumnTasks = useCallback((columnIndex: number) => {
     const status = COLUMNS[columnIndex].id;
-    return tasks.filter((t) => t.status === status);
-  }, [tasks]);
+    let columnTasks = tasks.filter((t) => t.status === status);
+
+    // Filter by search results if search is active
+    if (searchQuery.trim()) {
+      if (searchResults.size > 0) {
+        // Show only matching tasks
+        columnTasks = columnTasks.filter((t) => searchResults.has(t.id));
+        console.log(`[getColumnTasks] Column ${status}: ${columnTasks.length} tasks match search`);
+      } else {
+        // No matches, show empty list
+        console.log(`[getColumnTasks] Column ${status}: No matches, showing empty`);
+        columnTasks = [];
+      }
+    }
+
+    return columnTasks;
+  }, [tasks, searchQuery, searchResults]);
 
   // Helper function to get focused task
   const getFocusedTask = useCallback(() => {
@@ -443,6 +510,7 @@ export const KanbanBoard = () => {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <TaskSearchBar onSearch={handleSearch} isSearching={isSearching} />
             <Button
               variant="default"
               size="sm"
@@ -620,7 +688,11 @@ export const KanbanBoard = () => {
 
         {!isLoading && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-          {COLUMNS.map((column) => (
+          {COLUMNS.map((column, columnIndex) => {
+            const columnTasks = getColumnTasks(columnIndex);
+            console.log(`[Render] Column ${column.id}: showing ${columnTasks.length} tasks (search: "${searchQuery}")`);
+
+            return (
             <div
               key={column.id}
               className="flex flex-col bg-column-bg rounded-2xl p-3 min-h-[70vh] transition-all duration-300"
@@ -633,7 +705,7 @@ export const KanbanBoard = () => {
                     {column.title}
                   </h2>
                   <span className="text-xs text-muted-foreground font-medium bg-background/60 px-2 py-0.5 rounded-full">
-                    {tasks.filter((t) => t.status === column.id).length}
+                    {columnTasks.length}
                   </span>
                 </div>
                 <Button
@@ -653,10 +725,7 @@ export const KanbanBoard = () => {
                     onCancel={() => setQuickAddColumn(null)}
                   />
                 )}
-                {tasks
-                  .filter((task) => task.status === column.id)
-                  .map((task, taskIndex) => {
-                    const columnIndex = COLUMNS.findIndex(c => c.id === column.id);
+                {columnTasks.map((task, taskIndex) => {
                     const isFocused = navigationMode &&
                                      columnIndex === focusedColumn &&
                                      taskIndex === focusedTaskIndex;
@@ -676,7 +745,8 @@ export const KanbanBoard = () => {
                   })}
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
         )}
       </div>

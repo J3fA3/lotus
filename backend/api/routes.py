@@ -240,6 +240,128 @@ async def delete_task(task_id: str, db: AsyncSession = Depends(get_db)):
     return {"message": "Task deleted successfully"}
 
 
+@router.get("/tasks/search/{query}")
+async def search_tasks(
+    query: str,
+    limit: int = 50,
+    threshold: float = 0.3,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Search tasks using hybrid semantic + keyword search
+
+    Args:
+        query: Search query string
+        limit: Maximum number of results to return (default: 50)
+        threshold: Minimum similarity threshold 0.0-1.0 (default: 0.3)
+
+    Returns:
+        List of tasks with similarity scores, sorted by relevance
+    """
+    try:
+        from services.knowledge_graph_embeddings import embedding_service
+
+        # Get all tasks
+        result = await db.execute(
+            select(Task)
+            .options(selectinload(Task.comments), selectinload(Task.attachments))
+        )
+        tasks = result.scalars().all()
+
+        if not tasks:
+            return {
+                "query": query,
+                "results": [],
+                "total": 0,
+                "threshold": threshold
+            }
+
+        # Build searchable text for each task
+        task_texts = []
+        task_map = {}
+
+        for task in tasks:
+            # Combine title, description, and notes for rich search
+            searchable_parts = [task.title]
+
+            if task.description:
+                searchable_parts.append(task.description)
+
+            if task.notes:
+                searchable_parts.append(task.notes)
+
+            searchable_text = " ".join(searchable_parts)
+            task_texts.append(searchable_text)
+            task_map[searchable_text] = task
+
+        # Hybrid search: keyword + semantic
+        query_lower = query.lower()
+        matched_tasks = {}  # task_id -> (task, score, method)
+
+        # 1. Keyword search (exact matches get high score)
+        for text, task in task_map.items():
+            if query_lower in text.lower():
+                # Exact substring match - give high score
+                task_id = task.id
+                # Score based on how well it matches (shorter text = better match)
+                score = 0.95 if len(query) > 2 else 0.85
+                matched_tasks[task_id] = (task, score, "keyword")
+
+        # 2. Semantic search (if service available and query is meaningful)
+        if embedding_service.is_available() and len(query.strip()) > 2:
+            try:
+                similar_texts = embedding_service.find_similar_texts(
+                    query_text=query,
+                    candidate_texts=task_texts,
+                    top_k=limit,
+                    threshold=max(0.2, threshold - 0.1)  # Lower threshold for semantic
+                )
+
+                for text, similarity_score in similar_texts:
+                    task = task_map[text]
+                    task_id = task.id
+
+                    # If already found via keyword, keep the higher score
+                    if task_id in matched_tasks:
+                        existing_score = matched_tasks[task_id][1]
+                        if similarity_score > existing_score:
+                            matched_tasks[task_id] = (task, similarity_score, "semantic")
+                    else:
+                        matched_tasks[task_id] = (task, similarity_score, "semantic")
+            except Exception as e:
+                # If semantic search fails, continue with keyword results
+                print(f"Semantic search failed, using keyword results only: {e}")
+
+        # Build response sorted by score
+        results = []
+        for task_id, (task, score, method) in matched_tasks.items():
+            task_schema = _task_to_schema(task, load_relationships=True)
+            results.append({
+                "task": task_schema,
+                "similarity_score": round(score, 3)
+            })
+
+        # Sort by score descending
+        results.sort(key=lambda x: x["similarity_score"], reverse=True)
+
+        # Limit results
+        results = results[:limit]
+
+        return {
+            "query": query,
+            "results": results,
+            "total": len(results),
+            "threshold": threshold
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
+
+
 # ============= AI Task Inference =============
 
 @router.post("/infer-tasks", response_model=InferenceResponse)
