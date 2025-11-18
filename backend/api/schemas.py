@@ -71,6 +71,8 @@ class InferenceRequest(BaseModel):
 
 class InferenceResponse(BaseModel):
     """Response from AI inference"""
+    model_config = {"protected_namespaces": ()}
+    
     tasks: List[TaskSchema]
     inference_time_ms: int
     model_used: str
