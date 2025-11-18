@@ -365,10 +365,23 @@ def cached(
         key_fn: Function to generate cache key from args (default: hash args)
 
     Example:
+        from services.performance_cache import cached
+
         @cached(ttl=300, prefix="user_profiles")
         async def get_user_profile(user_id: int):
             # Expensive database query
-            ...
+            result = await db.execute(select(User).where(User.id == user_id))
+            return result.scalar_one()
+
+        # First call: queries database (slow)
+        profile = await get_user_profile(123)
+
+        # Second call within 300s: returns cached value (fast)
+        same_profile = await get_user_profile(123)
+
+    Note:
+        This decorator is provided for convenience. For more control,
+        use the PerformanceCache class directly with get_or_compute().
     """
     def decorator(fn):
         async def wrapper(*args, **kwargs):

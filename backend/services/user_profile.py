@@ -39,14 +39,16 @@ class UserProfile(BaseModel):
     colleagues: Dict[str, str] = {}
     preferences: Dict[str, Any] = {}
 
-    def is_task_for_me(self, task: Dict[str, Any]) -> bool:
+    def is_task_for_me(self, task: Dict[str, Any]) -> Optional[bool]:
         """Check if a task is relevant to this user.
 
         Args:
             task: Proposed task dict with title, description, assignee, etc.
 
         Returns:
-            True if task is for this user, False otherwise
+            True if task is definitely for this user
+            False if task is definitely NOT for this user (e.g., assigned to someone else)
+            None if relevance is unclear and needs AI scoring
         """
         # Check 1: Explicitly assigned to someone else
         assignee = task.get("assignee", "").lower()
