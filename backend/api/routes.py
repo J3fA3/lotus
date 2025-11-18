@@ -6,6 +6,7 @@ This module provides FastAPI endpoints for:
 - AI-powered task extraction from text and PDFs
 - Keyboard shortcut configuration
 - System health checks
+- Cognitive Nexus context ingestion (Phase 1)
 
 All task queries use eager loading (selectinload) to avoid async relationship issues.
 Comments and attachments are stored in separate tables with cascade delete.
@@ -46,7 +47,15 @@ from agents.document_processor import DocumentProcessor
 from agents.document_storage import DocumentStorage
 from agents.knowledge_base import KnowledgeBase
 
+# Import Cognitive Nexus routers
+from api.context_routes import router as context_router
+from api.knowledge_routes import router as knowledge_router
+
 router = APIRouter()
+
+# Include Cognitive Nexus routes
+router.include_router(context_router)
+router.include_router(knowledge_router)
 
 # Initialize AI components
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
@@ -115,7 +124,7 @@ async def create_task(
 
     db.add(task)
     await db.commit()
-    await db.refresh(task)
+    await db.refresh(task, ['attachments', 'comments'])
 
     return _task_to_schema(task)
 

@@ -9,17 +9,22 @@ from dotenv import load_dotenv
 
 from db.database import init_db
 from api.routes import router
+from services.knowledge_graph_scheduler import scheduler
+from services.knowledge_graph_config import config as kg_config
+from api.knowledge_graphql_schema import create_graphql_router
+from config.constants import (
+    API_TITLE,
+    API_DESCRIPTION,
+    API_VERSION,
+    DEFAULT_OLLAMA_MODEL,
+    DEFAULT_OLLAMA_URL,
+    DEFAULT_CORS_ORIGINS,
+    DEFAULT_API_HOST,
+    DEFAULT_API_PORT
+)
 
 # Load environment variables
 load_dotenv()
-
-# Configuration constants
-API_TITLE = "AI Task Inference API"
-API_DESCRIPTION = "Backend for AI-powered task management with Qwen 2.5"
-API_VERSION = "1.0.0"
-DEFAULT_OLLAMA_MODEL = "qwen2.5:7b-instruct"
-DEFAULT_OLLAMA_URL = "http://localhost:11434"
-DEFAULT_CORS_ORIGINS = "http://localhost:5173"
 
 
 @asynccontextmanager
@@ -35,9 +40,23 @@ async def lifespan(app: FastAPI):
     print(f"🤖 AI Model: {ollama_model}")
     print(f"🔗 Ollama URL: {ollama_url}")
 
+    # Start Knowledge Graph scheduler if decay is enabled
+    if kg_config.DECAY_ENABLED:
+        print(f"⏰ Starting Knowledge Graph scheduler...")
+        print(f"   Decay updates every {kg_config.DECAY_UPDATE_INTERVAL_HOURS}h")
+        print(f"   Half-life: {kg_config.DECAY_HALF_LIFE_DAYS} days")
+        scheduler.start()
+        print("✅ Scheduler started")
+    else:
+        print("⚠️  Knowledge Graph decay disabled")
+
     yield
 
     # Shutdown
+    if kg_config.DECAY_ENABLED and scheduler.is_running:
+        print("⏰ Stopping Knowledge Graph scheduler...")
+        scheduler.stop()
+
     print("👋 Shutting down...")
 
 
@@ -63,28 +82,46 @@ app.add_middleware(
 # Include routes
 app.include_router(router, prefix="/api")
 
+# Include GraphQL endpoint (if enabled)
+if kg_config.GRAPHQL_ENABLED:
+    graphql_router = create_graphql_router()
+    if graphql_router:
+        app.include_router(graphql_router, prefix="/api", tags=["GraphQL"])
+        print(f"🔷 GraphQL enabled at /api{kg_config.GRAPHQL_PATH}")
+
 
 @app.get("/")
 async def root():
     """Root endpoint with API information"""
-    return {
+    response = {
         "message": API_TITLE,
         "version": API_VERSION,
         "docs": "/docs",
         "health": "/api/health"
     }
 
+    if kg_config.GRAPHQL_ENABLED:
+        response["graphql"] = f"/api{kg_config.GRAPHQL_PATH}"
+        response["graphql_playground"] = f"/api{kg_config.GRAPHQL_PATH}"
+
+    return response
+
 
 if __name__ == "__main__":
     import uvicorn
 
-    host = os.getenv("API_HOST", "0.0.0.0")
-    port = int(os.getenv("API_PORT", "8000"))
+    host = os.getenv("API_HOST", DEFAULT_API_HOST)
+    port = int(os.getenv("API_PORT", str(DEFAULT_API_PORT)))
     debug = os.getenv("DEBUG", "true").lower() == "true"
 
     print(f"\n🚀 Starting server on {host}:{port}")
     print(f"📚 API Docs: http://localhost:{port}/docs")
-    print(f"🏥 Health Check: http://localhost:{port}/api/health\n")
+    print(f"🏥 Health Check: http://localhost:{port}/api/health")
+
+    if kg_config.GRAPHQL_ENABLED:
+        print(f"🔷 GraphQL Playground: http://localhost:{port}/api{kg_config.GRAPHQL_PATH}")
+
+    print()
 
     uvicorn.run(
         "main:app",

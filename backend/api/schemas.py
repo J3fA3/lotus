@@ -46,6 +46,7 @@ class TaskCreateRequest(BaseModel):
     dueDate: Optional[str] = None
     valueStream: Optional[str] = None
     description: Optional[str] = None
+    notes: Optional[str] = None
 
 
 class TaskUpdateRequest(BaseModel):

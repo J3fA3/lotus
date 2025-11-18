@@ -4,12 +4,24 @@ A modern task management application featuring a Notion-style Kanban board with 
 
 ## ✨ Key Features
 
+### Core Task Management
 - 🎯 **Kanban Board** - Drag-and-drop interface with todo/doing/done columns
-- 🤖 **AI Task Extraction** - Extract tasks from text or PDFs using local LLM (Ollama + Qwen 2.5)
-- ⌨️ **45 Keyboard Shortcuts** - Configurable shortcuts with conflict detection
 - 👁️ **Multiple View Modes** - Peek (side sheet), Extended, and Full Page views
 - 💬 **Notion-Style Comments** - Chat interface with Enter to send
 - 📎 **Attachments & Notes** - Full task metadata with persistence
+- ⌨️ **45 Keyboard Shortcuts** - Configurable shortcuts with conflict detection
+
+### AI-Powered Features
+- 🤖 **AI Task Extraction** - Extract tasks from text or PDFs using local LLM (Ollama + Qwen 2.5)
+- 🧠 **Cognitive Nexus** - LangGraph-based agentic system for context-aware task management
+  - **Context Analysis Agent** - Analyzes complexity and chooses extraction strategy
+  - **Entity Extraction Agent** - Extracts entities with self-evaluation and retry loops
+  - **Relationship Synthesis Agent** - Infers relationships between entities
+  - **Task Integration Agent** - Intelligently creates, updates, or enriches tasks
+- 🔗 **Knowledge Graph** - Cross-context knowledge persistence with fuzzy entity matching
+- 📊 **Quality Metrics** - Transparent reasoning traces and quality scores
+
+### Infrastructure
 - 💾 **SQLite Database** - All data persists across sessions
 - 🔒 **100% Local & Free** - No API keys, runs entirely on your machine
 
@@ -98,24 +110,57 @@ ollama serve
 ## 🏗️ Architecture
 
 ```
-┌─────────────────┐
-│  React Frontend │ :8080
-│  (TypeScript)   │
-└────────┬────────┘
-         │ HTTP + Proxy
-         ▼
-┌─────────────────┐
-│  FastAPI Server │ :8000
-│  (Python 3.12)  │
-└────┬───────┬────┘
-     │       │
-     │       └──────► Ollama :11434 (SSH tunnel)
-     │                Qwen 2.5 7B
-     ▼
-┌─────────────────┐
-│ SQLite Database │
-│  (tasks.db)     │
-└─────────────────┘
+┌─────────────────────────────────────────────────────────┐
+│                    React Frontend                        │
+│              (TypeScript + Vite) :5173                  │
+│  • Kanban Board  • Task Views  • AI Dialogs            │
+└───────────────────────┬─────────────────────────────────┘
+                        │ HTTP REST API
+                        ▼
+┌─────────────────────────────────────────────────────────┐
+│                    FastAPI Backend                       │
+│                  (Python 3.12) :8000                    │
+│                                                          │
+│  ┌────────────────┐  ┌───────────────────────────┐     │
+│  │  Task CRUD API │  │  Cognitive Nexus API      │     │
+│  │  • Tasks       │  │  • Context Ingestion      │     │
+│  │  • Comments    │  │  • Entity Extraction      │     │
+│  │  • Shortcuts   │  │  • Relationship Inference │     │
+│  └────────────────┘  │  • Task Integration       │     │
+│                      └───────────┬───────────────┘     │
+│                                  │                       │
+│  ┌──────────────────────────────┴───────────────────┐  │
+│  │         LangGraph Agentic System                 │  │
+│  │  ┌─────────────────────────────────────────┐     │  │
+│  │  │ 1. Context Analysis Agent               │     │  │
+│  │  │ 2. Entity Extraction Agent (w/ retry)   │     │  │
+│  │  │ 3. Relationship Synthesis Agent         │     │  │
+│  │  │ 4. Task Integration Agent               │     │  │
+│  │  └─────────────────────────────────────────┘     │  │
+│  └──────────────────────────────────────────────────┘  │
+│                                  │                       │
+│  ┌──────────────────────────────┴───────────────────┐  │
+│  │         Knowledge Graph Service                  │  │
+│  │  • Fuzzy Entity Deduplication                    │  │
+│  │  • Relationship Aggregation                      │  │
+│  │  • Team Structure Learning                       │  │
+│  │  • Semantic Similarity (Optional)                │  │
+│  └──────────────────────────────────────────────────┘  │
+└───────────────────────┬─────────────────────────────────┘
+                        │
+        ┌───────────────┴──────────────┐
+        │                               │
+        ▼                               ▼
+┌──────────────┐              ┌──────────────────┐
+│    SQLite    │              │  Ollama :11434   │
+│  (tasks.db)  │              │  Qwen 2.5 7B     │
+│              │              │  (Local LLM)     │
+│  • Tasks     │              └──────────────────┘
+│  • Context   │
+│  • Entities  │
+│  • Knowledge │
+│  • Relations │
+└──────────────┘
 ```
 
 ## 🛠️ Tech Stack

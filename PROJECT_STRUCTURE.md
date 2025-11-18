@@ -41,19 +41,39 @@ task-crate/
 │   ├── tasks.db                # SQLite database (gitignored)
 │   ├── README.md               # Backend documentation
 │   │
+│   ├── config/                 # Configuration (NEW)
+│   │   └── constants.py        # Centralized constants
+│   │
 │   ├── api/                    # API layer
-│   │   ├── routes.py           # Endpoints (with eager loading)
-│   │   └── schemas.py          # Pydantic models
+│   │   ├── routes.py           # Task CRUD endpoints
+│   │   ├── context_routes.py  # Cognitive Nexus API
+│   │   ├── knowledge_routes.py # Knowledge Graph API
+│   │   ├── knowledge_graphql_schema.py  # GraphQL (optional)
+│   │   ├── schemas.py          # Pydantic models
+│   │   └── utils.py            # Common utilities (NEW)
 │   │
 │   ├── db/                     # Database layer
 │   │   ├── database.py         # Async SQLite connection
-│   │   ├── models.py           # SQLAlchemy ORM models
-│   │   └── default_shortcuts.py  # 45 default shortcuts
+│   │   ├── models.py           # Core SQLAlchemy models
+│   │   ├── knowledge_graph_models.py  # KG models
+│   │   ├── default_shortcuts.py  # 45 default shortcuts
+│   │   └── migrations/         # Database migrations
+│   │       └── 001_add_knowledge_graph_tables.py
 │   │
-│   └── agents/                 # AI agents
-│       ├── task_extractor.py  # Ollama integration
-│       ├── pdf_processor.py   # PDF parsing
-│       └── prompts.py          # LLM prompts
+│   ├── agents/                 # AI agents
+│   │   ├── cognitive_nexus_graph.py  # LangGraph agent system
+│   │   ├── task_extractor.py  # Legacy Ollama integration
+│   │   ├── pdf_processor.py   # PDF parsing
+│   │   └── prompts.py          # LLM prompts
+│   │
+│   ├── services/               # Business logic services
+│   │   ├── knowledge_graph_service.py      # KG operations
+│   │   ├── knowledge_graph_embeddings.py   # Semantic similarity
+│   │   ├── knowledge_graph_scheduler.py    # Decay scheduler
+│   │   └── knowledge_graph_config.py       # KG configuration
+│   │
+│   └── tests/                  # Test suite
+│       └── test_cognitive_nexus.py
 │
 └── scripts/                    # Utility scripts
     ├── health-check.sh         # System health check

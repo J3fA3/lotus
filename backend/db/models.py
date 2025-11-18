@@ -1,14 +1,19 @@
 """
-Database Models for Task Management
+Database Models for Task Management and Cognitive Nexus
 
 SQLAlchemy ORM models with relationships and cascade deletes.
 All models use async-compatible patterns for use with aiosqlite.
 
 Important: When querying tasks, use selectinload() to eager-load
 relationships (comments, attachments) to avoid greenlet errors.
+
+New in Cognitive Nexus Phase 1:
+- ContextItem: Stores context ingestion and agent metrics
+- Entity: Stores extracted entities from context
+- Relationship: Stores inferred relationships between entities
 """
 from datetime import datetime
-from sqlalchemy import Column, String, DateTime, ForeignKey, Text, Integer, Boolean, JSON
+from sqlalchemy import Column, String, DateTime, ForeignKey, Text, Integer, Boolean, JSON, Float
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 
@@ -133,3 +138,112 @@ class Document(Base):
     # Relationships
     task = relationship("Task", backref="documents")
     inference_history = relationship("InferenceHistory", backref="documents")
+
+
+# ============================================================================
+# COGNITIVE NEXUS MODELS
+# ============================================================================
+
+class ContextItem(Base):
+    """Stores context ingestion and LangGraph agent processing results.
+
+    This model tracks each context item processed through the Cognitive Nexus
+    agent system, including quality metrics, reasoning traces, and relationships
+    to extracted entities.
+
+    Relationships:
+    - entities: One-to-many with Entity (cascade delete)
+    - relationships: One-to-many with Relationship (cascade delete)
+    """
+    __tablename__ = "context_items"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    content = Column(Text, nullable=False)
+    source_type = Column(String(50), nullable=False)  # slack, transcript, manual
+    source_identifier = Column(String(255), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+    # LangGraph agent state and metrics
+    extraction_strategy = Column(String(50), nullable=True)  # fast, detailed
+    context_complexity = Column(Float, nullable=True)
+    entity_quality = Column(Float, nullable=True)
+    relationship_quality = Column(Float, nullable=True)
+    task_quality = Column(Float, nullable=True)
+    reasoning_trace = Column(Text, nullable=True)  # JSON array of reasoning steps
+
+    # Relationships
+    entities = relationship("Entity", back_populates="context_item", cascade="all, delete-orphan")
+    relationships_from_context = relationship("Relationship", back_populates="context_item", cascade="all, delete-orphan")
+
+
+class Entity(Base):
+    """Stores entities extracted by the Entity Extraction Agent.
+
+    Entities are named entities like people, projects, teams, or dates
+    that are extracted from context using the LangGraph agent system.
+
+    Entity Types:
+    - PERSON: People (e.g., "Jef Adriaenssens", "Andy Maclean")
+    - PROJECT: Projects (e.g., "CRESCO", "Just Deals")
+    - TEAM: Organizational teams with hierarchical metadata
+      * Pillar level: "Customer Pillar", "Partner Pillar", "Ventures Pillar"
+      * Team level: "Menu Team", "Search Team", "Platform Team"
+      * Role/Context: "Engineering", "Product", "Research", "Sales"
+    - DATE: Deadlines and dates (e.g., "November 26th", "Friday")
+
+    Team Metadata (JSON):
+    {
+        "pillar": "Customer Pillar",  # Optional
+        "team_name": "Menu Team",     # Optional
+        "role": "Engineering"          # Optional: engineering, product, research, sales, etc.
+    }
+
+    Relationships:
+    - context_item: Many-to-one with ContextItem
+    - subject_relationships: One-to-many with Relationship (as subject)
+    - object_relationships: One-to-many with Relationship (as object)
+    """
+    __tablename__ = "entities"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(255), nullable=False, index=True)
+    type = Column(String(50), nullable=False, index=True)  # PERSON, PROJECT, TEAM, DATE
+    confidence = Column(Float, nullable=True, default=1.0)
+    entity_metadata = Column(JSON, nullable=True)  # Team metadata: pillar, team_name, role
+    context_item_id = Column(Integer, ForeignKey("context_items.id", ondelete="CASCADE"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+    # Relationships
+    context_item = relationship("ContextItem", back_populates="entities")
+    subject_relationships = relationship("Relationship", foreign_keys="[Relationship.subject_entity_id]", back_populates="subject_entity")
+    object_relationships = relationship("Relationship", foreign_keys="[Relationship.object_entity_id]", back_populates="object_entity")
+
+
+class Relationship(Base):
+    """Stores relationships between entities inferred by the Relationship Synthesis Agent.
+
+    Relationships represent connections between entities such as:
+    - WORKS_ON: person works on project
+    - COMMUNICATES_WITH: person talks to person
+    - HAS_DEADLINE: project has deadline
+    - MENTIONED_WITH: entities co-occur
+
+    Relationships:
+    - subject_entity: Many-to-one with Entity (subject)
+    - object_entity: Many-to-one with Entity (object)
+    - context_item: Many-to-one with ContextItem
+    """
+    __tablename__ = "relationships"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    subject_entity_id = Column(Integer, ForeignKey("entities.id", ondelete="CASCADE"), nullable=False, index=True)
+    predicate = Column(String(100), nullable=False, index=True)  # WORKS_ON, COMMUNICATES_WITH, etc.
+    object_entity_id = Column(Integer, ForeignKey("entities.id", ondelete="CASCADE"), nullable=False, index=True)
+    confidence = Column(Float, nullable=True, default=1.0)
+    context_item_id = Column(Integer, ForeignKey("context_items.id", ondelete="CASCADE"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    subject_entity = relationship("Entity", foreign_keys=[subject_entity_id], back_populates="subject_relationships")
+    object_entity = relationship("Entity", foreign_keys=[object_entity_id], back_populates="object_relationships")
+    context_item = relationship("ContextItem", back_populates="relationships_from_context")

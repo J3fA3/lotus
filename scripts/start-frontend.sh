@@ -9,7 +9,7 @@ echo "🎨 Starting AI Task Inference Frontend"
 echo ""
 
 # Navigate to project root
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."
 
 # Check if node_modules exists
 if [ ! -d "node_modules" ]; then
