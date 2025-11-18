@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 
 from db.database import init_db
 from api.routes import router
+from api.assistant_routes import router as assistant_router
 from services.knowledge_graph_scheduler import scheduler
 from services.knowledge_graph_config import config as kg_config
 from api.knowledge_graphql_schema import create_graphql_router
@@ -81,6 +82,7 @@ app.add_middleware(
 
 # Include routes
 app.include_router(router, prefix="/api")
+app.include_router(assistant_router, prefix="/api")
 
 # Include GraphQL endpoint (if enabled)
 if kg_config.GRAPHQL_ENABLED:
