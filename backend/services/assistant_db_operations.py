@@ -269,7 +269,7 @@ async def store_chat_message(
         session_id=session_id,
         role=role,
         content=content,
-        metadata=metadata
+        message_metadata=metadata
     )
 
     db.add(message)
@@ -346,7 +346,7 @@ async def get_chat_history(
             "id": msg.id,
             "role": msg.role,
             "content": msg.content,
-            "metadata": msg.metadata,
+            "metadata": msg.message_metadata,
             "created_at": msg.created_at.isoformat() if msg.created_at else None
         }
         for msg in messages

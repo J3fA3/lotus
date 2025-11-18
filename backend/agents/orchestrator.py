@@ -60,6 +60,7 @@ class OrchestratorState(TypedDict):
     pdf_bytes: Optional[bytes]  # For document uploads
     session_id: str  # Chat session ID
     user_id: Optional[str]
+    db: Optional[AsyncSession]  # Database session for queries
 
     # Phase 1 agent results
     entities: List[Dict]

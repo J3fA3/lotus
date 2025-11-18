@@ -313,7 +313,7 @@ class ChatMessage(Base):
     session_id = Column(String(255), nullable=False, index=True)  # UUID for chat session
     role = Column(String(20), nullable=False)  # 'user' or 'assistant'
     content = Column(Text, nullable=False)  # Message text
-    metadata = Column(JSON, nullable=True)  # Task IDs, confidence scores, proposals, etc.
+    message_metadata = Column(JSON, nullable=True)  # Task IDs, confidence scores, proposals, etc.
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
 
 
