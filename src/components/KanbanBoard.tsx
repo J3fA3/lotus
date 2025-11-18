@@ -315,8 +315,14 @@ export const KanbanBoard = () => {
 
   // Handle task click from Lotus chat
   const handleTaskClickFromLotus = useCallback((task: Task) => {
-    setSelectedTask(task);
-    setIsDialogOpen(true);
+    // Close Lotus dialog first to prevent overlay conflict
+    setIsLotusOpen(false);
+
+    // Small delay to allow Lotus dialog to close smoothly
+    setTimeout(() => {
+      setSelectedTask(task);
+      setIsDialogOpen(true);
+    }, 150);
   }, []);
 
   const handleDeleteTask = useCallback(async (taskId: string) => {
