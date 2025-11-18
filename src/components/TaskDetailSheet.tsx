@@ -581,7 +581,14 @@ export const TaskDetailSheet = ({
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-medium text-foreground">{comment.author}</span>
                         <span className="text-xs text-muted-foreground">
-                          {format(new Date(comment.createdAt), "MMM d")}
+                          {(() => {
+                            try {
+                              const date = new Date(comment.createdAt);
+                              return isNaN(date.getTime()) ? comment.createdAt : format(date, "MMM d");
+                            } catch {
+                              return comment.createdAt;
+                            }
+                          })()}
                         </span>
                       </div>
                       <p className="text-sm text-foreground/90 leading-relaxed">{comment.text}</p>

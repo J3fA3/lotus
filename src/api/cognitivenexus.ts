@@ -9,7 +9,7 @@ import {
   ContextSummary,
 } from "@/types/cognitivenexus";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 
 /**
  * Ingest context and process through LangGraph agents
