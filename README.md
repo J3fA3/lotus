@@ -4,6 +4,16 @@ AI-powered task management with intelligent context analysis. Built with React, 
 
 ## Features
 
+- **Rich Text Editing** - Best-in-class formatting for tasks, notes, and comments
+  - **Slash Commands** (`/`) - Search and apply formatting with auto-scroll menu
+  - **Markdown Shortcuts** - `*` for bullets, `-` for lists, automatic link detection
+  - **Word Art** - 8 retro-styled text effects (Ocean Wave, Rainbow, Fire, etc.) - works in titles and content
+  - **Headings** - H1, H2, H3 with automatic styling
+  - **Advanced Formatting** - Code blocks with syntax highlighting, tables, blockquotes
+  - **Table Editing** - Add/delete rows and columns with intuitive menu that appears when editing tables
+  - **Slack-Style Link Paste** - Select text + paste URL = instant link
+  - **Keyboard Shortcuts** - Cmd+> for blockquotes, and more
+  - **3 Variants** - Title (Word Art only), Minimal (basic formatting), Full (all features with tables)
 - **Lotus AI Assistant** - Unified interface for all task management (NEW Phase 2!)
   - Answer questions about your tasks ("What's my highest priority?")
   - Intelligent request classification (questions vs tasks vs context)
@@ -248,6 +258,8 @@ cd backend && pytest tests/test_phase2_assistant_e2e.py -v
 - shadcn/ui + Radix UI (components)
 - Tailwind CSS (styling)
 - React Router (navigation)
+- Tiptap (rich text editor with ProseMirror)
+- Lowlight (syntax highlighting for code blocks)
 
 **Backend:**
 - FastAPI (Python web framework)

@@ -8,98 +8,116 @@ All colors MUST be HSL.
 
 @layer base {
   :root {
-    /* Zen palette - warm neutrals with subtle green accent */
-    --background: 30 20% 97%;
-    --foreground: 30 10% 20%;
+    /* Lotus Zen palette - papyrus, natural earth tones, soft lotus greens */
+    --background: 40 35% 96%; /* Warm papyrus cream */
+    --foreground: 25 15% 25%; /* Soft ink black */
 
-    --card: 0 0% 100%;
-    --card-foreground: 30 10% 20%;
+    --card: 40 40% 98%; /* Light papyrus paper */
+    --card-foreground: 25 15% 25%;
 
-    --popover: 0 0% 100%;
-    --popover-foreground: 30 10% 20%;
+    --popover: 40 40% 98%;
+    --popover-foreground: 25 15% 25%;
 
-    --primary: 150 30% 50%;
-    --primary-foreground: 0 0% 100%;
+    --primary: 150 25% 45%; /* Soft lotus leaf green */
+    --primary-foreground: 40 40% 98%;
 
-    --secondary: 30 15% 94%;
-    --secondary-foreground: 30 10% 20%;
+    --secondary: 35 30% 92%; /* Warm sand/beige */
+    --secondary-foreground: 25 15% 25%;
 
-    --muted: 30 15% 95%;
-    --muted-foreground: 30 8% 50%;
+    --muted: 38 25% 94%; /* Soft papyrus background */
+    --muted-foreground: 30 10% 48%; /* Muted ink */
 
-    --accent: 150 25% 92%;
-    --accent-foreground: 150 30% 35%;
+    --accent: 155 20% 88%; /* Pale jade accent */
+    --accent-foreground: 155 30% 30%; /* Deep jade text */
 
-    --destructive: 0 60% 55%;
-    --destructive-foreground: 0 0% 100%;
+    --destructive: 0 45% 50%;
+    --destructive-foreground: 40 40% 98%;
 
-    --border: 30 12% 88%;
-    --input: 30 12% 90%;
-    --ring: 150 30% 50%;
+    --border: 35 20% 88%; /* Subtle earth border */
+    --input: 38 22% 92%; /* Papyrus input */
+    --ring: 150 25% 45%; /* Lotus green ring */
 
-    --radius: 0.875rem;
+    --radius: 0.5rem; /* More minimal, less rounded */
 
-    /* Custom zen tokens */
-    --column-bg: 30 18% 96%;
-    --card-hover: 0 0% 98%;
-    --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.03);
-    --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.05);
-    --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.06);
-    --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    /* Lotus custom tokens */
+    --column-bg: 38 28% 95%;
+    --card-hover: 40 35% 97%;
+    --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.02);
+    --shadow-md: 0 2px 4px -1px rgb(0 0 0 / 0.04);
+    --shadow-lg: 0 4px 8px -2px rgb(0 0 0 / 0.05);
+    --transition-smooth: all 0.4s cubic-bezier(0.25, 0.1, 0.25, 1); /* Gentler easing */
 
-    --sidebar-background: 0 0% 98%;
-    --sidebar-foreground: 240 5.3% 26.1%;
-    --sidebar-primary: 240 5.9% 10%;
-    --sidebar-primary-foreground: 0 0% 98%;
-    --sidebar-accent: 240 4.8% 95.9%;
-    --sidebar-accent-foreground: 240 5.9% 10%;
-    --sidebar-border: 220 13% 91%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    /* Lotus-specific design tokens */
+    --lotus-ink: 25 20% 30%; /* Calligraphy ink color */
+    --lotus-paper: 40 45% 97%; /* Papyrus paper texture */
+    --lotus-green-light: 155 25% 85%; /* Light lotus leaf */
+    --lotus-green-medium: 150 25% 45%; /* Medium lotus leaf */
+    --lotus-green-dark: 148 30% 35%; /* Dark lotus leaf */
+    --lotus-earth: 30 25% 75%; /* Warm earth tone */
+
+    --sidebar-background: 40 30% 97%;
+    --sidebar-foreground: 25 15% 30%;
+    --sidebar-primary: 150 25% 45%;
+    --sidebar-primary-foreground: 40 40% 98%;
+    --sidebar-accent: 38 25% 94%;
+    --sidebar-accent-foreground: 25 15% 25%;
+    --sidebar-border: 35 20% 90%;
+    --sidebar-ring: 150 25% 45%;
   }
 
   .dark {
-    --background: 30 8% 12%;
-    --foreground: 30 10% 92%;
+    /* Dark Lotus - night garden, charcoal paper, moonlit lotus */
+    --background: 25 12% 10%; /* Deep charcoal */
+    --foreground: 40 20% 90%; /* Warm off-white */
 
-    --card: 30 8% 15%;
-    --card-foreground: 30 10% 92%;
+    --card: 25 10% 14%; /* Charcoal paper */
+    --card-foreground: 40 20% 90%;
 
-    --popover: 30 8% 15%;
-    --popover-foreground: 30 10% 92%;
+    --popover: 25 10% 14%;
+    --popover-foreground: 40 20% 90%;
 
-    --primary: 150 30% 50%;
-    --primary-foreground: 0 0% 100%;
+    --primary: 155 28% 50%; /* Moonlit lotus green */
+    --primary-foreground: 25 12% 10%;
 
-    --secondary: 30 8% 20%;
-    --secondary-foreground: 30 10% 92%;
+    --secondary: 25 10% 18%; /* Dark earth */
+    --secondary-foreground: 40 20% 90%;
 
-    --muted: 30 8% 20%;
-    --muted-foreground: 30 8% 65%;
+    --muted: 25 8% 18%; /* Muted charcoal */
+    --muted-foreground: 30 8% 60%; /* Soft gray */
 
-    --accent: 150 20% 25%;
-    --accent-foreground: 150 30% 85%;
+    --accent: 155 18% 22%; /* Deep jade */
+    --accent-foreground: 155 25% 80%; /* Light jade */
 
-    --destructive: 0 60% 55%;
-    --destructive-foreground: 0 0% 100%;
+    --destructive: 0 50% 50%;
+    --destructive-foreground: 40 20% 90%;
 
-    --border: 30 8% 25%;
-    --input: 30 8% 25%;
-    --ring: 150 30% 50%;
-    
-    --column-bg: 30 8% 17%;
-    --card-hover: 30 8% 18%;
-    --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.2);
-    --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.25);
-    --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.3);
+    --border: 25 10% 22%; /* Subtle dark border */
+    --input: 25 8% 20%; /* Dark input */
+    --ring: 155 28% 50%; /* Lotus green ring */
 
-    --sidebar-background: 240 5.9% 10%;
-    --sidebar-foreground: 240 4.8% 95.9%;
-    --sidebar-primary: 224.3 76.3% 48%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 240 3.7% 15.9%;
-    --sidebar-accent-foreground: 240 4.8% 95.9%;
-    --sidebar-border: 240 3.7% 15.9%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    /* Lotus dark custom tokens */
+    --column-bg: 25 10% 12%;
+    --card-hover: 25 10% 16%;
+    --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.4);
+    --shadow-md: 0 2px 4px -1px rgb(0 0 0 / 0.5);
+    --shadow-lg: 0 4px 8px -2px rgb(0 0 0 / 0.6);
+
+    /* Lotus-specific dark tokens */
+    --lotus-ink: 40 15% 85%; /* Light ink on dark */
+    --lotus-paper: 25 10% 14%; /* Dark charcoal paper */
+    --lotus-green-light: 155 20% 40%; /* Muted lotus leaf */
+    --lotus-green-medium: 155 28% 50%; /* Medium lotus leaf */
+    --lotus-green-dark: 155 30% 60%; /* Bright lotus leaf */
+    --lotus-earth: 30 20% 35%; /* Dark warm earth */
+
+    --sidebar-background: 25 12% 10%;
+    --sidebar-foreground: 40 20% 88%;
+    --sidebar-primary: 155 28% 50%;
+    --sidebar-primary-foreground: 25 12% 10%;
+    --sidebar-accent: 25 10% 16%;
+    --sidebar-accent-foreground: 40 20% 88%;
+    --sidebar-border: 25 10% 20%;
+    --sidebar-ring: 155 28% 50%;
   }
 }
 
@@ -111,7 +129,19 @@ All colors MUST be HSL.
   body {
     @apply bg-background text-foreground font-sans antialiased;
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    letter-spacing: -0.011em;
+    letter-spacing: -0.005em; /* Slightly more open for readability */
+    font-feature-settings: 'ss01' on, 'ss02' on; /* Enable stylistic sets for more elegant forms */
+  }
+
+  /* Headings with more refined spacing */
+  h1, h2, h3, h4, h5, h6 {
+    letter-spacing: -0.02em;
+    font-weight: 600;
+  }
+
+  /* Elegant link hover states */
+  a {
+    transition: var(--transition-smooth);
   }
 
   /* Custom scrollbar for task sheet */
@@ -134,12 +164,48 @@ All colors MUST be HSL.
   .shadow-zen-sm {
     box-shadow: var(--shadow-sm);
   }
-  
+
   .shadow-zen-md {
     box-shadow: var(--shadow-md);
   }
-  
+
   .shadow-zen-lg {
     box-shadow: var(--shadow-lg);
+  }
+
+  /* Lotus paper texture effects */
+  .paper-texture {
+    background-image:
+      linear-gradient(90deg, transparent 98%, hsl(var(--border) / 0.15) 98%),
+      linear-gradient(0deg, transparent 98%, hsl(var(--border) / 0.15) 98%);
+    background-size: 8px 8px;
+  }
+
+  .paper-subtle {
+    background-color: hsl(var(--lotus-paper));
+    border: 1px solid hsl(var(--border) / 0.4);
+  }
+
+  /* Lotus ink text */
+  .text-lotus-ink {
+    color: hsl(var(--lotus-ink));
+  }
+
+  /* Lotus green variants */
+  .bg-lotus-green-light {
+    background-color: hsl(var(--lotus-green-light));
+  }
+
+  .bg-lotus-green-medium {
+    background-color: hsl(var(--lotus-green-medium));
+  }
+
+  .text-lotus-green {
+    color: hsl(var(--lotus-green-medium));
+  }
+
+  /* Gentle transitions for Zen feel */
+  .transition-zen {
+    transition: var(--transition-smooth);
   }
 }
