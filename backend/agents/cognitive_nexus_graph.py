@@ -23,6 +23,25 @@ import httpx
 import json
 import re
 
+from config.constants import (
+    ENTITY_TYPE_PERSON,
+    ENTITY_TYPE_PROJECT,
+    ENTITY_TYPE_TEAM,
+    ENTITY_TYPE_DATE,
+    VALID_ENTITY_TYPES,
+    TASK_OP_CREATE,
+    TASK_OP_UPDATE,
+    TASK_OP_COMMENT,
+    TASK_OP_ENRICH,
+    QUALITY_THRESHOLD_HIGH,
+    QUALITY_THRESHOLD_MEDIUM,
+    DEFAULT_MAX_RETRIES,
+    DEFAULT_OLLAMA_MODEL,
+    DEFAULT_OLLAMA_URL,
+    EXTRACTION_STRATEGY_FAST,
+    EXTRACTION_STRATEGY_DETAILED
+)
+
 
 # ============================================================================
 # STATE DEFINITION
@@ -82,17 +101,20 @@ def count_proper_nouns(text: str) -> int:
     return len(set(words))
 
 
+# Technical vocabulary for complexity detection
+TECHNICAL_KEYWORDS = {
+    "API", "SDK", "database", "server", "deployment",
+    "integration", "architecture", "backend", "frontend",
+    "authentication", "authorization", "endpoint", "microservice"
+}
+
+
 def detect_technical_vocabulary(text: str) -> bool:
     """Check if text contains technical terminology.
 
     Technical content may require more detailed extraction.
     """
-    technical_keywords = {
-        "API", "SDK", "database", "server", "deployment",
-        "integration", "architecture", "backend", "frontend",
-        "authentication", "authorization", "endpoint", "microservice"
-    }
-    return any(keyword in text for keyword in technical_keywords)
+    return any(keyword in text for keyword in TECHNICAL_KEYWORDS)
 
 
 def detect_topic_diversity(text: str) -> bool:
@@ -299,8 +321,7 @@ async def entity_extraction_agent(state: CognitiveNexusState) -> Dict:
         issues.append(f"Only found {len(entities)}/{expected_count} expected entities")
 
     # Check for proper entity types
-    valid_types = {"PERSON", "PROJECT", "TEAM", "DATE"}
-    invalid_entities = [e for e in entities if e.get("type") not in valid_types]
+    invalid_entities = [e for e in entities if e.get("type") not in VALID_ENTITY_TYPES]
     if invalid_entities:
         issues.append(f"{len(invalid_entities)} entities have invalid types")
 
@@ -319,13 +340,13 @@ async def entity_extraction_agent(state: CognitiveNexusState) -> Dict:
         reasoning.extend([f"  - {issue}" for issue in issues])
 
     # Agent decides whether retry is needed
-    max_retries = state.get("max_retries", 2)
-    needs_retry = quality < 0.7 and retry_count < max_retries
+    max_retries = state.get("max_retries", DEFAULT_MAX_RETRIES)
+    needs_retry = quality < QUALITY_THRESHOLD_HIGH and retry_count < max_retries
 
     if needs_retry:
-        reasoning.append(f"→ Quality below threshold (0.7) → RETRY {retry_count + 1}/{max_retries}")
+        reasoning.append(f"→ Quality below threshold ({QUALITY_THRESHOLD_HIGH}) → RETRY {retry_count + 1}/{max_retries}")
     else:
-        if quality >= 0.7:
+        if quality >= QUALITY_THRESHOLD_HIGH:
             reasoning.append("→ Quality acceptable → CONTINUE to next agent")
         else:
             reasoning.append(f"→ Max retries reached ({max_retries}) → CONTINUE despite low quality")
@@ -814,7 +835,7 @@ async def process_context(
         "source_identifier": source_identifier,
         "reasoning_steps": [],
         "entity_retry_count": 0,
-        "max_retries": 2,
+        "max_retries": DEFAULT_MAX_RETRIES,
         # Initialize optional fields
         "extracted_entities": [],
         "inferred_relationships": [],

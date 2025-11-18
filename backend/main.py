@@ -12,17 +12,19 @@ from api.routes import router
 from services.knowledge_graph_scheduler import scheduler
 from services.knowledge_graph_config import config as kg_config
 from api.knowledge_graphql_schema import create_graphql_router
+from config.constants import (
+    API_TITLE,
+    API_DESCRIPTION,
+    API_VERSION,
+    DEFAULT_OLLAMA_MODEL,
+    DEFAULT_OLLAMA_URL,
+    DEFAULT_CORS_ORIGINS,
+    DEFAULT_API_HOST,
+    DEFAULT_API_PORT
+)
 
 # Load environment variables
 load_dotenv()
-
-# Configuration constants
-API_TITLE = "AI Task Inference API"
-API_DESCRIPTION = "Backend for AI-powered task management with Qwen 2.5"
-API_VERSION = "1.0.0"
-DEFAULT_OLLAMA_MODEL = "qwen2.5:7b-instruct"
-DEFAULT_OLLAMA_URL = "http://localhost:11434"
-DEFAULT_CORS_ORIGINS = "http://localhost:5173"
 
 
 @asynccontextmanager
@@ -108,8 +110,8 @@ async def root():
 if __name__ == "__main__":
     import uvicorn
 
-    host = os.getenv("API_HOST", "0.0.0.0")
-    port = int(os.getenv("API_PORT", "8000"))
+    host = os.getenv("API_HOST", DEFAULT_API_HOST)
+    port = int(os.getenv("API_PORT", str(DEFAULT_API_PORT)))
     debug = os.getenv("DEBUG", "true").lower() == "true"
 
     print(f"\n🚀 Starting server on {host}:{port}")

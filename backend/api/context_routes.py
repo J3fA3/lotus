@@ -21,6 +21,14 @@ from db.database import get_db
 from db.models import ContextItem, Entity, Relationship, Task, Comment
 from agents.cognitive_nexus_graph import process_context
 from services.knowledge_graph_service import KnowledgeGraphService
+from config.constants import (
+    MAX_RECENT_TASKS_FOR_MATCHING,
+    TASK_OP_CREATE,
+    TASK_OP_UPDATE,
+    TASK_OP_COMMENT,
+    TASK_OP_ENRICH,
+    TASK_STATUS_TODO
+)
 import uuid
 
 
@@ -111,7 +119,7 @@ async def ingest_context(
         result = await db.execute(
             select(Task)
             .order_by(Task.updated_at.desc())
-            .limit(50)  # Consider last 50 tasks for matching
+            .limit(MAX_RECENT_TASKS_FOR_MATCHING)
         )
         existing_tasks_models = result.scalars().all()
 
@@ -212,7 +220,7 @@ async def ingest_context(
             task_id = operation.get("task_id")
             data = operation.get("data", {})
 
-            if op_type == "CREATE":
+            if op_type == TASK_OP_CREATE:
                 # Create new task
                 new_task = Task(
                     id=str(uuid.uuid4()),
@@ -222,7 +230,7 @@ async def ingest_context(
                     due_date=data.get("due_date"),  # Already in string format
                     description=data.get("description", ""),
                     notes=data.get("notes", ""),
-                    status="todo",
+                    status=TASK_STATUS_TODO,
                     created_at=datetime.utcnow(),
                     updated_at=datetime.utcnow()
                 )
@@ -230,7 +238,7 @@ async def ingest_context(
                 await db.flush()
                 tasks_created += 1
 
-            elif op_type == "UPDATE" and task_id:
+            elif op_type == TASK_OP_UPDATE and task_id:
                 # Update existing task
                 task_result = await db.execute(select(Task).where(Task.id == task_id))
                 task = task_result.scalar_one_or_none()
@@ -250,7 +258,7 @@ async def ingest_context(
                     task.updated_at = datetime.utcnow()
                     tasks_updated += 1
 
-            elif op_type == "COMMENT" and task_id:
+            elif op_type == TASK_OP_COMMENT and task_id:
                 # Add comment to existing task
                 comment = Comment(
                     id=str(uuid.uuid4()),
