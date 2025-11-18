@@ -175,3 +175,21 @@ class KnowledgeBaseSummaryResponse(BaseModel):
     by_category: dict
     by_extension: dict
     last_updated: str
+
+
+class ValueStreamSchema(BaseModel):
+    """Value stream schema for task organization"""
+    id: str
+    name: str
+    color: Optional[str] = None
+    createdAt: str
+    updatedAt: str
+
+    class Config:
+        from_attributes = True
+
+
+class ValueStreamCreateRequest(BaseModel):
+    """Request for creating a new value stream"""
+    name: str
+    color: Optional[str] = None

@@ -14,6 +14,7 @@ import {
 import { Calendar, Paperclip, MessageSquare, Trash2, X, User, FileText, ArrowLeft, Minimize2 } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
+import { ValueStreamCombobox } from "./ValueStreamCombobox";
 
 interface TaskFullPageProps {
   task: Task;
@@ -189,11 +190,11 @@ export const TaskFullPage = ({
               <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                 Value Stream
               </Label>
-              <Input
+              <ValueStreamCombobox
                 value={editedTask.valueStream || ""}
-                onChange={(e) => handleUpdate({ valueStream: e.target.value })}
-                placeholder="e.g., Marketing, Development"
-                className="h-11 border-border/50 focus:border-primary/50 transition-all"
+                onChange={(value) => handleUpdate({ valueStream: value })}
+                placeholder="Select or create value stream..."
+                className="w-full"
               />
             </div>
 

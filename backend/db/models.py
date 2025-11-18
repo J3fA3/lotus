@@ -83,6 +83,17 @@ class InferenceHistory(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+class ValueStream(Base):
+    """Value stream categories for organizing tasks"""
+    __tablename__ = "value_streams"
+
+    id = Column(String, primary_key=True)
+    name = Column(String, nullable=False, unique=True)
+    color = Column(String, nullable=True)  # Optional color for UI display
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class ShortcutConfig(Base):
     """Keyboard shortcut configuration with remote sync support"""
     __tablename__ = "shortcut_configs"
