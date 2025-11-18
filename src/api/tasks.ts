@@ -1,7 +1,13 @@
 /**
  * API client for task management backend
  */
-import { Task } from "@/types/task";
+import {
+  Task,
+  Document,
+  DocumentUploadResponse,
+  DocumentListResponse,
+  KnowledgeBaseSummary
+} from "@/types/task";
 
 // Configuration
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api";
@@ -230,4 +236,322 @@ export async function checkHealth(): Promise<HealthResponse> {
     }
     throw new Error("Unknown error occurred during health check");
   }
+}
+
+// ============= Document Management API =============
+
+/**
+ * Supported document file extensions
+ */
+export const SUPPORTED_DOCUMENT_TYPES = [
+  ".pdf",
+  ".docx",
+  ".doc",
+  ".txt",
+  ".md",
+  ".markdown",
+  ".xlsx",
+  ".xls",
+] as const;
+
+/**
+ * MIME types for supported documents
+ */
+export const DOCUMENT_MIME_TYPES: Record<string, string> = {
+  ".pdf": "application/pdf",
+  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ".doc": "application/msword",
+  ".txt": "text/plain",
+  ".md": "text/markdown",
+  ".markdown": "text/markdown",
+  ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ".xls": "application/vnd.ms-excel",
+};
+
+/**
+ * Check if file type is supported
+ */
+export function isSupportedDocumentType(filename: string): boolean {
+  const extension = filename.toLowerCase().substring(filename.lastIndexOf("."));
+  return SUPPORTED_DOCUMENT_TYPES.includes(extension as any);
+}
+
+/**
+ * Get friendly file type name
+ */
+export function getFileTypeName(filename: string): string {
+  const extension = filename.toLowerCase().substring(filename.lastIndexOf("."));
+  const typeNames: Record<string, string> = {
+    ".pdf": "PDF",
+    ".docx": "Word Document",
+    ".doc": "Word Document",
+    ".txt": "Text File",
+    ".md": "Markdown",
+    ".markdown": "Markdown",
+    ".xlsx": "Excel Spreadsheet",
+    ".xls": "Excel Spreadsheet",
+  };
+  return typeNames[extension] || "Document";
+}
+
+/**
+ * Upload document to knowledge base
+ */
+export async function uploadDocument(
+  file: File,
+  category: "tasks" | "inference" | "knowledge" = "knowledge",
+  taskId?: string
+): Promise<DocumentUploadResponse> {
+  if (!file) {
+    throw new Error("File is required");
+  }
+
+  if (!isSupportedDocumentType(file.name)) {
+    throw new Error(
+      `Unsupported file type. Supported types: ${SUPPORTED_DOCUMENT_TYPES.join(", ")}`
+    );
+  }
+
+  try {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("category", category);
+    if (taskId) {
+      formData.append("task_id", taskId);
+    }
+
+    const response = await fetch(`${API_BASE_URL}/documents/upload`, {
+      method: "POST",
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: response.statusText }));
+      throw new Error(error.detail || "Failed to upload document");
+    }
+
+    return response.json();
+  } catch (error) {
+    if (error instanceof Error) {
+      throw error;
+    }
+    throw new Error("Unknown error occurred during document upload");
+  }
+}
+
+/**
+ * Infer tasks from any supported document type using AI
+ */
+export async function inferTasksFromDocument(
+  file: File,
+  assignee: string = DEFAULT_ASSIGNEE
+): Promise<InferenceResponse> {
+  if (!file) {
+    throw new Error("File is required");
+  }
+
+  if (!isSupportedDocumentType(file.name)) {
+    throw new Error(
+      `Unsupported file type. Supported types: ${SUPPORTED_DOCUMENT_TYPES.join(", ")}`
+    );
+  }
+
+  try {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("assignee", assignee);
+
+    const response = await fetch(`${API_BASE_URL}/documents/upload-for-inference`, {
+      method: "POST",
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: response.statusText }));
+      throw new Error(error.detail || "Failed to infer tasks from document");
+    }
+
+    return response.json();
+  } catch (error) {
+    if (error instanceof Error) {
+      throw error;
+    }
+    throw new Error("Unknown error occurred during document processing");
+  }
+}
+
+/**
+ * List documents with optional filtering
+ */
+export async function listDocuments(
+  category?: "tasks" | "inference" | "knowledge",
+  taskId?: string
+): Promise<DocumentListResponse> {
+  try {
+    const params = new URLSearchParams();
+    if (category) params.append("category", category);
+    if (taskId) params.append("task_id", taskId);
+
+    const url = `${API_BASE_URL}/documents${params.toString() ? `?${params.toString()}` : ""}`;
+    const response = await fetch(url);
+
+    if (!response.ok) {
+      throw new Error(`Failed to list documents: ${response.statusText}`);
+    }
+
+    return response.json();
+  } catch (error) {
+    if (error instanceof Error) {
+      throw error;
+    }
+    throw new Error("Unknown error occurred while listing documents");
+  }
+}
+
+/**
+ * Get document metadata
+ */
+export async function getDocument(documentId: string): Promise<Document> {
+  if (!documentId) {
+    throw new Error("Document ID is required");
+  }
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/documents/${documentId}`);
+
+    if (!response.ok) {
+      throw new Error(`Failed to get document: ${response.statusText}`);
+    }
+
+    return response.json();
+  } catch (error) {
+    if (error instanceof Error) {
+      throw error;
+    }
+    throw new Error("Unknown error occurred while fetching document");
+  }
+}
+
+/**
+ * Download document file
+ */
+export async function downloadDocument(documentId: string, filename: string): Promise<void> {
+  if (!documentId) {
+    throw new Error("Document ID is required");
+  }
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/documents/${documentId}/download`);
+
+    if (!response.ok) {
+      throw new Error(`Failed to download document: ${response.statusText}`);
+    }
+
+    // Create blob and trigger download
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+  } catch (error) {
+    if (error instanceof Error) {
+      throw error;
+    }
+    throw new Error("Unknown error occurred while downloading document");
+  }
+}
+
+/**
+ * Delete document
+ */
+export async function deleteDocument(documentId: string): Promise<void> {
+  if (!documentId) {
+    throw new Error("Document ID is required");
+  }
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/documents/${documentId}`, {
+      method: "DELETE",
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: response.statusText }));
+      throw new Error(error.detail || "Failed to delete document");
+    }
+  } catch (error) {
+    if (error instanceof Error) {
+      throw error;
+    }
+    throw new Error("Unknown error occurred while deleting document");
+  }
+}
+
+/**
+ * Search documents by text content
+ */
+export async function searchDocuments(
+  query: string,
+  category?: "tasks" | "inference" | "knowledge",
+  limit: number = 10
+): Promise<{ query: string; results: Document[]; total: number }> {
+  if (!query.trim()) {
+    throw new Error("Search query is required");
+  }
+
+  try {
+    const params = new URLSearchParams();
+    if (category) params.append("category", category);
+    params.append("limit", limit.toString());
+
+    const url = `${API_BASE_URL}/documents/search/${encodeURIComponent(query)}${
+      params.toString() ? `?${params.toString()}` : ""
+    }`;
+    const response = await fetch(url);
+
+    if (!response.ok) {
+      throw new Error(`Failed to search documents: ${response.statusText}`);
+    }
+
+    return response.json();
+  } catch (error) {
+    if (error instanceof Error) {
+      throw error;
+    }
+    throw new Error("Unknown error occurred while searching documents");
+  }
+}
+
+/**
+ * Get knowledge base summary statistics
+ */
+export async function getKnowledgeBaseSummary(): Promise<KnowledgeBaseSummary> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/knowledge-base/summary`);
+
+    if (!response.ok) {
+      throw new Error(`Failed to get knowledge base summary: ${response.statusText}`);
+    }
+
+    return response.json();
+  } catch (error) {
+    if (error instanceof Error) {
+      throw error;
+    }
+    throw new Error("Unknown error occurred while fetching knowledge base summary");
+  }
+}
+
+/**
+ * Format file size for display
+ */
+export function formatFileSize(bytes: number): string {
+  if (bytes === 0) return "0 Bytes";
+  const k = 1024;
+  const sizes = ["Bytes", "KB", "MB", "GB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + " " + sizes[i];
 }
