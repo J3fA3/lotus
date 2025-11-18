@@ -1,41 +1,27 @@
 """
-Orchestrator Agent - Phase 3 AI Assistant (Gemini-Powered)
+Orchestrator Agent - Phase 2 AI Assistant
 
-This is the main orchestrator that coordinates all agents with Phase 3 enhancements:
-- Gemini 2.0 Flash for intelligent decision-making (10x cost reduction)
-- User profile awareness for personalized task management
-- Relevance filtering (only extract tasks relevant to user)
-- Task enrichment (auto-update existing tasks with new context)
-- Natural language comments (no more robotic metrics)
-- Performance optimization (parallel execution + caching)
+This is the main orchestrator that coordinates all Phase 1 agents and adds
+confidence-based decision-making for autonomous task management.
 
 Flow:
-1. Load user profile (for relevance filtering)
-2. Classify request type (Gemini)
-3. If question → Answer with Gemini → END
-4. If task creation:
-   a. Run Phase 1 Cognitive Nexus agents (parallel execution)
-   b. Find related existing tasks
-   c. Check for enrichment opportunities (Gemini)
-   d. Enrich task proposals with fields
-   e. Filter by relevance (Gemini + heuristics)
-   f. Calculate confidence scores
-   g. Generate clarifying questions if needed (Gemini)
-   h. Execute (with natural comment generation)
-5. If context_only → Store → END
+1. Run Phase 1 Cognitive Nexus agents (context → entities → relationships → task operations)
+2. Find related existing tasks (TaskMatcher)
+3. Extract additional task fields (FieldExtractor)
+4. Calculate confidence scores (ConfidenceScorer)
+5. Decide action based on confidence:
+   - >80%: Auto-create/enrich task
+   - 50-80%: Propose task, ask user approval
+   - <50%: Ask clarifying questions
+6. Execute action or return proposal
 
-Phase 3 Improvements:
-- Cost: $8/mo → $0.18/mo (45x reduction)
-- Speed: 20-30s → 8-12s (2-3x faster)
-- Quality: Better filtering, smarter decisions
-- UX: Natural comments, context-aware
+This orchestrator preserves Phase 1 agents as-is and adds a coordination
+layer on top for intelligent decision-making.
 """
 
-from typing import TypedDict, List, Dict, Optional, Annotated, Any
+from typing import TypedDict, List, Dict, Optional, Annotated
 from langgraph.graph import StateGraph, END
 import operator
-import asyncio
-import logging
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -43,7 +29,6 @@ import httpx
 import json
 import uuid
 
-# Phase 1 & 2 imports (existing)
 from agents.cognitive_nexus_graph import process_context
 from agents.advanced_pdf_processor import AdvancedPDFProcessor
 from services.confidence_scorer import ConfidenceScorer, ConfidenceScore
@@ -55,27 +40,7 @@ from services.assistant_db_operations import (
     store_context_item,
     store_chat_message
 )
-from db.models import Task, ChatMessage, ContextItem, Entity, Relationship, Comment
-
-# Phase 3 imports (new)
-from services.gemini_client import get_gemini_client
-from services.user_profile import get_user_profile, UserProfile
-from services.comment_generator import get_comment_generator
-from services.performance_cache import get_cache
-from agents.relevance_filter import get_relevance_filter, RelevanceScore
-from agents.enrichment_engine import get_enrichment_engine, EnrichmentAction
-from config.gemini_prompts import (
-    get_relevance_scoring_prompt,
-    get_task_enrichment_prompt,
-    get_comment_generation_prompt,
-    get_request_classification_prompt,
-    get_clarifying_questions_prompt,
-    get_answer_question_prompt
-)
-from pydantic import BaseModel
-
-# Logging
-logger = logging.getLogger(__name__)
+from db.models import Task, ChatMessage, ContextItem, Entity, Relationship
 
 
 # ============================================================================
@@ -83,16 +48,10 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 
 class OrchestratorState(TypedDict):
-    """Typed state for orchestrator LangGraph - Phase 3 Enhanced.
+    """Typed state for orchestrator LangGraph.
 
     This state flows through all orchestrator nodes, building up context
     and decisions as it progresses through the pipeline.
-
-    Phase 3 additions:
-    - user_profile: User context for personalization
-    - enrichment_opportunities: Smart updates to existing tasks
-    - natural_comments: Human-like explanations
-    - filtered_task_count: Tasks filtered by relevance
     """
     # Input
     input_context: str
@@ -102,9 +61,6 @@ class OrchestratorState(TypedDict):
     session_id: str  # Chat session ID
     user_id: Optional[str]
     db: Optional[AsyncSession]  # Database session for queries
-
-    # Phase 3: User Profile (NEW)
-    user_profile: Optional[Dict]  # User context (name, projects, markets, etc.)
 
     # Phase 1 agent results
     entities: List[Dict]
@@ -120,17 +76,9 @@ class OrchestratorState(TypedDict):
     existing_task_matches: List[TaskMatch]
     duplicate_task: Optional[TaskMatch]
 
-    # Phase 3: Task Enrichment (NEW)
-    enrichment_opportunities: List[Dict]  # Enrichment actions from enrichment engine
-    applied_enrichments: List[Dict]  # Enrichments that were applied
-
     # Enriched task proposals
     proposed_tasks: List[Dict]  # Enriched with fields from FieldExtractor
-    enrichment_operations: List[Dict]  # Operations to enrich existing tasks (Phase 2)
-
-    # Phase 3: Relevance Filtering (NEW)
-    filtered_task_count: int  # How many tasks were filtered out
-    pre_filter_task_count: int  # Tasks before relevance filtering
+    enrichment_operations: List[Dict]  # Operations to enrich existing tasks
 
     # Confidence scoring
     confidence_scores: List[ConfidenceScore]  # One per proposed task
@@ -148,99 +96,13 @@ class OrchestratorState(TypedDict):
     enriched_tasks: List[Dict]
     context_item_id: Optional[int]  # ID of stored ContextItem
 
-    # Phase 3: Natural Comments (NEW)
-    natural_comments: Dict[str, str]  # Task ID -> natural language comment
-
     # Metadata
     processing_start: datetime
     processing_end: Optional[datetime]
 
 
 # ============================================================================
-# PYDANTIC MODELS FOR GEMINI STRUCTURED OUTPUT
-# ============================================================================
-
-class RequestClassification(BaseModel):
-    """Classification result for user input."""
-    classification: str  # "question", "task_creation", "context_only"
-    confidence: int  # 0-100
-    reasoning: str
-
-
-class ClarifyingQuestionsResponse(BaseModel):
-    """Clarifying questions generated by Gemini."""
-    questions: List[str]
-
-
-# ============================================================================
-# NODE 0: LOAD USER PROFILE (Phase 3 - NEW)
-# ============================================================================
-
-async def load_user_profile(state: OrchestratorState) -> Dict:
-    """Node 0: Load user profile for personalization.
-
-    This runs early in the pipeline to enable:
-    - Relevance filtering (only extract tasks for this user)
-    - Name normalization ("Jeff" → "Jef")
-    - Context-aware task creation
-
-    Returns:
-        State updates with user_profile
-    """
-    reasoning = ["\n=== LOAD USER PROFILE ==="]
-
-    db = state.get("db")
-    user_id = int(state.get("user_id", 1))  # Default to user 1
-
-    if not db:
-        reasoning.append("⚠ No database session - using default profile")
-        # Return minimal profile
-        return {
-            "user_profile": {
-                "name": "User",
-                "aliases": [],
-                "projects": [],
-                "markets": [],
-                "colleagues": {}
-            },
-            "reasoning_trace": reasoning
-        }
-
-    try:
-        # Load from database (with caching)
-        profile = await get_user_profile(db, user_id=user_id)
-        profile_dict = profile.to_dict()
-
-        reasoning.append(f"→ Loaded profile for: {profile.name}")
-        reasoning.append(f"  Projects: {', '.join(profile.projects)}")
-        reasoning.append(f"  Markets: {', '.join(profile.markets)}")
-
-        logger.info(f"Loaded user profile: {profile.name}")
-
-        return {
-            "user_profile": profile_dict,
-            "reasoning_trace": reasoning
-        }
-
-    except Exception as e:
-        logger.error(f"Failed to load user profile: {e}")
-        reasoning.append(f"⚠ Profile load failed: {str(e)}")
-
-        # Return minimal profile
-        return {
-            "user_profile": {
-                "name": "User",
-                "aliases": [],
-                "projects": [],
-                "markets": [],
-                "colleagues": {}
-            },
-            "reasoning_trace": reasoning
-        }
-
-
-# ============================================================================
-# NODE 1: CLASSIFY REQUEST (Phase 3 - GEMINI MIGRATION)
+# NODE 0: CLASSIFY REQUEST
 # ============================================================================
 
 async def classify_request(state: OrchestratorState) -> Dict:
@@ -284,31 +146,50 @@ async def classify_request(state: OrchestratorState) -> Dict:
             "reasoning_trace": reasoning
         }
 
-    # Priority 3: Manual input - use Gemini to classify (Phase 3)
+    # Priority 3: Manual input - use LLM to classify
     # Only manual chat messages should be treated as potential questions
-    gemini = get_gemini_client()
-    prompt = get_request_classification_prompt(context)
+    prompt = f"""Classify this user input into ONE category:
+
+INPUT: {context}
+
+CATEGORIES:
+1. question - User is asking a question that needs an answer (e.g., "What's my highest priority?", "Who is working on X?", "When is Y due?")
+2. task_creation - User wants to create/update tasks (e.g., "Andy needs the dashboard by Friday", "Create a task for...")
+3. context_only - Just providing information to store (e.g., "FYI: meeting moved", "Note: project on hold")
+
+OUTPUT ONLY ONE WORD: question, task_creation, or context_only
+
+Classification:"""
 
     try:
-        # Try Gemini first for better quality
-        result = await gemini.generate_structured(
-            prompt=prompt,
-            schema=RequestClassification,
-            temperature=0.1,
-            fallback_to_qwen=True  # Automatic fallback if Gemini unavailable
-        )
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post(
+                "http://localhost:11434/api/generate",
+                json={
+                    "model": "qwen2.5:7b-instruct",
+                    "prompt": prompt,
+                    "stream": False,
+                    "options": {"temperature": 0.1}
+                }
+            )
 
-        request_type = result.classification
-        reasoning.append(
-            f"→ Manual input, Gemini classified as: {request_type.upper()} "
-            f"(confidence: {result.confidence}%)"
-        )
-        reasoning.append(f"  Reasoning: {result.reasoning}")
+            result = response.json()
+            response_text = result.get("response", "").strip().lower()
 
-        logger.info(f"Request classification: {request_type} (confidence: {result.confidence}%)")
+            # Extract classification
+            if "question" in response_text:
+                request_type = "question"
+            elif "task_creation" in response_text or "task" in response_text:
+                request_type = "task_creation"
+            elif "context" in response_text:
+                request_type = "context_only"
+            else:
+                # Default: if unclear, assume task creation (existing behavior)
+                request_type = "task_creation"
+
+            reasoning.append(f"→ Manual input, LLM classified as: {request_type.upper()}")
 
     except Exception as e:
-        logger.error(f"Classification failed: {e}")
         reasoning.append(f"⚠ Classification failed: {str(e)}")
         # Default to task_creation on error
         request_type = "task_creation"
@@ -321,26 +202,7 @@ async def classify_request(state: OrchestratorState) -> Dict:
 
 
 # ============================================================================
-# HELPER FUNCTIONS
-# ============================================================================
-
-async def _get_recent_tasks(db: AsyncSession, limit: int = 50) -> List[Task]:
-    """Helper: Get recent tasks from database.
-
-    Args:
-        db: Database session
-        limit: Maximum tasks to return
-
-    Returns:
-        List of Task objects
-    """
-    query = select(Task).order_by(Task.created_at.desc()).limit(limit)
-    result = await db.execute(query)
-    return list(result.scalars().all())
-
-
-# ============================================================================
-# NODE 2: ANSWER QUESTION (for questions - Phase 3 GEMINI)
+# NODE 1: ANSWER QUESTION (for questions)
 # ============================================================================
 
 async def answer_question(state: OrchestratorState) -> Dict:
@@ -366,55 +228,59 @@ async def answer_question(state: OrchestratorState) -> Dict:
             "reasoning_trace": reasoning
         }
 
-    # Get all tasks (use cache for performance)
-    cache = get_cache()
-    tasks = await cache.get_or_compute(
-        key="recent_tasks",
-        compute_fn=lambda: _get_recent_tasks(db),
-        ttl=30,  # Cache for 30 seconds
-        prefix="tasks"
-    )
+    # Get all tasks
+    tasks_query = select(Task).order_by(Task.created_at.desc()).limit(50)
+    result = await db.execute(tasks_query)
+    tasks = result.scalars().all()
 
-    if not tasks:
+    # Build context for LLM
+    task_context = ""
+    if tasks:
+        task_summaries = []
+        for task in tasks:
+            summary = f"- {task.title} (Status: {task.status}, Assignee: {task.assignee}"
+            if task.due_date:
+                summary += f", Due: {task.due_date}"
+            if task.value_stream:
+                summary += f", Project: {task.value_stream}"
+            summary += ")"
+            task_summaries.append(summary)
+        task_context = "\n".join(task_summaries[:20])  # Top 20 tasks
+        reasoning.append(f"→ Loaded {len(tasks)} tasks for context")
+    else:
+        task_context = "No tasks found."
         reasoning.append("→ No tasks in database")
-        return {
-            "answer_text": "You don't have any tasks yet. Would you like to create some?",
-            "recommended_action": "answer_question",
-            "reasoning_trace": reasoning,
-            "processing_end": datetime.now()
-        }
 
-    reasoning.append(f"→ Loaded {len(tasks)} tasks for context")
+    # Use LLM to answer question
+    prompt = f"""You are a helpful task management assistant. Answer the user's question based on their current tasks.
 
-    # Convert tasks to dict format for prompt
-    task_dicts = []
-    for task in tasks:
-        task_dicts.append({
-            "title": task.title,
-            "status": task.status,
-            "assignee": task.assignee,
-            "due_date": task.due_date,
-            "value_stream": task.value_stream
-        })
+QUESTION: {question}
 
-    # Use Gemini to answer question (Phase 3)
-    gemini = get_gemini_client()
-    prompt = get_answer_question_prompt(question, task_dicts)
+CURRENT TASKS:
+{task_context}
+
+Provide a clear, concise answer. If asking for "highest priority", look for tasks with high priority or urgent status. If asking about who's working on something, look at assignees. If asking about deadlines, check due dates.
+
+Answer:"""
 
     try:
-        # Gemini for better answer quality
-        answer = await gemini.generate(
-            prompt=prompt,
-            temperature=0.3,
-            max_tokens=512,
-            fallback_to_qwen=True
-        )
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.post(
+                "http://localhost:11434/api/generate",
+                json={
+                    "model": "qwen2.5:7b-instruct",
+                    "prompt": prompt,
+                    "stream": False,
+                    "options": {"temperature": 0.3}
+                }
+            )
 
-        reasoning.append(f"→ Generated answer with Gemini ({len(answer)} characters)")
-        logger.info(f"Answered question: {question[:50]}...")
+            result = response.json()
+            answer = result.get("response", "").strip()
+
+            reasoning.append(f"→ Generated answer ({len(answer)} characters)")
 
     except Exception as e:
-        logger.error(f"Answer generation failed: {e}")
         reasoning.append(f"⚠ Answer generation failed: {str(e)}")
         answer = "I'm having trouble accessing that information right now. Please try again."
 
@@ -656,187 +522,6 @@ async def enrich_task_proposals(state: OrchestratorState) -> Dict:
 
 
 # ============================================================================
-# NODE 3A: CHECK TASK ENRICHMENTS (Phase 3 - NEW)
-# ============================================================================
-
-async def check_task_enrichments(state: OrchestratorState) -> Dict:
-    """Node 3a: Check if existing tasks should be enriched with new context.
-
-    This is a Phase 3 feature that automatically updates existing tasks
-    when new information arrives, instead of creating duplicates.
-
-    Examples:
-    - "Co-op presentation moved to Dec 3" → Updates existing Co-op task deadline
-    - "Alberto confirmed Spain launch" → Adds note to Spain tasks
-    - "CRESCO delayed" → Adds delay note to CRESCO tasks
-
-    Returns:
-        State updates with enrichment_opportunities
-    """
-    reasoning = ["\n=== TASK ENRICHMENT CHECK ==="]
-
-    # Get inputs
-    db = state.get("db")
-    entities = state.get("entities", [])
-    existing_matches = state.get("existing_task_matches", [])
-    context = state["input_context"]
-
-    if not existing_matches:
-        reasoning.append("→ No existing task matches - skipping enrichment")
-        return {
-            "enrichment_opportunities": [],
-            "reasoning_trace": reasoning
-        }
-
-    # Convert matches to task dicts
-    existing_tasks = []
-    for match in existing_matches[:10]:  # Check top 10 matches
-        existing_tasks.append(match.task if hasattr(match, 'task') else match)
-
-    reasoning.append(f"→ Checking {len(existing_tasks)} existing tasks for enrichment")
-
-    try:
-        # Use enrichment engine (Phase 3)
-        enrichment_engine = get_enrichment_engine()
-
-        enrichments = await enrichment_engine.find_enrichment_opportunities(
-            new_context=context,
-            entities=entities,
-            existing_tasks=existing_tasks,
-            max_enrichments=5
-        )
-
-        if enrichments:
-            reasoning.append(f"→ Found {len(enrichments)} enrichment opportunities")
-
-            for enrich in enrichments:
-                auto_str = "AUTO-APPLY" if enrich.auto_apply else "NEEDS APPROVAL"
-                reasoning.append(
-                    f"  • [{auto_str}] {enrich.task_title} "
-                    f"(confidence: {enrich.confidence*100:.0f}%)"
-                )
-
-            logger.info(f"Found {len(enrichments)} enrichment opportunities")
-        else:
-            reasoning.append("→ No enrichments needed")
-
-        # Convert to dicts for state
-        enrichment_dicts = [
-            {
-                "task_id": e.task_id,
-                "task_title": e.task_title,
-                "changes": e.changes,
-                "reasoning": e.reasoning,
-                "confidence": e.confidence,
-                "auto_apply": e.auto_apply
-            }
-            for e in enrichments
-        ]
-
-        return {
-            "enrichment_opportunities": enrichment_dicts,
-            "reasoning_trace": reasoning
-        }
-
-    except Exception as e:
-        logger.error(f"Enrichment check failed: {e}")
-        reasoning.append(f"⚠ Enrichment check failed: {str(e)}")
-        return {
-            "enrichment_opportunities": [],
-            "reasoning_trace": reasoning
-        }
-
-
-# ============================================================================
-# NODE 3B: FILTER RELEVANT TASKS (Phase 3 - NEW)
-# ============================================================================
-
-async def filter_relevant_tasks(state: OrchestratorState) -> Dict:
-    """Node 3b: Filter proposed tasks by relevance to user.
-
-    This is a critical Phase 3 feature that prevents creating tasks for
-    other people. Uses user profile + Gemini to score relevance.
-
-    Examples of filtering:
-    - "Maran needs to review PR" → Filtered (not for Jef)
-    - "Alberto asked about Spain" → Kept (Jef's market)
-    - "Jef needs to update CRESCO" → Kept (Jef's name + project)
-
-    Returns:
-        State updates with filtered proposed_tasks
-    """
-    reasoning = ["\n=== RELEVANCE FILTERING ==="]
-
-    proposed_tasks = state.get("proposed_tasks", [])
-    user_profile_dict = state.get("user_profile")
-    context = state["input_context"]
-
-    if not proposed_tasks:
-        reasoning.append("→ No tasks to filter")
-        return {
-            "filtered_task_count": 0,
-            "pre_filter_task_count": 0,
-            "reasoning_trace": reasoning
-        }
-
-    if not user_profile_dict:
-        reasoning.append("⚠ No user profile - skipping filtering")
-        return {
-            "filtered_task_count": 0,
-            "pre_filter_task_count": len(proposed_tasks),
-            "reasoning_trace": reasoning
-        }
-
-    pre_filter_count = len(proposed_tasks)
-    reasoning.append(f"→ Filtering {pre_filter_count} proposed tasks")
-
-    try:
-        # Convert user profile dict back to object
-        profile = UserProfile(**user_profile_dict)
-
-        # Use relevance filter (Phase 3)
-        relevance_filter = get_relevance_filter(threshold=70)
-
-        filtered_tasks = await relevance_filter.filter_tasks(
-            proposed_tasks=proposed_tasks,
-            user_profile=profile,
-            context=context
-        )
-
-        filtered_count = pre_filter_count - len(filtered_tasks)
-
-        reasoning.append(f"→ Kept {len(filtered_tasks)}/{pre_filter_count} tasks")
-        reasoning.append(f"→ Filtered out {filtered_count} irrelevant tasks")
-
-        # Log which tasks were kept vs filtered
-        for task in filtered_tasks:
-            score = task.get("relevance_score", 0)
-            reasoning.append(f"  ✓ {task.get('title', 'Unknown')} (score: {score})")
-
-        logger.info(f"Relevance filtering: kept {len(filtered_tasks)}/{pre_filter_count} tasks")
-
-        return {
-            "proposed_tasks": filtered_tasks,
-            "filtered_task_count": filtered_count,
-            "pre_filter_task_count": pre_filter_count,
-            "reasoning_trace": reasoning
-        }
-
-    except Exception as e:
-        logger.error(f"Relevance filtering failed: {e}")
-        reasoning.append(f"⚠ Filtering failed: {str(e)}")
-        reasoning.append("→ Keeping all tasks (no filtering)")
-
-        # On error, keep all tasks
-        return {
-            "proposed_tasks": proposed_tasks,
-            "filtered_task_count": 0,
-            "pre_filter_task_count": pre_filter_count,
-            "reasoning_trace": reasoning
-        }
-
-
-# ============================================================================
 # NODE 4: CALCULATE CONFIDENCE
 # ============================================================================
 
@@ -937,36 +622,55 @@ async def generate_clarifying_questions(state: OrchestratorState) -> Dict:
     if state["recommended_action"] != "clarify":
         return {"clarifying_questions": [], "reasoning_trace": reasoning}
 
-    # Get context for prompt (Phase 3)
+    # Build prompt for LLM
     entities = state["entities"]
     context = state["input_context"]
-    confidence_factors = {
-        "entity_count": len(entities),
-        "entity_quality": state.get("entity_quality", 0.5),
-        "context_complexity": state.get("context_complexity", 0.5),
-        "issues": "Low confidence in task extraction"
-    }
 
-    # Use Gemini for better question generation (Phase 3)
-    gemini = get_gemini_client()
-    prompt = get_clarifying_questions_prompt(context, entities, confidence_factors)
+    entity_list = ", ".join([e.get("name", "") for e in entities])
+
+    prompt = f"""The user provided unclear context. Generate 2-3 specific clarifying questions.
+
+Context: {context}
+
+Entities found: {entity_list}
+
+What's unclear:
+- Who should be assigned to tasks?
+- When are deadlines?
+- What are the specific action items?
+
+Generate ONLY 2-3 questions in JSON format:
+{{"questions": ["Who should be assigned to this task?", "When is this due?", "What is the specific deliverable?"]}}
+
+DO NOT include explanation.
+"""
 
     questions = []
     try:
-        # Gemini structured output
-        result = await gemini.generate_structured(
-            prompt=prompt,
-            schema=ClarifyingQuestionsResponse,
-            temperature=0.4,
-            fallback_to_qwen=True
-        )
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.post(
+                "http://localhost:11434/api/generate",
+                json={
+                    "model": "qwen2.5:7b-instruct",
+                    "prompt": prompt,
+                    "stream": False,
+                    "options": {"temperature": 0.3}
+                }
+            )
 
-        questions = result.questions
-        reasoning.append(f"→ Gemini generated {len(questions)} clarifying questions")
-        logger.info(f"Generated {len(questions)} clarifying questions")
+            result = response.json()
+            response_text = result.get("response", "")
+
+            # Parse JSON
+            if "```json" in response_text:
+                response_text = response_text.split("```json")[1].split("```")[0]
+
+            data = json.loads(response_text.strip())
+            questions = data.get("questions", [])
+
+            reasoning.append(f"→ Generated {len(questions)} clarifying questions")
 
     except Exception as e:
-        logger.error(f"Failed to generate questions: {e}")
         reasoning.append(f"⚠ Failed to generate questions: {str(e)}")
         # Fallback questions
         questions = [
@@ -974,7 +678,6 @@ async def generate_clarifying_questions(state: OrchestratorState) -> Dict:
             "When should this be completed?",
             "What are the specific action items?"
         ]
-        reasoning.append("→ Using fallback questions")
 
     return {
         "clarifying_questions": questions,
