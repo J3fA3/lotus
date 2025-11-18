@@ -15,6 +15,7 @@ import { Calendar, Paperclip, MessageSquare, Trash2, X, User, FileText, ArrowLef
 import { format } from "date-fns";
 import { toast } from "sonner";
 import { ValueStreamCombobox } from "./ValueStreamCombobox";
+import { RichTextEditor } from "./RichTextEditor";
 
 interface TaskFullPageProps {
   task: Task;
@@ -36,7 +37,6 @@ export const TaskFullPage = ({
   });
   const [newComment, setNewComment] = useState("");
   const [newAttachment, setNewAttachment] = useState("");
-  const notesRef = useRef<HTMLTextAreaElement>(null);
 
   // Update editedTask when the task prop changes
   useEffect(() => {
@@ -53,14 +53,6 @@ export const TaskFullPage = ({
       // Escape to close
       if (e.key === "Escape") {
         onClose();
-        return;
-      }
-
-      // Cmd/Ctrl + D to focus document editor
-      if ((e.metaKey || e.ctrlKey) && e.key === "d") {
-        e.preventDefault();
-        notesRef.current?.focus();
-        notesRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
         return;
       }
     };
@@ -111,16 +103,6 @@ export const TaskFullPage = ({
     handleUpdate({ attachments: updatedAttachments });
   };
 
-  // Auto-resize textarea for notes
-  const handleNotesChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    handleUpdate({ notes: e.target.value });
-    
-    // Auto-resize
-    const textarea = e.target;
-    textarea.style.height = "auto";
-    textarea.style.height = textarea.scrollHeight + "px";
-  };
-
   return (
     <div className="fixed inset-0 z-50 bg-background overflow-y-auto">
       {/* Header */}
@@ -164,11 +146,12 @@ export const TaskFullPage = ({
         <div className="space-y-12">
           {/* Title */}
           <div>
-            <Input
-              value={editedTask.title}
-              onChange={(e) => handleUpdate({ title: e.target.value })}
-              className="text-5xl font-bold border-0 px-0 focus-visible:ring-0 tracking-tight bg-transparent h-auto py-2"
-              placeholder="Task title"
+            <RichTextEditor
+              content={editedTask.title}
+              onChange={(html) => handleUpdate({ title: html })}
+              placeholder="Task title - Type / for Word Art styles!"
+              variant="title"
+              className="text-5xl"
               autoFocus={false}
             />
           </div>
@@ -253,12 +236,11 @@ export const TaskFullPage = ({
             <Label className="text-sm font-semibold text-foreground">
               Description
             </Label>
-            <Textarea
-              value={editedTask.description || ""}
-              onChange={(e) => handleUpdate({ description: e.target.value })}
-              placeholder="Add a detailed description..."
-              rows={5}
-              className="resize-none border-border/50 focus:border-primary/50 transition-all leading-relaxed text-base"
+            <RichTextEditor
+              content={editedTask.description || ""}
+              onChange={(html) => handleUpdate({ description: html })}
+              placeholder="Add a detailed description... Type / for commands, * for bullets"
+              variant="minimal"
             />
           </div>
 
@@ -332,7 +314,10 @@ export const TaskFullPage = ({
                           })()}
                         </span>
                       </div>
-                      <p className="text-sm text-foreground/90 leading-relaxed">{comment.text}</p>
+                      <div
+                        className="text-sm text-foreground/90 leading-relaxed prose prose-sm max-w-none"
+                        dangerouslySetInnerHTML={{ __html: comment.text }}
+                      />
                     </div>
                   </div>
                 ))}
@@ -342,37 +327,38 @@ export const TaskFullPage = ({
               <div className="flex-shrink-0 w-8 h-8 rounded-full bg-muted flex items-center justify-center mt-1">
                 <User className="h-4 w-4 text-muted-foreground" />
               </div>
-              <Textarea
-                value={newComment}
-                onChange={(e) => setNewComment(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    handleAddComment();
-                  }
-                }}
-                placeholder="Add a comment..."
-                rows={1}
-                className="flex-1 resize-none border-0 border-b border-border/30 focus:border-primary/50 transition-all leading-relaxed rounded-none px-0 focus-visible:ring-0 focus-visible:ring-offset-0"
-                style={{ minHeight: '32px' }}
-              />
+              <div className="flex-1">
+                <RichTextEditor
+                  content={newComment}
+                  onChange={(html) => setNewComment(html)}
+                  placeholder="Add a comment... Type / for commands, * for bullets"
+                  variant="minimal"
+                  className="border-0 border-b rounded-none"
+                />
+                <Button
+                  onClick={handleAddComment}
+                  size="sm"
+                  className="mt-2 h-8"
+                  disabled={!newComment.trim()}
+                >
+                  Comment
+                </Button>
+              </div>
             </div>
           </div>
 
           {/* Notes Section - Full Width, No Header */}
           <div className="space-y-3 pb-24">
-            <Textarea
-              ref={notesRef}
-              value={editedTask.notes || ""}
-              onChange={handleNotesChange}
-              placeholder="Write your notes, thoughts, or documentation here..."
-              className="min-h-[400px] resize-none border-border/30 focus:border-primary/50 transition-all leading-relaxed text-base p-6 rounded-lg"
-              style={{ 
-                overflow: "hidden",
-                fontFamily: "'Inter', sans-serif"
-              }}
+            <Label className="text-sm font-semibold text-foreground">
+              Notes
+            </Label>
+            <RichTextEditor
+              content={editedTask.notes || ""}
+              onChange={(html) => handleUpdate({ notes: html })}
+              placeholder="Write your notes, thoughts, or documentation here... Type / for commands, * for bullets, create tables and more!"
+              variant="full"
             />
-            <span className="text-xs text-muted-foreground">Cmd/Ctrl+D to focus notes</span>
+            <span className="text-xs text-muted-foreground">Cmd/Ctrl+D to focus notes • Full formatting available: headings, tables, code blocks, and Word Art!</span>
           </div>
         </div>
       </div>

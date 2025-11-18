@@ -3,6 +3,7 @@ import { Card } from "./ui/card";
 import { Badge } from "./ui/badge";
 import { Calendar, MessageSquare, Paperclip } from "lucide-react";
 import { format } from "date-fns";
+import "./rich-text-editor.css";
 
 interface TaskCardProps {
   task: Task;
@@ -18,9 +19,10 @@ export const TaskCard = ({ task, onClick, onDragStart }: TaskCardProps) => {
       onDragStart={onDragStart}
       onClick={onClick}
     >
-      <h3 className="font-medium text-[15px] text-card-foreground mb-3 leading-snug tracking-tight group-hover:text-primary transition-colors duration-300">
-        {task.title}
-      </h3>
+      <h3
+        className="font-medium text-[15px] text-card-foreground mb-3 leading-snug tracking-tight group-hover:text-primary transition-colors duration-300"
+        dangerouslySetInnerHTML={{ __html: task.title }}
+      />
 
       <div className="space-y-2.5">
         {task.valueStream && (

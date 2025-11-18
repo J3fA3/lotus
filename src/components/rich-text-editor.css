@@ -1,0 +1,258 @@
+/* Rich Text Editor Base Styles */
+.rich-text-editor {
+  @apply w-full rounded-md border border-input bg-transparent text-sm shadow-sm transition-colors;
+  @apply focus-within:outline-none focus-within:ring-1 focus-within:ring-ring;
+}
+
+.rich-text-editor .ProseMirror {
+  @apply min-h-[80px] w-full px-3 py-2;
+  @apply focus:outline-none;
+}
+
+.rich-text-editor.full-featured .ProseMirror {
+  @apply min-h-[300px];
+}
+
+.rich-text-editor .ProseMirror p.is-editor-empty:first-child::before {
+  @apply text-muted-foreground;
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+
+/* Headings */
+.rich-text-editor .ProseMirror h1 {
+  @apply text-3xl font-bold mb-4 mt-6;
+}
+
+.rich-text-editor .ProseMirror h2 {
+  @apply text-2xl font-bold mb-3 mt-5;
+}
+
+.rich-text-editor .ProseMirror h3 {
+  @apply text-xl font-bold mb-2 mt-4;
+}
+
+.rich-text-editor .ProseMirror h4 {
+  @apply text-lg font-semibold mb-2 mt-3;
+}
+
+.rich-text-editor .ProseMirror h5 {
+  @apply text-base font-semibold mb-1 mt-2;
+}
+
+.rich-text-editor .ProseMirror h6 {
+  @apply text-sm font-semibold mb-1 mt-2;
+}
+
+/* Lists */
+.rich-text-editor .ProseMirror ul {
+  @apply list-disc pl-6 my-2;
+}
+
+.rich-text-editor .ProseMirror ol {
+  @apply list-decimal pl-6 my-2;
+}
+
+.rich-text-editor .ProseMirror li {
+  @apply my-1;
+}
+
+.rich-text-editor .ProseMirror li p {
+  @apply my-0;
+}
+
+/* Code */
+.rich-text-editor .ProseMirror code {
+  @apply bg-muted px-1.5 py-0.5 rounded text-sm font-mono;
+}
+
+.rich-text-editor .ProseMirror pre {
+  @apply bg-muted p-4 rounded-lg my-4 overflow-x-auto;
+}
+
+.rich-text-editor .ProseMirror pre code {
+  @apply bg-transparent p-0 text-sm font-mono;
+}
+
+/* Tables */
+.rich-text-editor .ProseMirror table {
+  @apply border-collapse w-full my-4;
+}
+
+.rich-text-editor .ProseMirror th {
+  @apply border border-border bg-muted px-3 py-2 text-left font-semibold;
+}
+
+.rich-text-editor .ProseMirror td {
+  @apply border border-border px-3 py-2;
+}
+
+.rich-text-editor .ProseMirror .selectedCell {
+  @apply bg-accent;
+}
+
+/* Blockquote */
+.rich-text-editor .ProseMirror blockquote {
+  @apply border-l-4 border-border pl-4 my-4 italic text-muted-foreground;
+}
+
+/* Horizontal Rule */
+.rich-text-editor .ProseMirror hr {
+  @apply border-t border-border my-6;
+}
+
+/* Slash Command Menu */
+.slash-menu-wrapper {
+  @apply relative z-50;
+}
+
+.slash-menu {
+  @apply w-72 bg-popover border border-border rounded-lg shadow-lg overflow-hidden;
+  @apply max-h-[400px] overflow-y-auto;
+}
+
+.slash-menu-query {
+  @apply px-3 py-2 text-xs text-muted-foreground bg-muted border-b border-border;
+}
+
+.slash-menu-item {
+  @apply flex items-start gap-3 px-3 py-2.5 text-left w-full;
+  @apply hover:bg-accent transition-colors;
+  @apply border-none bg-transparent cursor-pointer;
+}
+
+.slash-menu-item.is-selected {
+  @apply bg-accent;
+}
+
+.slash-menu-item-icon {
+  @apply text-2xl leading-none flex-shrink-0 mt-0.5;
+}
+
+.slash-menu-item-content {
+  @apply flex-1 min-w-0;
+}
+
+.slash-menu-item-title {
+  @apply font-medium text-sm text-foreground;
+}
+
+.slash-menu-item-description {
+  @apply text-xs text-muted-foreground mt-0.5;
+}
+
+/* Word Art Styles */
+.word-art {
+  @apply text-4xl font-bold py-4 text-center;
+}
+
+.word-art-gradient-blue {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.word-art-gradient-rainbow {
+  background: linear-gradient(to right, #ff0000, #ff7f00, #ffff00, #00ff00, #0000ff, #4b0082, #9400d3);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.word-art-gradient-fire {
+  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.word-art-gradient-gold {
+  background: linear-gradient(135deg, #ffd700 0%, #ffed4e 50%, #ff8c00 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  filter: drop-shadow(0 0 8px rgba(255, 215, 0, 0.5));
+}
+
+.word-art-shadow-3d {
+  @apply text-foreground;
+  text-shadow:
+    1px 1px 0 hsl(var(--muted-foreground)),
+    2px 2px 0 hsl(var(--muted-foreground)),
+    3px 3px 0 hsl(var(--muted-foreground)),
+    4px 4px 0 hsl(var(--muted-foreground)),
+    5px 5px 0 hsl(var(--muted-foreground)),
+    6px 6px 0 hsl(var(--muted-foreground)),
+    7px 7px 10px rgba(0, 0, 0, 0.3);
+}
+
+.word-art-neon-glow {
+  @apply text-foreground;
+  text-shadow:
+    0 0 10px #fff,
+    0 0 20px #fff,
+    0 0 30px #fff,
+    0 0 40px #00ffff,
+    0 0 70px #00ffff,
+    0 0 80px #00ffff,
+    0 0 100px #00ffff,
+    0 0 150px #00ffff;
+}
+
+.word-art-retro-wave {
+  background: linear-gradient(180deg, #ff006e 0%, #ffbe0b 50%, #8338ec 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  text-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+}
+
+.word-art-chrome {
+  background: linear-gradient(135deg, #c0c0c0 0%, #ffffff 25%, #808080 50%, #ffffff 75%, #c0c0c0 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+}
+
+/* Minimal variant */
+.rich-text-editor.minimal .ProseMirror {
+  @apply min-h-[60px];
+}
+
+.rich-text-editor.minimal .ProseMirror h1,
+.rich-text-editor.minimal .ProseMirror h2,
+.rich-text-editor.minimal .ProseMirror h3 {
+  @apply text-base font-semibold my-1;
+}
+
+.rich-text-editor.minimal .word-art {
+  @apply text-2xl py-2;
+}
+
+/* Title variant - for task titles with Word Art */
+.rich-text-editor.title {
+  @apply border-0 shadow-none bg-transparent;
+}
+
+.rich-text-editor.title .ProseMirror {
+  @apply min-h-[40px] px-0 py-0;
+  font-size: inherit;
+  line-height: inherit;
+  @apply font-semibold tracking-tight;
+}
+
+.rich-text-editor.title .ProseMirror p {
+  font-size: inherit;
+  line-height: inherit;
+  @apply font-semibold tracking-tight my-0;
+}
+
+.rich-text-editor.title .word-art {
+  font-size: inherit;
+  line-height: inherit;
+  @apply font-bold py-2;
+}

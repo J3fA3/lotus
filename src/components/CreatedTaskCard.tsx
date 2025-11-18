@@ -11,6 +11,7 @@ import { Badge } from "./ui/badge";
 import { Calendar, CheckCircle2 } from "lucide-react";
 import { format } from "date-fns";
 import type { Task } from "../types/task";
+import "./rich-text-editor.css";
 
 interface CreatedTaskCardProps {
   task: Task;
@@ -32,9 +33,10 @@ export const CreatedTaskCard: React.FC<CreatedTaskCardProps> = ({
       {/* Main content */}
       <div className="pl-3">
         <div className="flex items-start justify-between gap-3 mb-2">
-          <h3 className="font-medium text-[15px] text-card-foreground leading-snug tracking-tight group-hover:text-lotus-green transition-colors duration-300 flex-1">
-            {task.title}
-          </h3>
+          <h3
+            className="font-medium text-[15px] text-card-foreground leading-snug tracking-tight group-hover:text-lotus-green transition-colors duration-300 flex-1"
+            dangerouslySetInnerHTML={{ __html: task.title }}
+          />
 
           {/* Success checkmark */}
           <CheckCircle2
