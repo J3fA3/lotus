@@ -61,6 +61,8 @@ interface ChatState {
   uploadPdfFast: (file: File) => Promise<void>;
   approveProposals: () => Promise<void>;
   rejectProposals: (reason?: string) => Promise<void>;
+  approveTask: (task: TaskProposal) => Promise<void>;
+  rejectTask: (task: TaskProposal) => Promise<void>;
   loadHistory: (sessionId: string) => Promise<void>;
   clearChat: () => void;
   setSessionId: (sessionId: string) => void;
@@ -334,6 +336,94 @@ export const useChatStore = create<ChatState>()(
           });
         } catch (error) {
           console.error("Error loading chat history:", error);
+        }
+      },
+
+      // Approve a single task
+      approveTask: async (task: TaskProposal) => {
+        const { pendingProposals, sessionId } = get();
+
+        if (!pendingProposals || !sessionId) {
+          return;
+        }
+
+        set({ isProcessing: true });
+
+        try {
+          // Approve just this one task
+          const result = await approveTasks({
+            session_id: sessionId,
+            task_proposals: [task],
+            enrichment_operations: [],
+            context_item_id: pendingProposals.contextItemId,
+          });
+
+          // Remove approved task from pending proposals
+          const remainingTasks = pendingProposals.tasks.filter(t => t.id !== task.id);
+
+          // Add confirmation message
+          const confirmationMessage: ChatMessage = {
+            id: `confirmation-${Date.now()}`,
+            role: "assistant",
+            content: `✓ Created task: ${task.title}`,
+            timestamp: new Date(),
+            metadata: {
+              created_tasks: result.created_tasks,
+            },
+          };
+
+          set({
+            messages: [...get().messages, confirmationMessage],
+            isProcessing: false,
+            pendingProposals: remainingTasks.length > 0
+              ? { ...pendingProposals, tasks: remainingTasks }
+              : null,
+          });
+        } catch (error) {
+          console.error("Error approving task:", error);
+          set({ isProcessing: false });
+        }
+      },
+
+      // Reject a single task
+      rejectTask: async (task: TaskProposal) => {
+        const { pendingProposals, sessionId } = get();
+
+        if (!pendingProposals || !sessionId) {
+          return;
+        }
+
+        set({ isProcessing: true });
+
+        try {
+          await rejectTasks(
+            sessionId,
+            [task.id],
+            "User declined individual task",
+            pendingProposals.contextItemId
+          );
+
+          // Remove rejected task from pending proposals
+          const remainingTasks = pendingProposals.tasks.filter(t => t.id !== task.id);
+
+          // Add confirmation message
+          const confirmationMessage: ChatMessage = {
+            id: `rejection-${Date.now()}`,
+            role: "assistant",
+            content: `Understood. I won't create "${task.title}".`,
+            timestamp: new Date(),
+          };
+
+          set({
+            messages: [...get().messages, confirmationMessage],
+            isProcessing: false,
+            pendingProposals: remainingTasks.length > 0
+              ? { ...pendingProposals, tasks: remainingTasks }
+              : null,
+          });
+        } catch (error) {
+          console.error("Error rejecting task:", error);
+          set({ isProcessing: false });
         }
       },
 

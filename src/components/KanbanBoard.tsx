@@ -6,7 +6,9 @@ import { TaskFullPage } from "./TaskFullPage";
 import { QuickAddTask } from "./QuickAddTask";
 import LotusDialog from "./LotusDialog";
 import { Button } from "./ui/button";
-import { Plus, Keyboard, Sparkles, Loader2 } from "lucide-react";
+import { Plus, Keyboard } from "lucide-react";
+import { LotusIcon } from "./LotusIcon";
+import { LotusLoading } from "./LotusLoading";
 import { toast } from "sonner";
 import * as tasksApi from "@/api/tasks";
 import { InferenceResponse } from "@/api/tasks";
@@ -311,6 +313,18 @@ export const KanbanBoard = () => {
     }
   }, []);
 
+  // Handle task click from Lotus chat
+  const handleTaskClickFromLotus = useCallback((task: Task) => {
+    // Close Lotus dialog first to prevent overlay conflict
+    setIsLotusOpen(false);
+
+    // Small delay to allow Lotus dialog to close smoothly
+    setTimeout(() => {
+      setSelectedTask(task);
+      setIsDialogOpen(true);
+    }, 150);
+  }, []);
+
   const handleDeleteTask = useCallback(async (taskId: string) => {
     try {
       await tasksApi.deleteTask(taskId);
@@ -433,10 +447,10 @@ export const KanbanBoard = () => {
               variant="default"
               size="sm"
               onClick={() => setIsLotusOpen(true)}
-              className="gap-2 bg-emerald-600 hover:bg-emerald-700"
+              className="gap-2 bg-lotus-green-medium hover:bg-[hsl(var(--lotus-green-dark))] transition-zen shadow-zen-sm hover:shadow-zen-md"
               disabled={!backendConnected}
             >
-              <Sparkles className="h-4 w-4" />
+              <LotusIcon className="h-4 w-4" size={16} />
               <span className="text-xs font-semibold">Lotus</span>
             </Button>
             <Button
@@ -592,7 +606,7 @@ export const KanbanBoard = () => {
 
         {isLoading && (
           <div className="flex items-center justify-center py-12">
-            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            <LotusLoading size={40} />
           </div>
         )}
 
@@ -671,6 +685,7 @@ export const KanbanBoard = () => {
         open={isLotusOpen}
         onOpenChange={setIsLotusOpen}
         onTasksCreated={loadTasks}
+        onTaskClick={handleTaskClickFromLotus}
       />
 
       {selectedTask && !isFullPageOpen && (

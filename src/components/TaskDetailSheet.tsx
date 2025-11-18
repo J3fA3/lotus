@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { Task, Comment, Document as DocumentType } from "@/types/task";
+import { LotusIcon } from "./LotusIcon";
 import {
   Sheet,
   SheetContent,
@@ -48,7 +49,11 @@ export const TaskDetailSheet = ({
   onToggleExpanded,
   onFullPage,
 }: TaskDetailSheetProps) => {
-  const [editedTask, setEditedTask] = useState<Task>(task);
+  const [editedTask, setEditedTask] = useState<Task>({
+    ...task,
+    comments: task.comments || [],
+    attachments: task.attachments || [],
+  });
   const [newComment, setNewComment] = useState("");
   const [newAttachment, setNewAttachment] = useState("");
   const [isExpanded, setIsExpanded] = useState(isExpandedProp);
@@ -68,7 +73,11 @@ export const TaskDetailSheet = ({
       
       // Quick skeleton flash (150ms) then update content
       const timer = setTimeout(() => {
-        setEditedTask(task);
+        setEditedTask({
+          ...task,
+          comments: task.comments || [],
+          attachments: task.attachments || [],
+        });
         previousTaskIdRef.current = task.id;
         setIsTransitioning(false);
       }, 150);
@@ -76,7 +85,11 @@ export const TaskDetailSheet = ({
       return () => clearTimeout(timer);
     } else {
       // Same task, just update the data (in-place edits)
-      setEditedTask(task);
+      setEditedTask({
+        ...task,
+        comments: task.comments || [],
+        attachments: task.attachments || [],
+      });
     }
   }, [task]);
 
@@ -154,7 +167,7 @@ export const TaskDetailSheet = ({
       createdAt: new Date().toISOString(),
     };
 
-    handleUpdate({ comments: [...editedTask.comments, comment] });
+    handleUpdate({ comments: [...(editedTask.comments || []), comment] });
     setNewComment("");
   };
 
@@ -164,12 +177,12 @@ export const TaskDetailSheet = ({
       return;
     }
     
-    handleUpdate({ attachments: [...editedTask.attachments, trimmedUrl] });
+    handleUpdate({ attachments: [...(editedTask.attachments || []), trimmedUrl] });
     setNewAttachment("");
   };
 
   const handleRemoveAttachment = (index: number) => {
-    const updatedAttachments = editedTask.attachments.filter((_, i) => i !== index);
+    const updatedAttachments = (editedTask.attachments || []).filter((_, i) => i !== index);
     handleUpdate({ attachments: updatedAttachments });
   };
 
@@ -574,8 +587,18 @@ export const TaskDetailSheet = ({
               <div className="space-y-3">
                 {editedTask.comments.map((comment) => (
                   <div key={comment.id} className="flex gap-3">
-                    <div className="flex-shrink-0 w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center">
-                      <User className="h-3.5 w-3.5 text-primary" />
+                    <div
+                      className={`flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center ${
+                        comment.author === "Lotus"
+                          ? "bg-gradient-to-br from-[hsl(var(--lotus-green-light))] to-[hsl(var(--lotus-green-medium))]"
+                          : "bg-primary/10"
+                      }`}
+                    >
+                      {comment.author === "Lotus" ? (
+                        <LotusIcon className="text-[hsl(var(--lotus-paper))]" size={14} />
+                      ) : (
+                        <User className="h-3.5 w-3.5 text-primary" />
+                      )}
                     </div>
                     <div className="flex-1 space-y-1">
                       <div className="flex items-center gap-2">

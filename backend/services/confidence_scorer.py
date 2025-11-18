@@ -232,7 +232,7 @@ class ConfidenceScorer:
             match_count = len(existing_task_matches)
             # Average match strength (if available)
             avg_similarity = sum(
-                m.get("similarity", 0.5) for m in existing_task_matches
+                m.similarity if hasattr(m, 'similarity') else 0.5 for m in existing_task_matches
             ) / match_count
 
             # High similarity to existing tasks = high confidence
