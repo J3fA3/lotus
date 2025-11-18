@@ -15,12 +15,16 @@ import { Badge } from "./ui/badge";
 import { useChat, useChatMessages, useIsProcessing, usePendingProposals } from "../hooks/useChat";
 import ProposedTaskCard from "./ProposedTaskCard";
 import ChatMessageComponent from "./ChatMessageComponent";
+import { TaskDetailSheet } from "./TaskDetailSheet";
 import { LotusIcon } from "./LotusIcon";
 import { LotusLoading } from "./LotusLoading";
+import type { Task } from "../types/task";
 
 const AIAssistant: React.FC = () => {
   const [inputValue, setInputValue] = useState("");
   const [sourceType, setSourceType] = useState<string>("manual");
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [isTaskDetailOpen, setIsTaskDetailOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const { sendMessage, approveProposals, rejectProposals, approveTask, rejectTask } = useChat();
@@ -57,6 +61,11 @@ const AIAssistant: React.FC = () => {
 
   const handleReject = async () => {
     await rejectProposals("User rejected proposals");
+  };
+
+  const handleTaskClick = (task: Task) => {
+    setSelectedTask(task);
+    setIsTaskDetailOpen(true);
   };
 
   return (
@@ -113,7 +122,11 @@ const AIAssistant: React.FC = () => {
           )}
 
           {messages.map((message) => (
-            <ChatMessageComponent key={message.id} message={message} />
+            <ChatMessageComponent
+              key={message.id}
+              message={message}
+              onTaskClick={handleTaskClick}
+            />
           ))}
 
           {/* Pending Proposals */}
@@ -192,6 +205,15 @@ const AIAssistant: React.FC = () => {
           </p>
         </div>
       </div>
+
+      {/* Task Detail Sheet */}
+      {selectedTask && (
+        <TaskDetailSheet
+          task={selectedTask}
+          open={isTaskDetailOpen}
+          onOpenChange={setIsTaskDetailOpen}
+        />
+      )}
     </div>
   );
 };

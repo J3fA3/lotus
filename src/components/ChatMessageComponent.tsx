@@ -11,14 +11,17 @@ import { User, CheckCircle, AlertTriangle, Info } from "lucide-react";
 import { Card } from "./ui/card";
 import { Badge } from "./ui/badge";
 import type { ChatMessage } from "../hooks/useChat";
+import type { Task } from "../types/task";
 import ProposedTaskCard from "./ProposedTaskCard";
 import { LotusIcon } from "./LotusIcon";
+import { CreatedTaskCard } from "./CreatedTaskCard";
 
 interface ChatMessageComponentProps {
   message: ChatMessage;
+  onTaskClick?: (task: Task) => void;
 }
 
-const ChatMessageComponent: React.FC<ChatMessageComponentProps> = ({ message }) => {
+const ChatMessageComponent: React.FC<ChatMessageComponentProps> = ({ message, onTaskClick }) => {
   const isUser = message.role === "user";
   const metadata = message.metadata;
 
@@ -105,22 +108,17 @@ const ChatMessageComponent: React.FC<ChatMessageComponentProps> = ({ message }) 
 
           {/* Auto-Created Tasks */}
           {metadata?.created_tasks && metadata.created_tasks.length > 0 && (
-            <div className="mt-3 space-y-2">
-              <p className="text-sm font-medium text-lotus-green">
-                ✓ Created {metadata.created_tasks.length} task(s)
+            <div className="mt-3 space-y-3">
+              <p className="text-sm font-medium text-lotus-green flex items-center gap-2">
+                <CheckCircle className="h-4 w-4" />
+                Created {metadata.created_tasks.length} task{metadata.created_tasks.length !== 1 ? 's' : ''}
               </p>
-              {metadata.created_tasks.map((task: any) => (
-                <div
+              {metadata.created_tasks.map((task: Task) => (
+                <CreatedTaskCard
                   key={task.id}
-                  className="text-sm p-2 bg-lotus-green-light/30 rounded border border-[hsl(var(--lotus-green-medium)/0.3)] transition-zen"
-                >
-                  <div className="font-medium">{task.title}</div>
-                  {task.assignee && (
-                    <div className="text-muted-foreground text-xs">
-                      Assigned to: {task.assignee}
-                    </div>
-                  )}
-                </div>
+                  task={task}
+                  onClick={onTaskClick}
+                />
               ))}
             </div>
           )}

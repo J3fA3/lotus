@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { Task, Comment, Document as DocumentType } from "@/types/task";
+import { LotusIcon } from "./LotusIcon";
 import {
   Sheet,
   SheetContent,
@@ -574,8 +575,18 @@ export const TaskDetailSheet = ({
               <div className="space-y-3">
                 {editedTask.comments.map((comment) => (
                   <div key={comment.id} className="flex gap-3">
-                    <div className="flex-shrink-0 w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center">
-                      <User className="h-3.5 w-3.5 text-primary" />
+                    <div
+                      className={`flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center ${
+                        comment.author === "Lotus"
+                          ? "bg-gradient-to-br from-[hsl(var(--lotus-green-light))] to-[hsl(var(--lotus-green-medium))]"
+                          : "bg-primary/10"
+                      }`}
+                    >
+                      {comment.author === "Lotus" ? (
+                        <LotusIcon className="text-[hsl(var(--lotus-paper))]" size={14} />
+                      ) : (
+                        <User className="h-3.5 w-3.5 text-primary" />
+                      )}
                     </div>
                     <div className="flex-1 space-y-1">
                       <div className="flex items-center gap-2">

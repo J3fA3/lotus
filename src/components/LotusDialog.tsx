@@ -18,9 +18,11 @@ import { Badge } from "./ui/badge";
 import { useChat, useChatMessages, useIsProcessing, usePendingProposals } from "../hooks/useChat";
 import ProposedTaskCard from "./ProposedTaskCard";
 import ChatMessageComponent from "./ChatMessageComponent";
+import { TaskDetailSheet } from "./TaskDetailSheet";
 import { toast } from "sonner";
 import { LotusIcon } from "./LotusIcon";
 import { LotusLoading } from "./LotusLoading";
+import type { Task } from "../types/task";
 
 interface LotusDialogProps {
   open: boolean;
@@ -32,6 +34,8 @@ const LotusDialog: React.FC<LotusDialogProps> = ({ open, onOpenChange, onTasksCr
   const [inputValue, setInputValue] = useState("");
   const [sourceType, setSourceType] = useState<string>("manual");
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [isTaskDetailOpen, setIsTaskDetailOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -100,6 +104,11 @@ const LotusDialog: React.FC<LotusDialogProps> = ({ open, onOpenChange, onTasksCr
     }
   };
 
+  const handleTaskClick = (task: Task) => {
+    setSelectedTask(task);
+    setIsTaskDetailOpen(true);
+  };
+
   const handleClose = () => {
     onOpenChange(false);
   };
@@ -146,7 +155,11 @@ const LotusDialog: React.FC<LotusDialogProps> = ({ open, onOpenChange, onTasksCr
             )}
 
             {messages.map((message) => (
-              <ChatMessageComponent key={message.id} message={message} />
+              <ChatMessageComponent
+                key={message.id}
+                message={message}
+                onTaskClick={handleTaskClick}
+              />
             ))}
 
             {/* Pending Proposals */}
@@ -283,6 +296,15 @@ const LotusDialog: React.FC<LotusDialogProps> = ({ open, onOpenChange, onTasksCr
           </div>
         </div>
       </DialogContent>
+
+      {/* Task Detail Sheet */}
+      {selectedTask && (
+        <TaskDetailSheet
+          task={selectedTask}
+          open={isTaskDetailOpen}
+          onOpenChange={setIsTaskDetailOpen}
+        />
+      )}
     </Dialog>
   );
 };

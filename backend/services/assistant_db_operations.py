@@ -75,7 +75,7 @@ async def create_tasks_from_proposals(
             id=f"comment-{uuid.uuid4().hex[:12]}",
             task_id=task.id,
             text=agent_comment_text,
-            author="AI Assistant (Lotus)",
+            author="Lotus",
             created_at=datetime.utcnow()
         )
         db.add(agent_comment)
