@@ -467,15 +467,21 @@ async def run_phase1_agents(state: OrchestratorState) -> Dict:
             reasoning.append("→ Falling back to input context")
 
     # Call Phase 1 agent graph
-    # Note: We need to get existing tasks from database first
+    # Phase 3: Use cached task loading for performance
     db = state.get("db")  # Database session passed in initial state
     existing_tasks = []
 
     if db:
-        # Get recent tasks for context
-        tasks_query = select(Task).order_by(Task.created_at.desc()).limit(20)
-        result = await db.execute(tasks_query)
-        task_models = result.scalars().all()
+        # Get recent tasks for context (Phase 3: with caching for speed)
+        cache = get_cache()
+        task_models = await cache.get_or_compute(
+            key="recent_tasks_phase1",
+            compute_fn=lambda: _get_recent_tasks(db, limit=20),
+            ttl=30,  # Cache for 30 seconds (tasks change infrequently)
+            prefix="tasks"
+        )
+
+        # Convert to format expected by process_context
         existing_tasks = [
             {
                 "id": t.id,
@@ -488,9 +494,9 @@ async def run_phase1_agents(state: OrchestratorState) -> Dict:
             }
             for t in task_models
         ]
-        reasoning.append(f"→ Loaded {len(existing_tasks)} recent tasks for matching")
+        reasoning.append(f"→ Loaded {len(existing_tasks)} recent tasks (cached)")
 
-    # Run Phase 1 agents
+    # Run Phase 1 agents (this is the CPU-intensive operation)
     reasoning.append("→ Running Cognitive Nexus agent pipeline...")
     phase1_result = await process_context(
         text=context_text,
@@ -1035,10 +1041,56 @@ async def execute_actions(state: OrchestratorState) -> Dict:
 
     created_tasks = []
     enriched_tasks = []
+    applied_enrichments = []
+    natural_comments = {}  # Phase 3: Task ID → natural comment
+
+    # Phase 3: Apply high-confidence enrichments FIRST (before creating new tasks)
+    enrichment_opportunities = state.get("enrichment_opportunities", [])
+    if enrichment_opportunities:
+        reasoning.append(f"\n→ Processing {len(enrichment_opportunities)} enrichment opportunities")
+
+        enrichment_engine = get_enrichment_engine()
+        for enrich_dict in enrichment_opportunities:
+            if enrich_dict.get("auto_apply", False):
+                try:
+                    # Convert dict back to EnrichmentAction
+                    from agents.enrichment_engine import EnrichmentAction
+                    enrichment = EnrichmentAction(**enrich_dict)
+
+                    # Apply the enrichment
+                    success = await enrichment_engine.apply_enrichment(enrichment, db)
+
+                    if success:
+                        applied_enrichments.append(enrich_dict)
+                        reasoning.append(
+                            f"  ✓ Auto-applied enrichment to: {enrichment.task_title}"
+                        )
+
+                        # Phase 3: Generate natural comment for enrichment
+                        try:
+                            comment_gen = get_comment_generator()
+                            comment = await comment_gen.generate_enrichment_comment(
+                                task={"id": enrichment.task_id, "title": enrichment.task_title},
+                                context=state["input_context"],
+                                changes=enrichment.changes
+                            )
+                            natural_comments[enrichment.task_id] = comment
+                            logger.info(f"Generated enrichment comment for task {enrichment.task_id}")
+                        except Exception as e:
+                            logger.error(f"Comment generation failed for enrichment: {e}")
+
+                    else:
+                        reasoning.append(
+                            f"  ✗ Failed to apply enrichment to: {enrichment.task_title}"
+                        )
+
+                except Exception as e:
+                    logger.error(f"Enrichment application failed: {e}")
+                    reasoning.append(f"  ✗ Error applying enrichment: {str(e)}")
 
     # If auto-approved, create/enrich tasks
     if recommended_action == "auto":
-        reasoning.append("→ AUTO-APPROVED: Creating/enriching tasks")
+        reasoning.append("\n→ AUTO-APPROVED: Creating/enriching tasks")
 
         # Create new tasks
         if state["proposed_tasks"]:
@@ -1050,20 +1102,69 @@ async def execute_actions(state: OrchestratorState) -> Dict:
             )
             reasoning.append(f"→ Created {len(created_tasks)} tasks")
 
-        # Enrich existing tasks
+            # Phase 3: Generate natural comments for created tasks
+            if created_tasks:
+                reasoning.append("\n→ Generating natural language comments...")
+                comment_gen = get_comment_generator()
+
+                for task_dict in created_tasks:
+                    try:
+                        # Generate natural comment (Phase 3)
+                        comment = await comment_gen.generate_creation_comment(
+                            task=task_dict,
+                            context=state["input_context"],
+                            decision_factors={
+                                "confidence": task_dict.get("confidence", 0),
+                                "relevance_score": task_dict.get("relevance_score", 0),
+                                "entities": state.get("entities", []),
+                                "user_profile": state.get("user_profile", {})
+                            }
+                        )
+
+                        # Store comment
+                        natural_comments[task_dict["id"]] = comment
+
+                        # Also create Comment in database for persistence
+                        comment_model = Comment(
+                            id=str(uuid.uuid4()),
+                            task_id=task_dict["id"],
+                            text=comment,
+                            author="AI Assistant",
+                            created_at=datetime.now()
+                        )
+                        db.add(comment_model)
+
+                        reasoning.append(f"  ✓ Generated comment for: {task_dict['title']}")
+                        logger.info(f"Generated natural comment for task {task_dict['id']}")
+
+                    except Exception as e:
+                        logger.error(f"Comment generation failed for task {task_dict['id']}: {e}")
+                        reasoning.append(f"  ✗ Comment generation failed: {str(e)}")
+
+                # Commit comments to database
+                try:
+                    await db.commit()
+                    reasoning.append(f"→ Saved {len(natural_comments)} natural comments to database")
+                except Exception as e:
+                    logger.error(f"Failed to save comments: {e}")
+                    await db.rollback()
+
+        # Enrich existing tasks (Phase 2 legacy - keep for compatibility)
         if state["enrichment_operations"]:
             enriched_tasks = await enrich_existing_tasks(
                 db=db,
                 enrichment_operations=state["enrichment_operations"],
                 context_item_id=context_item_id
             )
-            reasoning.append(f"→ Enriched {len(enriched_tasks)} existing tasks")
+            reasoning.append(f"→ Enriched {len(enriched_tasks)} existing tasks (legacy)")
     else:
         reasoning.append(f"→ Not auto-approved ({recommended_action}), skipping task creation")
 
     return {
         "created_tasks": created_tasks,
         "enriched_tasks": enriched_tasks,
+        "applied_enrichments": applied_enrichments,  # Phase 3: NEW
+        "natural_comments": natural_comments,  # Phase 3: NEW
         "context_item_id": context_item_id,
         "recommended_action": recommended_action,
         "reasoning_trace": reasoning,
@@ -1076,33 +1177,53 @@ async def execute_actions(state: OrchestratorState) -> Dict:
 # ============================================================================
 
 def create_orchestrator_graph():
-    """Construct the orchestrator LangGraph state machine.
+    """Construct the Phase 3 orchestrator LangGraph state machine.
 
-    Flow:
-    1. Classify request (question vs task creation vs document vs context)
-    2a. If question: Answer directly → END
-    2b. If task creation/document: Run Phase 1 → ... → Execute
-    2c. If context only: Store → END
+    Phase 3 Enhanced Flow:
+    1. Load user profile (for personalization)
+    2. Classify request (question vs task creation vs document vs context)
+    3a. If question: Answer with Gemini → END
+    3b. If task creation/document:
+        - Run Phase 1 Cognitive Nexus agents
+        - Find related existing tasks
+        - Check for enrichment opportunities (Gemini)
+        - Enrich task proposals with fields
+        - Filter by relevance (Gemini + user profile)
+        - Calculate confidence scores
+        - Generate clarifying questions if needed (Gemini)
+        - Execute (with natural comment generation)
+    3c. If context only: Store → END
+
+    Phase 3 New Nodes:
+    - load_profile: Load user profile at start
+    - check_enrichments: Find enrichment opportunities
+    - filter_relevance: Filter tasks by relevance to user
 
     Returns:
         Compiled LangGraph state machine
     """
     workflow = StateGraph(OrchestratorState)
 
-    # Add nodes
+    # Add all nodes (existing + Phase 3 new)
+    workflow.add_node("load_profile", load_user_profile)  # Phase 3: NEW
     workflow.add_node("classify", classify_request)
     workflow.add_node("answer", answer_question)
     workflow.add_node("run_phase1", run_phase1_agents)
     workflow.add_node("find_tasks", find_related_tasks)
+    workflow.add_node("check_enrichments", check_task_enrichments)  # Phase 3: NEW
     workflow.add_node("enrich_proposals", enrich_task_proposals)
+    workflow.add_node("filter_relevance", filter_relevant_tasks)  # Phase 3: NEW
     workflow.add_node("calculate_confidence", calculate_confidence)
     workflow.add_node("generate_questions", generate_clarifying_questions)
     workflow.add_node("execute", execute_actions)
 
-    # Entry point: classify request
-    workflow.set_entry_point("classify")
+    # Entry point: load user profile first (Phase 3 change)
+    workflow.set_entry_point("load_profile")
 
-    # Conditional routing based on request type
+    # Phase 3: Load profile → classify
+    workflow.add_edge("load_profile", "classify")
+
+    # Conditional routing based on request type (unchanged logic)
     def route_by_request_type(state: OrchestratorState) -> str:
         """Route based on classified request type."""
         request_type = state.get("request_type", "task_creation")
@@ -1124,19 +1245,22 @@ def create_orchestrator_graph():
         }
     )
 
-    # Question answering path → END
+    # Question answering path → END (unchanged)
     workflow.add_edge("answer", END)
 
-    # Task creation path (existing pipeline)
+    # Task creation path (Phase 3 enhanced with new nodes)
     workflow.add_edge("run_phase1", "find_tasks")
-    workflow.add_edge("find_tasks", "enrich_proposals")
-    workflow.add_edge("enrich_proposals", "calculate_confidence")
+    workflow.add_edge("find_tasks", "check_enrichments")  # Phase 3: NEW
+    workflow.add_edge("check_enrichments", "enrich_proposals")  # Phase 3: CHANGED (was find_tasks)
+    workflow.add_edge("enrich_proposals", "filter_relevance")  # Phase 3: NEW
+    workflow.add_edge("filter_relevance", "calculate_confidence")  # Phase 3: CHANGED (was enrich_proposals)
     workflow.add_edge("calculate_confidence", "generate_questions")
     workflow.add_edge("generate_questions", "execute")
 
-    # Execute → END
+    # Execute → END (unchanged)
     workflow.add_edge("execute", END)
 
+    logger.info("Phase 3 orchestrator graph created with enhanced flow")
     return workflow.compile()
 
 
@@ -1179,6 +1303,7 @@ async def process_assistant_message(
     graph = create_orchestrator_graph()
 
     initial_state = {
+        # Input fields
         "input_context": content,
         "source_type": source_type,
         "source_identifier": source_identifier,
@@ -1186,11 +1311,19 @@ async def process_assistant_message(
         "session_id": session_id,
         "user_id": user_id,
         "db": db,  # Pass database session through state
+
+        # Phase 3: User Profile (loaded by load_user_profile node)
+        "user_profile": None,
+
+        # Metadata
         "reasoning_trace": [],
         "processing_start": datetime.now(),
-        # Initialize empty fields
+
+        # Request classification
         "request_type": "",
         "answer_text": None,
+
+        # Phase 1 agent results
         "entities": [],
         "relationships": [],
         "task_operations": [],
@@ -1198,18 +1331,41 @@ async def process_assistant_message(
         "entity_quality": 0.0,
         "relationship_quality": 0.0,
         "task_quality": 0.0,
+
+        # Task matching results
         "existing_task_matches": [],
         "duplicate_task": None,
+
+        # Phase 3: Task enrichment (NEW)
+        "enrichment_opportunities": [],
+        "applied_enrichments": [],
+
+        # Task proposals
         "proposed_tasks": [],
-        "enrichment_operations": [],
+        "enrichment_operations": [],  # Phase 2 legacy
+
+        # Phase 3: Relevance filtering (NEW)
+        "filtered_task_count": 0,
+        "pre_filter_task_count": 0,
+
+        # Confidence scoring
         "confidence_scores": [],
         "overall_confidence": 0.0,
+
+        # Decision
         "recommended_action": "",
         "needs_approval": False,
         "clarifying_questions": [],
+
+        # Execution results
         "created_tasks": [],
         "enriched_tasks": [],
         "context_item_id": None,
+
+        # Phase 3: Natural comments (NEW)
+        "natural_comments": {},
+
+        # Processing metadata
         "processing_end": None
     }
 
