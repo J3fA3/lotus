@@ -36,10 +36,12 @@ from api.schemas import (
     DocumentSchema,
     DocumentUploadResponse,
     DocumentListResponse,
-    KnowledgeBaseSummaryResponse
+    KnowledgeBaseSummaryResponse,
+    ValueStreamSchema,
+    ValueStreamCreateRequest
 )
 from db.database import get_db
-from db.models import Task, Comment, Attachment, InferenceHistory, ShortcutConfig, Document
+from db.models import Task, Comment, Attachment, InferenceHistory, ShortcutConfig, Document, ValueStream
 from db.default_shortcuts import get_default_shortcuts
 from agents.task_extractor import TaskExtractor
 from agents.pdf_processor import PDFProcessor
@@ -1179,6 +1181,69 @@ async def get_knowledge_base_summary(db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=500, detail=f"Failed to get summary: {str(e)}")
 
 
+# ============= Value Streams =============
+
+@router.get("/value-streams", response_model=List[ValueStreamSchema])
+async def get_value_streams(db: AsyncSession = Depends(get_db)):
+    """Get all value streams"""
+    result = await db.execute(select(ValueStream))
+    value_streams = result.scalars().all()
+    return [_value_stream_to_schema(vs) for vs in value_streams]
+
+
+@router.post("/value-streams", response_model=ValueStreamSchema)
+async def create_value_stream(
+    value_stream_data: ValueStreamCreateRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """Create a new value stream"""
+    # Check if value stream with same name already exists
+    result = await db.execute(
+        select(ValueStream).where(ValueStream.name == value_stream_data.name)
+    )
+    existing = result.scalar_one_or_none()
+
+    if existing:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Value stream '{value_stream_data.name}' already exists"
+        )
+
+    value_stream_id = str(uuid.uuid4())
+    now = datetime.utcnow()
+
+    value_stream = ValueStream(
+        id=value_stream_id,
+        name=value_stream_data.name,
+        color=value_stream_data.color,
+        created_at=now,
+        updated_at=now
+    )
+
+    db.add(value_stream)
+    await db.commit()
+    await db.refresh(value_stream)
+
+    return _value_stream_to_schema(value_stream)
+
+
+@router.delete("/value-streams/{value_stream_id}")
+async def delete_value_stream(value_stream_id: str, db: AsyncSession = Depends(get_db)):
+    """Delete a value stream"""
+    result = await db.execute(
+        select(ValueStream).where(ValueStream.id == value_stream_id)
+    )
+    value_stream = result.scalar_one_or_none()
+
+    if not value_stream:
+        raise HTTPException(status_code=404, detail="Value stream not found")
+
+    await db.delete(value_stream)
+    await db.commit()
+
+    return {"message": "Value stream deleted successfully"}
+
+
 # ============= Helper Functions =============
 
 def _task_to_schema(task: Task, load_relationships: bool = False) -> TaskSchema:
@@ -1322,4 +1387,18 @@ def _document_to_schema(document: Document) -> DocumentSchema:
         inference_history_id=document.inference_history_id,
         created_at=created_at.isoformat(),
         updated_at=updated_at.isoformat()
+    )
+
+
+def _value_stream_to_schema(value_stream: ValueStream) -> ValueStreamSchema:
+    """Convert SQLAlchemy ValueStream to Pydantic schema"""
+    created_at = value_stream.created_at if value_stream.created_at else datetime.utcnow()
+    updated_at = value_stream.updated_at if value_stream.updated_at else datetime.utcnow()
+
+    return ValueStreamSchema(
+        id=value_stream.id,
+        name=value_stream.name,
+        color=value_stream.color,
+        createdAt=created_at.isoformat(),
+        updatedAt=updated_at.isoformat()
     )
