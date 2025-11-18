@@ -84,7 +84,9 @@ class OrchestratorState(TypedDict):
     overall_confidence: float
 
     # Decision
-    recommended_action: str  # 'auto', 'ask', 'clarify', 'store_only'
+    request_type: str  # 'question', 'task_creation', 'document_analysis', 'context_only'
+    answer_text: Optional[str]  # For question responses
+    recommended_action: str  # 'auto', 'ask', 'clarify', 'store_only', 'answer_question'
     needs_approval: bool
     clarifying_questions: List[str]
 
@@ -99,7 +101,182 @@ class OrchestratorState(TypedDict):
 
 
 # ============================================================================
-# NODE 1: RUN PHASE 1 AGENTS
+# NODE 0: CLASSIFY REQUEST
+# ============================================================================
+
+async def classify_request(state: OrchestratorState) -> Dict:
+    """Node 0: Classify the type of request to route appropriately.
+
+    Determines if the user is:
+    - Asking a question (needs answer)
+    - Creating tasks (current pipeline)
+    - Analyzing a document
+    - Just providing context
+
+    Returns:
+        State updates with request_type
+    """
+    reasoning = ["\n=== REQUEST CLASSIFICATION ==="]
+
+    context = state["input_context"]
+    source_type = state["source_type"]
+
+    # Check for explicit document upload
+    if state.get("pdf_bytes") or source_type == "pdf":
+        request_type = "document_analysis"
+        reasoning.append("→ Document uploaded → DOCUMENT_ANALYSIS")
+        return {
+            "request_type": request_type,
+            "reasoning_trace": reasoning
+        }
+
+    # Use LLM to classify the request
+    prompt = f"""Classify this user input into ONE category:
+
+INPUT: {context}
+
+CATEGORIES:
+1. question - User is asking a question that needs an answer (e.g., "What's my highest priority?", "Who is working on X?", "When is Y due?")
+2. task_creation - User wants to create/update tasks (e.g., "Andy needs the dashboard by Friday", "Create a task for...", slack messages, transcripts)
+3. context_only - Just providing information to store (e.g., "FYI: meeting moved", "Note: project on hold")
+
+OUTPUT ONLY ONE WORD: question, task_creation, or context_only
+
+Classification:"""
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post(
+                "http://localhost:11434/api/generate",
+                json={
+                    "model": "qwen2.5:7b-instruct",
+                    "prompt": prompt,
+                    "stream": False,
+                    "options": {"temperature": 0.1}
+                }
+            )
+
+            result = response.json()
+            response_text = result.get("response", "").strip().lower()
+
+            # Extract classification
+            if "question" in response_text:
+                request_type = "question"
+            elif "task_creation" in response_text or "task" in response_text:
+                request_type = "task_creation"
+            elif "context" in response_text:
+                request_type = "context_only"
+            else:
+                # Default: if unclear, assume task creation (existing behavior)
+                request_type = "task_creation"
+
+            reasoning.append(f"→ LLM classified as: {request_type.upper()}")
+
+    except Exception as e:
+        reasoning.append(f"⚠ Classification failed: {str(e)}")
+        # Default to task_creation on error
+        request_type = "task_creation"
+        reasoning.append("→ Defaulting to: TASK_CREATION")
+
+    return {
+        "request_type": request_type,
+        "reasoning_trace": reasoning
+    }
+
+
+# ============================================================================
+# NODE 1: ANSWER QUESTION (for questions)
+# ============================================================================
+
+async def answer_question(state: OrchestratorState) -> Dict:
+    """Node 1a: Answer user questions using existing tasks and knowledge graph.
+
+    This node handles queries like:
+    - "What's my highest priority task?"
+    - "Who is working on X?"
+    - "What tasks are due this week?"
+
+    Returns:
+        State updates with answer_text
+    """
+    reasoning = ["\n=== QUESTION ANSWERING ==="]
+
+    db = state.get("db")
+    question = state["input_context"]
+
+    if not db:
+        return {
+            "answer_text": "I don't have access to your tasks right now. Please try again.",
+            "recommended_action": "answer_question",
+            "reasoning_trace": reasoning
+        }
+
+    # Get all tasks
+    tasks_query = select(Task).order_by(Task.created_at.desc()).limit(50)
+    result = await db.execute(tasks_query)
+    tasks = result.scalars().all()
+
+    # Build context for LLM
+    task_context = ""
+    if tasks:
+        task_summaries = []
+        for task in tasks:
+            summary = f"- {task.title} (Status: {task.status}, Assignee: {task.assignee}"
+            if task.due_date:
+                summary += f", Due: {task.due_date}"
+            if task.value_stream:
+                summary += f", Project: {task.value_stream}"
+            summary += ")"
+            task_summaries.append(summary)
+        task_context = "\n".join(task_summaries[:20])  # Top 20 tasks
+        reasoning.append(f"→ Loaded {len(tasks)} tasks for context")
+    else:
+        task_context = "No tasks found."
+        reasoning.append("→ No tasks in database")
+
+    # Use LLM to answer question
+    prompt = f"""You are a helpful task management assistant. Answer the user's question based on their current tasks.
+
+QUESTION: {question}
+
+CURRENT TASKS:
+{task_context}
+
+Provide a clear, concise answer. If asking for "highest priority", look for tasks with high priority or urgent status. If asking about who's working on something, look at assignees. If asking about deadlines, check due dates.
+
+Answer:"""
+
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.post(
+                "http://localhost:11434/api/generate",
+                json={
+                    "model": "qwen2.5:7b-instruct",
+                    "prompt": prompt,
+                    "stream": False,
+                    "options": {"temperature": 0.3}
+                }
+            )
+
+            result = response.json()
+            answer = result.get("response", "").strip()
+
+            reasoning.append(f"→ Generated answer ({len(answer)} characters)")
+
+    except Exception as e:
+        reasoning.append(f"⚠ Answer generation failed: {str(e)}")
+        answer = "I'm having trouble accessing that information right now. Please try again."
+
+    return {
+        "answer_text": answer,
+        "recommended_action": "answer_question",
+        "reasoning_trace": reasoning,
+        "processing_end": datetime.now()
+    }
+
+
+# ============================================================================
+# NODE 2: RUN PHASE 1 AGENTS (for task creation)
 # ============================================================================
 
 async def run_phase1_agents(state: OrchestratorState) -> Dict:
@@ -579,13 +756,11 @@ async def execute_actions(state: OrchestratorState) -> Dict:
 def create_orchestrator_graph():
     """Construct the orchestrator LangGraph state machine.
 
-    This creates a sequential pipeline:
-    1. Run Phase 1 agents
-    2. Find related tasks
-    3. Enrich task proposals
-    4. Calculate confidence
-    5. Generate clarifying questions (conditional)
-    6. Execute actions (conditional)
+    Flow:
+    1. Classify request (question vs task creation vs document vs context)
+    2a. If question: Answer directly → END
+    2b. If task creation/document: Run Phase 1 → ... → Execute
+    2c. If context only: Store → END
 
     Returns:
         Compiled LangGraph state machine
@@ -593,6 +768,8 @@ def create_orchestrator_graph():
     workflow = StateGraph(OrchestratorState)
 
     # Add nodes
+    workflow.add_node("classify", classify_request)
+    workflow.add_node("answer", answer_question)
     workflow.add_node("run_phase1", run_phase1_agents)
     workflow.add_node("find_tasks", find_related_tasks)
     workflow.add_node("enrich_proposals", enrich_task_proposals)
@@ -600,13 +777,42 @@ def create_orchestrator_graph():
     workflow.add_node("generate_questions", generate_clarifying_questions)
     workflow.add_node("execute", execute_actions)
 
-    # Define flow
-    workflow.set_entry_point("run_phase1")
+    # Entry point: classify request
+    workflow.set_entry_point("classify")
+
+    # Conditional routing based on request type
+    def route_by_request_type(state: OrchestratorState) -> str:
+        """Route based on classified request type."""
+        request_type = state.get("request_type", "task_creation")
+
+        if request_type == "question":
+            return "answer"
+        elif request_type in ["task_creation", "document_analysis"]:
+            return "run_phase1"
+        else:  # context_only
+            return "execute"
+
+    workflow.add_conditional_edges(
+        "classify",
+        route_by_request_type,
+        {
+            "answer": "answer",
+            "run_phase1": "run_phase1",
+            "execute": "execute"
+        }
+    )
+
+    # Question answering path → END
+    workflow.add_edge("answer", END)
+
+    # Task creation path (existing pipeline)
     workflow.add_edge("run_phase1", "find_tasks")
     workflow.add_edge("find_tasks", "enrich_proposals")
     workflow.add_edge("enrich_proposals", "calculate_confidence")
     workflow.add_edge("calculate_confidence", "generate_questions")
     workflow.add_edge("generate_questions", "execute")
+
+    # Execute → END
     workflow.add_edge("execute", END)
 
     return workflow.compile()
@@ -661,6 +867,8 @@ async def process_assistant_message(
         "reasoning_trace": [],
         "processing_start": datetime.now(),
         # Initialize empty fields
+        "request_type": "",
+        "answer_text": None,
         "entities": [],
         "relationships": [],
         "task_operations": [],

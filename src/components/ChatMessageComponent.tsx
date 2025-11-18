@@ -133,6 +133,23 @@ const ChatMessageComponent: React.FC<ChatMessageComponentProps> = ({ message }) 
               </ul>
             </div>
           )}
+
+          {/* Question Answer */}
+          {metadata?.answer_text && metadata.recommended_action === "answer_question" && (
+            <div className="mt-3 p-3 bg-emerald-50 dark:bg-emerald-950/50 rounded-lg border border-emerald-200 dark:border-emerald-800">
+              <div className="flex items-start gap-2">
+                <Info className="h-5 w-5 text-emerald-600 dark:text-emerald-400 flex-shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-emerald-900 dark:text-emerald-100 mb-1">
+                    Answer:
+                  </p>
+                  <p className="text-sm text-emerald-800 dark:text-emerald-200">
+                    {metadata.answer_text}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
         </Card>
       </div>
     </div>

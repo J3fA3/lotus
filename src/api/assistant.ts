@@ -48,6 +48,7 @@ export interface ProcessMessageResponse {
   session_id: string;
   recommended_action: "auto" | "ask" | "clarify" | "store_only" | "answer_question";
   needs_approval: boolean;
+  answer_text: string | null;  // For question responses
   proposed_tasks: TaskProposal[];
   enrichment_operations: EnrichmentOperation[];
   created_tasks: any[];

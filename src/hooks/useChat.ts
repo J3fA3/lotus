@@ -32,6 +32,7 @@ export interface ChatMessage {
   content: string;
   timestamp: Date;
   metadata?: {
+    answer_text?: string | null;  // For question responses
     proposed_tasks?: TaskProposal[];
     enrichment_operations?: EnrichmentOperation[];
     created_tasks?: any[];
@@ -111,6 +112,7 @@ export const useChatStore = create<ChatState>()(
             content: response.message,
             timestamp: new Date(),
             metadata: {
+              answer_text: response.answer_text,
               proposed_tasks: response.proposed_tasks,
               enrichment_operations: response.enrichment_operations,
               created_tasks: response.created_tasks,

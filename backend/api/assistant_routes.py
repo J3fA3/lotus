@@ -75,6 +75,7 @@ class ProcessMessageResponse(BaseModel):
     session_id: str
     recommended_action: str  # 'auto', 'ask', 'clarify', 'store_only', 'answer_question'
     needs_approval: bool
+    answer_text: Optional[str]  # For question responses
     proposed_tasks: List[TaskProposal]
     enrichment_operations: List[EnrichmentOperation]
     created_tasks: List[Dict]  # If auto-approved
@@ -187,6 +188,7 @@ async def process_message(
         "session_id": session_id,
         "recommended_action": result["recommended_action"],
         "needs_approval": result["needs_approval"],
+        "answer_text": result.get("answer_text"),
         "proposed_tasks": [
             TaskProposal(**task) for task in result["proposed_tasks"]
         ],
