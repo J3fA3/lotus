@@ -34,7 +34,7 @@ async def create_tasks_from_proposals(
     context_item_id: Optional[int],
     auto_created: bool = True
 ) -> List[Dict]:
-    """Create tasks from orchestrator proposals.
+    """Create tasks from orchestrator proposals with AI agent comments.
 
     Args:
         db: Database session
@@ -67,6 +67,18 @@ async def create_tasks_from_proposals(
         )
 
         db.add(task)
+        await db.flush()  # Get task ID before creating comment
+
+        # Add AI Agent comment with reasoning and details
+        agent_comment_text = _build_agent_comment(proposal, context_item_id, auto_created)
+        agent_comment = Comment(
+            id=f"comment-{uuid.uuid4().hex[:12]}",
+            task_id=task.id,
+            text=agent_comment_text,
+            author="AI Assistant (Lotus)",
+            created_at=datetime.utcnow()
+        )
+        db.add(agent_comment)
 
         # Convert to dict for return
         created_task = {
@@ -87,6 +99,67 @@ async def create_tasks_from_proposals(
 
     await db.commit()
     return created_tasks
+
+
+def _build_agent_comment(
+    proposal: Dict,
+    context_item_id: Optional[int],
+    auto_created: bool
+) -> str:
+    """Build detailed agent comment with reasoning and metadata.
+
+    Args:
+        proposal: Task proposal dictionary
+        context_item_id: Context item ID
+        auto_created: Whether auto-created
+
+    Returns:
+        Formatted comment text
+    """
+    lines = ["🤖 **AI Assistant Analysis**\n"]
+
+    # Confidence and decision
+    confidence = proposal.get("confidence", 0)
+    lines.append(f"**Confidence:** {confidence:.0f}%")
+
+    if auto_created:
+        lines.append(f"**Decision:** Auto-created (high confidence)")
+    else:
+        lines.append(f"**Decision:** User-approved")
+
+    # Reasoning
+    reasoning = proposal.get("reasoning", "")
+    if reasoning:
+        lines.append(f"\n**Reasoning:**")
+        lines.append(f"{reasoning}")
+
+    # Confidence factors
+    confidence_factors = proposal.get("confidence_factors", {})
+    if confidence_factors:
+        lines.append(f"\n**Confidence Breakdown:**")
+        for factor, score in confidence_factors.items():
+            lines.append(f"- {factor}: {score:.0f}%")
+
+    # Extracted entities (if available)
+    tags = proposal.get("tags", [])
+    if tags:
+        lines.append(f"\n**Related Entities:** {', '.join(tags)}")
+
+    # Source context link
+    if context_item_id:
+        lines.append(f"\n**Source Context:** #context-{context_item_id}")
+
+    # Priority and due date highlights
+    priority = proposal.get("priority")
+    due_date = proposal.get("due_date")
+    if priority or due_date:
+        lines.append(f"\n**Key Details:**")
+        if priority:
+            lines.append(f"- Priority: {priority}")
+        if due_date:
+            lines.append(f"- Due Date: {due_date}")
+
+    return "\n".join(lines)
 
 
 async def enrich_existing_tasks(

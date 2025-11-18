@@ -21,6 +21,12 @@ from sqlalchemy import select, and_, or_, func
 from rapidfuzz import fuzz
 
 from db.models import Task, Entity, Relationship
+from services.kg_cache import (
+    cache_task_matches,
+    set_task_matches_cache,
+    cache_entity_lookup,
+    set_entity_lookup_cache
+)
 
 
 @dataclass
@@ -72,6 +78,8 @@ class TaskMatcher:
         3. Boost similarity for relationship chains
         4. Rank by similarity score
 
+        Uses caching to speed up repeated queries with same entities.
+
         Args:
             entities: Extracted entities from current context
             relationships: Inferred relationships from current context
@@ -87,6 +95,16 @@ class TaskMatcher:
         # Extract entity names and types for matching
         entity_names = [e.get("name") for e in entities if e.get("name")]
         entity_types = {e.get("name"): e.get("type") for e in entities if e.get("name")}
+
+        # Check cache first
+        relationship_ids = [str(r.get("id", "")) for r in relationships]
+        cached_matches = cache_task_matches(entity_names, relationship_ids)
+        if cached_matches is not None:
+            # Reconstruct TaskMatch objects from cached data
+            return [
+                TaskMatch(**match) if isinstance(match, dict) else match
+                for match in cached_matches[:max_results]
+            ]
 
         # Get all tasks with their source context
         # We'll match tasks that have context items with overlapping entities
@@ -108,7 +126,12 @@ class TaskMatcher:
 
         # Sort by similarity (highest first) and limit results
         matches.sort(key=lambda m: m.similarity, reverse=True)
-        return matches[:max_results]
+        result_matches = matches[:max_results]
+
+        # Cache results for future queries
+        set_task_matches_cache(entity_names, relationship_ids, result_matches)
+
+        return result_matches
 
     async def _match_task(
         self,
