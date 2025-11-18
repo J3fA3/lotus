@@ -688,7 +688,11 @@ export const KanbanBoard = () => {
 
         {!isLoading && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-          {COLUMNS.map((column) => (
+          {COLUMNS.map((column, columnIndex) => {
+            const columnTasks = getColumnTasks(columnIndex);
+            console.log(`[Render] Column ${column.id}: showing ${columnTasks.length} tasks (search: "${searchQuery}")`);
+
+            return (
             <div
               key={column.id}
               className="flex flex-col bg-column-bg rounded-2xl p-3 min-h-[70vh] transition-all duration-300"
@@ -701,7 +705,7 @@ export const KanbanBoard = () => {
                     {column.title}
                   </h2>
                   <span className="text-xs text-muted-foreground font-medium bg-background/60 px-2 py-0.5 rounded-full">
-                    {tasks.filter((t) => t.status === column.id).length}
+                    {columnTasks.length}
                   </span>
                 </div>
                 <Button
@@ -721,10 +725,7 @@ export const KanbanBoard = () => {
                     onCancel={() => setQuickAddColumn(null)}
                   />
                 )}
-                {tasks
-                  .filter((task) => task.status === column.id)
-                  .map((task, taskIndex) => {
-                    const columnIndex = COLUMNS.findIndex(c => c.id === column.id);
+                {columnTasks.map((task, taskIndex) => {
                     const isFocused = navigationMode &&
                                      columnIndex === focusedColumn &&
                                      taskIndex === focusedTaskIndex;
@@ -744,7 +745,8 @@ export const KanbanBoard = () => {
                   })}
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
         )}
       </div>
