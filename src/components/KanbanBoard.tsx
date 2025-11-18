@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import { Task, TaskStatus } from "@/types/task";
 import { TaskCard } from "./TaskCard";
 import { TaskDetailSheet } from "./TaskDetailSheet";
@@ -7,7 +8,7 @@ import { QuickAddTask } from "./QuickAddTask";
 import { AIInferenceDialog } from "./AIInferenceDialog";
 import { ContextAnalysisDialog } from "./ContextAnalysisDialog";
 import { Button } from "./ui/button";
-import { Plus, Keyboard, Sparkles, Loader2, Brain } from "lucide-react";
+import { Plus, Keyboard, Sparkles, Loader2, Brain, MessageSquare } from "lucide-react";
 import { toast } from "sonner";
 import * as tasksApi from "@/api/tasks";
 import { InferenceResponse } from "@/api/tasks";
@@ -35,6 +36,7 @@ const TOAST_DURATION = {
 } as const;
 
 export const KanbanBoard = () => {
+  const navigate = useNavigate();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -433,6 +435,16 @@ export const KanbanBoard = () => {
           <div className="flex items-center gap-2">
             <Button
               variant="default"
+              size="sm"
+              onClick={() => navigate("/assistant")}
+              className="gap-2 bg-purple-600 hover:bg-purple-700"
+              disabled={!backendConnected}
+            >
+              <MessageSquare className="h-4 w-4" />
+              <span className="text-xs font-semibold">AI Assistant</span>
+            </Button>
+            <Button
+              variant="outline"
               size="sm"
               onClick={() => setIsContextAnalysisOpen(true)}
               className="gap-2"
