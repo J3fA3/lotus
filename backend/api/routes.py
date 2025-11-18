@@ -45,6 +45,8 @@ from db.models import Task, Comment, Attachment, InferenceHistory, ShortcutConfi
 from db.default_shortcuts import get_default_shortcuts
 from agents.task_extractor import TaskExtractor
 from agents.pdf_processor import PDFProcessor
+from agents.advanced_pdf_processor import AdvancedPDFProcessor
+from agents.document_analyzer import DocumentAnalyzer
 from agents.document_processor import DocumentProcessor
 from agents.document_storage import DocumentStorage
 from agents.knowledge_base import KnowledgeBase
@@ -52,6 +54,9 @@ from agents.knowledge_base import KnowledgeBase
 # Import Cognitive Nexus routers
 from api.context_routes import router as context_router
 from api.knowledge_routes import router as knowledge_router
+
+# Import Document-Cognitive Nexus Integration
+from services.document_cognitive_integration import DocumentCognitiveIntegration
 
 router = APIRouter()
 
@@ -66,6 +71,8 @@ DOCUMENT_STORAGE_PATH = os.getenv("DOCUMENT_STORAGE_PATH", "./data/documents")
 
 task_extractor = TaskExtractor(OLLAMA_BASE_URL, OLLAMA_MODEL)
 pdf_processor = PDFProcessor()
+advanced_pdf_processor = AdvancedPDFProcessor()
+document_analyzer = DocumentAnalyzer(OLLAMA_BASE_URL, OLLAMA_MODEL)
 document_processor = DocumentProcessor()
 document_storage = DocumentStorage(DOCUMENT_STORAGE_PATH)
 knowledge_base = KnowledgeBase()
@@ -387,6 +394,221 @@ async def infer_tasks_from_pdf(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"PDF processing failed: {str(e)}")
+
+
+@router.post("/analyze-document")
+async def analyze_document(
+    file: UploadFile = File(...),
+    assignee: str = Form("You"),
+    enable_knowledge_graph: bool = Form(True),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Advanced PDF analysis with structure extraction, summarization, and entity extraction
+
+    NEW: Now integrates with Cognitive Nexus Knowledge Graph!
+
+    When enable_knowledge_graph=true (default):
+    - Automatically extracts entities (people, organizations, dates)
+    - Builds persistent cross-document knowledge graph
+    - Infers relationships between entities
+    - Enables cross-document intelligence
+    - Tracks organizational context over time
+
+    Returns:
+    - Document summary (executive summary, key points, document type)
+    - Extracted entities (people, organizations, dates, locations, decisions)
+    - Extracted tasks with full context
+    - Document metadata and statistics
+    - Knowledge graph results (if enabled)
+    """
+    try:
+        # Read and validate PDF file
+        pdf_bytes = await file.read()
+        filename = file.filename or "document.pdf"
+
+        if not advanced_pdf_processor.validate_pdf(pdf_bytes):
+            raise HTTPException(status_code=400, detail="Invalid PDF file")
+
+        # Process PDF with advanced extraction
+        processed_doc = await advanced_pdf_processor.process_document(pdf_bytes)
+
+        # Perform AI analysis
+        analysis = await document_analyzer.analyze_document(processed_doc)
+
+        # Extract tasks with context
+        task_result = await document_analyzer.extract_tasks_with_context(
+            processed_doc,
+            assignee
+        )
+
+        # Knowledge Graph Integration (NEW!)
+        kg_results = None
+        if enable_knowledge_graph:
+            integration_service = DocumentCognitiveIntegration(db)
+            kg_results = await integration_service.process_document_with_knowledge_graph(
+                processed_doc=processed_doc,
+                analysis=analysis,
+                source_identifier=filename
+            )
+
+            # Tasks are already created by the integration service
+            # Fetch them for response
+            saved_tasks = []
+            if kg_results.get("tasks_created", 0) > 0:
+                # Get recently created tasks
+                result = await db.execute(
+                    select(Task)
+                    .order_by(Task.created_at.desc())
+                    .limit(kg_results["tasks_created"])
+                )
+                saved_tasks = result.scalars().all()
+        else:
+            # Legacy path: Save tasks manually
+            saved_tasks = []
+            for task_data in task_result["tasks"]:
+                task = _create_task_from_data(task_data)
+                db.add(task)
+                saved_tasks.append(task)
+
+            # Save inference history
+            history = InferenceHistory(
+                input_text=processed_doc.raw_text[:1000],
+                input_type="pdf_advanced",
+                tasks_inferred=len(saved_tasks),
+                model_used=analysis.model_used,
+                inference_time=analysis.inference_time_ms
+            )
+            db.add(history)
+
+            await db.commit()
+
+            # Refresh all tasks
+            for task in saved_tasks:
+                await db.refresh(task)
+
+        # Build comprehensive response
+        from dataclasses import asdict
+
+        response = {
+            "tasks": [_task_to_schema(task) for task in saved_tasks],
+            "summary": asdict(analysis.summary),
+            "entities": asdict(analysis.entities),
+            "metadata": asdict(processed_doc.metadata),
+            "statistics": {
+                **processed_doc.summary_stats,
+                "inference_time_ms": analysis.inference_time_ms
+            },
+            "tables": processed_doc.tables,
+            "model_used": analysis.model_used
+        }
+
+        # Add knowledge graph results if enabled
+        if kg_results:
+            response["knowledge_graph"] = {
+                "enabled": True,
+                "context_item_id": kg_results["context_item_id"],
+                "entities_extracted": kg_results["entities_extracted"],
+                "relationships_inferred": kg_results["relationships_inferred"],
+                "tasks_created": kg_results["tasks_created"],
+                "tasks_updated": kg_results["tasks_updated"],
+                "comments_added": kg_results["comments_added"],
+                "quality_metrics": kg_results["quality_metrics"],
+                "extraction_strategy": kg_results["extraction_strategy"],
+                "reasoning_steps": kg_results["reasoning_steps"]
+            }
+        else:
+            response["knowledge_graph"] = {"enabled": False}
+
+        return response
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Document analysis failed: {str(e)}")
+
+
+@router.post("/summarize-pdf")
+async def summarize_pdf(
+    file: UploadFile = File(...)
+):
+    """
+    Quick document summarization without task extraction
+
+    Returns:
+    - Executive summary
+    - Key points
+    - Document type classification
+    - Topics
+    - Metadata
+    """
+    try:
+        # Read and validate PDF file
+        pdf_bytes = await file.read()
+
+        if not advanced_pdf_processor.validate_pdf(pdf_bytes):
+            raise HTTPException(status_code=400, detail="Invalid PDF file")
+
+        # Process PDF
+        processed_doc = await advanced_pdf_processor.process_document(pdf_bytes)
+
+        # Generate summary only (faster than full analysis)
+        analysis = await document_analyzer.analyze_document(processed_doc)
+
+        from dataclasses import asdict
+
+        return {
+            "summary": asdict(analysis.summary),
+            "metadata": asdict(processed_doc.metadata),
+            "statistics": processed_doc.summary_stats,
+            "tables_count": len(processed_doc.tables),
+            "inference_time_ms": analysis.inference_time_ms,
+            "model_used": analysis.model_used
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Document summarization failed: {str(e)}")
+
+
+@router.post("/extract-document-structure")
+async def extract_document_structure(
+    file: UploadFile = File(...)
+):
+    """
+    Extract document structure without AI analysis (fast)
+
+    Returns:
+    - Structured sections (headings, paragraphs, lists)
+    - Tables with markdown formatting
+    - Metadata
+    - Intelligent chunks for further processing
+    """
+    try:
+        # Read and validate PDF file
+        pdf_bytes = await file.read()
+
+        if not advanced_pdf_processor.validate_pdf(pdf_bytes):
+            raise HTTPException(status_code=400, detail="Invalid PDF file")
+
+        # Process PDF
+        processed_doc = await advanced_pdf_processor.process_document(pdf_bytes)
+
+        from dataclasses import asdict
+
+        return {
+            "metadata": asdict(processed_doc.metadata),
+            "sections": [asdict(section) for section in processed_doc.structured_sections],
+            "tables": processed_doc.tables,
+            "chunks": processed_doc.chunks,
+            "statistics": processed_doc.summary_stats
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Structure extraction failed: {str(e)}")
 
 
 # ============= Keyboard Shortcuts =============

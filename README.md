@@ -1,111 +1,63 @@
-# 🚀 Task Crate - AI-Powered Task Management
+# Task Crate
 
-A modern task management application featuring a Notion-style Kanban board with local AI-powered task extraction, keyboard shortcuts, and multiple view modes.
+AI-powered task management with intelligent context analysis. Built with React, FastAPI, and local LLM processing.
 
-## ✨ Key Features
+## Features
 
-### Core Task Management
-- 🎯 **Kanban Board** - Drag-and-drop interface with todo/doing/done columns
-- 👁️ **Multiple View Modes** - Peek (side sheet), Extended, and Full Page views
-- 💬 **Notion-Style Comments** - Chat interface with Enter to send
-- 📎 **Attachments & Notes** - Full task metadata with persistence
-- ⌨️ **45 Keyboard Shortcuts** - Configurable shortcuts with conflict detection
+- **Kanban Board** - Drag-and-drop task management with multiple view modes
+- **Cognitive Nexus AI** - 4-agent LangGraph system for intelligent context processing
+  - Extracts people, projects, teams, and deadlines from conversations
+  - Infers relationships and builds cross-context knowledge graph
+  - Automatically creates, updates, or enriches tasks based on context
+- **Knowledge Graph** - Remembers entities and relationships across all contexts
+- **45+ Keyboard Shortcuts** - Configurable shortcuts with conflict detection
+- **100% Local & Private** - All processing happens on your machine via Ollama
 
-### AI-Powered Features
-- 🤖 **AI Task Extraction** - Extract tasks from text or PDFs using local LLM (Ollama + Qwen 2.5)
-- 🧠 **Cognitive Nexus** - LangGraph-based agentic system for context-aware task management
-  - **Context Analysis Agent** - Analyzes complexity and chooses extraction strategy
-  - **Entity Extraction Agent** - Extracts entities with self-evaluation and retry loops
-  - **Relationship Synthesis Agent** - Infers relationships between entities
-  - **Task Integration Agent** - Intelligently creates, updates, or enriches tasks
-- 🔗 **Knowledge Graph** - Cross-context knowledge persistence with fuzzy entity matching
-- 📊 **Quality Metrics** - Transparent reasoning traces and quality scores
-
-### Infrastructure
-- 💾 **SQLite Database** - All data persists across sessions
-- 🔒 **100% Local & Free** - No API keys, runs entirely on your machine
-
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 
-1. **Install Ollama on your local machine** (not in codespace/dev container):
-   ```bash
-   # macOS
-   brew install ollama
-   
-   # Or download from https://ollama.com/download
-   
-   # Linux
-   curl -fsSL https://ollama.com/install.sh | sh
-   ```
-
-2. **Download the AI model**:
-   ```bash
-   ollama pull qwen2.5:7b-instruct
-   ```
-
-3. **Start Ollama server** (keep this running):
-   ```bash
-   ollama serve
-   ```
-
-### Running in GitHub Codespaces
-
-1. **Forward Ollama port** from your local machine:
-   ```bash
-   # On your LOCAL machine terminal (not in codespace)
-   gh codespace ssh -- -R 11434:localhost:11434
-   
-   # This creates an SSH tunnel that forwards your local Ollama 
-   # (port 11434) to the codespace
-   ```
-
-2. **Start the application** (in codespace terminal):
-   ```bash
-   ./start.sh
-   ```
-
-3. **Access the app**:
-   - Frontend: http://localhost:8080
-   - Backend: http://localhost:8000
-   - API Docs: http://localhost:8000/docs
-
-4. **Stop the application**:
-   ```bash
-   ./stop.sh
-   ```
-
-### Running Locally (Without Dev Container)
+- Node.js 18+ and npm
+- Python 3.11+
+- [Ollama](https://ollama.com/download) with `qwen2.5:7b-instruct` model
 
 ```bash
-# 1. Install dependencies
+# Install Ollama
+brew install ollama  # macOS
+# or download from https://ollama.com/download
+
+# Pull the model
+ollama pull qwen2.5:7b-instruct
+
+# Start Ollama
+ollama serve
+```
+
+### Installation
+
+```bash
+# Clone and install dependencies
+git clone <repository-url>
+cd task-crate
 npm install
 cd backend && pip install -r requirements.txt && cd ..
 
-# 2. Start Ollama (in separate terminal)
-ollama serve
-
-# 3. Start the application
+# Start the application
 ./start.sh
 
-# 4. Open http://localhost:8080
+# Open http://localhost:8080
 ```
 
-## 🎬 Demo Flow
+### Try It Out
 
-1. Open the app → See your Kanban board
-2. Click **"AI Infer Tasks"** button
-3. Paste this example:
+1. Click **"Context Analysis"** button (brain icon)
+2. Paste sample text:
    ```
-   Meeting notes:
-   - @john needs to update API docs before Friday
-   - @sarah will review the auth PR tomorrow
-   - Schedule Q4 roadmap meeting next week
+   Meeting notes: Jef needs to share CRESCO data with Andy by Friday.
+   Sarah from Product should review the specs before we ship.
    ```
-4. Click **"Infer Tasks"**
-5. Wait 10-30 seconds
-6. 3 tasks automatically added to your board! ✨
+3. Click **"Analyze with AI Agents"**
+4. Watch agents extract entities, infer relationships, and create tasks!
 
 ## 🏗️ Architecture
 
@@ -183,54 +135,41 @@ ollama serve
 - Ollama 0.3.3
 - Qwen 2.5 7B Instruct (local LLM)
 
-## 📚 Documentation
+## Documentation
 
-- **[docs/SETUP.md](./docs/SETUP.md)** - Complete setup guide
-- **[docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)** - System design and data models
-- **[backend/README.md](./backend/README.md)** - Backend API documentation
+- **[DEVELOPMENT.md](./DEVELOPMENT.md)** - Setup, architecture, and development guide
+- **[COGNITIVE_NEXUS.md](./COGNITIVE_NEXUS.md)** - AI system and knowledge graph details
+- **[CHANGELOG.md](./CHANGELOG.md)** - Version history and migrations
+- **[docs/](./docs/)** - Additional guides and setup instructions
 - **API Docs** - http://localhost:8000/docs (interactive Swagger UI)
 
-### Recent Changes
-- **Data Persistence** - Fixed comments, attachments, and notes persistence
-- **Keyboard Shortcuts** - 45 configurable shortcuts with conflict detection
-- **View Modes** - Added peek, extended, and full-page task views
+## Development
 
-## 🔧 Development
+See [DEVELOPMENT.md](./DEVELOPMENT.md) for:
+- Project structure
+- Code style guidelines  
+- Testing strategy
+- Deployment checklist
 
 ```bash
-# Install frontend dependencies
-npm install
+# Run backend tests
+cd backend && pytest tests/ -v
 
-# Install backend dependencies
-cd backend
-pip install -r requirements.txt
-
-# Run tests (when available)
-pytest backend/tests
-
-# Check backend health
+# Check API health
 curl http://localhost:8000/api/health
+
+# View reasoning traces
+curl http://localhost:8000/api/context/{id}/reasoning
 ```
 
-## 📦 Database Schema
+## Contributing
 
-```sql
--- Core tables
-tasks              # Main task data with notes
-comments           # Task comments (1-to-many)
-attachments        # Task attachments (1-to-many)
-inference_history  # AI inference logs
-shortcut_config    # User keyboard shortcuts
-```
+1. Create feature branch: `git checkout -b feature/your-feature`
+2. Follow code style in [DEVELOPMENT.md](./DEVELOPMENT.md)
+3. Add tests for new features
+4. Commit with conventional commits: `feat:`, `fix:`, `docs:`
+5. Create pull request
 
-## 🤝 Contributing
+## License
 
-1. Create a feature branch: `git checkout -b feature/your-feature`
-2. Make your changes
-3. Test thoroughly
-4. Commit: `git commit -m "feat: description"`
-5. Push and create PR
-
-## 📝 License
-
-MIT License - See LICENSE file for details
+MIT License

@@ -35,10 +35,20 @@ backend/**/.pytest_cache/
 # Database
 backend/tasks.db
 backend/*.db
+tasks.db
+*.db
 
 # Environment
+.env
 .env.local
+backend/.env
 backend/.env.local
 
 # Logs
 backend.log
+*.log
+
+# Data directories with generated content
+data/documents/inference/
+data/documents/knowledge/
+data/documents/tasks/

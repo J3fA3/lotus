@@ -681,6 +681,7 @@ class KnowledgeGraphService:
         pillars = pillars_result.scalars().all()
 
         structures = []
+        all_teams_count = 0
         for pillar in pillars:
             # Get teams under this pillar
             teams_result = await self.db.execute(
@@ -700,6 +701,7 @@ class KnowledgeGraphService:
             }
 
             for team in teams:
+                all_teams_count += 1
                 # Get roles under this team
                 roles_result = await self.db.execute(
                     select(TeamStructureEvolution).where(
@@ -736,13 +738,16 @@ class KnowledgeGraphService:
             ).order_by(TeamStructureEvolution.mention_count.desc())
         )
 
-        for team in standalone_teams.scalars().all():
+        standalone_teams_list = standalone_teams.scalars().all()
+        for team in standalone_teams_list:
+            all_teams_count += 1
             structures.append({
                 "name": team.structure_name,
                 "type": "team",
                 "mentioned": team.mention_count,
                 "contexts": team.context_count,
-                "parent": None
+                "first_seen": team.first_seen.isoformat(),
+                "teams": []
             })
 
         # Get standalone roles
@@ -755,20 +760,22 @@ class KnowledgeGraphService:
             ).order_by(TeamStructureEvolution.mention_count.desc())
         )
 
-        for role in standalone_roles.scalars().all():
+        standalone_roles_list = standalone_roles.scalars().all()
+        for role in standalone_roles_list:
             structures.append({
                 "name": role.structure_name,
                 "type": "role",
                 "mentioned": role.mention_count,
                 "contexts": role.context_count,
-                "parent": None
+                "first_seen": role.first_seen.isoformat(),
+                "teams": []
             })
 
         return {
             "structures": structures,
             "total_pillars": len(pillars),
-            "total_teams": len(teams) + len(list(standalone_teams.scalars().all())),
-            "total_roles": sum(len(p.get("teams", [])) for p in structures if p["type"] == "pillar") + len(list(standalone_roles.scalars().all()))
+            "total_teams": all_teams_count + len(standalone_teams_list),
+            "total_roles": sum(len(p.get("teams", [])) for p in structures if p["type"] == "pillar") + len(standalone_roles_list)
         }
 
     async def compute_graph_stats(self) -> Dict:
@@ -807,16 +814,36 @@ class KnowledgeGraphService:
 
         # Strongest relationships
         strongest_rels_result = await self.db.execute(
-            select(KnowledgeEdge, KnowledgeNode.column("canonical_name")).join(
-                KnowledgeNode, KnowledgeEdge.subject_node_id == KnowledgeNode.id
-            ).order_by(KnowledgeEdge.strength.desc()).limit(10)
+            select(KnowledgeEdge).order_by(
+                KnowledgeEdge.strength.desc()
+            ).limit(10)
         )
+        strongest_rels = []
+        for edge in strongest_rels_result.scalars().all():
+            # Get subject and object nodes
+            subject_result = await self.db.execute(
+                select(KnowledgeNode).where(KnowledgeNode.id == edge.subject_node_id)
+            )
+            object_result = await self.db.execute(
+                select(KnowledgeNode).where(KnowledgeNode.id == edge.object_node_id)
+            )
+            subject = subject_result.scalar_one_or_none()
+            obj = object_result.scalar_one_or_none()
+            
+            if subject and obj:
+                strongest_rels.append({
+                    "subject": subject.canonical_name,
+                    "predicate": edge.predicate,
+                    "object": obj.canonical_name,
+                    "strength": edge.strength
+                })
 
         return {
             "total_nodes": total_nodes,
             "total_edges": total_edges,
             "nodes_by_type": nodes_by_type,
             "top_mentioned": top_nodes,
+            "strongest_relationships": strongest_rels,
             "timestamp": datetime.utcnow().isoformat()
         }
 
