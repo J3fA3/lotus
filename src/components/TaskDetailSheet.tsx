@@ -27,6 +27,7 @@ import { DocumentUpload } from "./DocumentUpload";
 import { DocumentList } from "./DocumentList";
 import { uploadDocument, listDocuments } from "@/api/tasks";
 import { ValueStreamCombobox } from "./ValueStreamCombobox";
+import { RichTextEditor } from "./RichTextEditor";
 
 interface TaskDetailSheetProps {
   task: Task;
@@ -223,15 +224,6 @@ export const TaskDetailSheet = ({
     }
   }, [open, task.id]);
 
-  // Auto-resize textarea for notes
-  const handleNotesChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    handleUpdate({ notes: e.target.value });
-
-    // Auto-resize
-    const textarea = e.target;
-    textarea.style.height = "auto";
-    textarea.style.height = textarea.scrollHeight + "px";
-  };
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange} modal={false}>
@@ -473,12 +465,12 @@ export const TaskDetailSheet = ({
             <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
               Description
             </Label>
-            <Textarea
-              value={editedTask.description || ""}
-              onChange={(e) => handleUpdate({ description: e.target.value })}
-              placeholder="Add a detailed description..."
-              rows={isExpanded ? 6 : 4}
-              className="resize-none border-border/50 focus:border-primary/50 transition-all duration-500 ease-[cubic-bezier(0.34,1.56,0.64,1)] leading-relaxed hover:border-primary/30"
+            <RichTextEditor
+              content={editedTask.description || ""}
+              onChange={(html) => handleUpdate({ description: html })}
+              placeholder="Add a detailed description... Type / for commands, * for bullets"
+              variant="minimal"
+              className="transition-all duration-500"
             />
           </div>
 
@@ -614,7 +606,10 @@ export const TaskDetailSheet = ({
                           })()}
                         </span>
                       </div>
-                      <p className="text-sm text-foreground/90 leading-relaxed">{comment.text}</p>
+                      <div
+                        className="text-sm text-foreground/90 leading-relaxed prose prose-sm max-w-none"
+                        dangerouslySetInnerHTML={{ __html: comment.text }}
+                      />
                     </div>
                   </div>
                 ))}
@@ -624,39 +619,39 @@ export const TaskDetailSheet = ({
               <div className="flex-shrink-0 w-7 h-7 rounded-full bg-muted flex items-center justify-center mt-1">
                 <User className="h-3.5 w-3.5 text-muted-foreground" />
               </div>
-              <Textarea
-                value={newComment}
-                onChange={(e) => setNewComment(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    handleAddComment();
-                  }
-                }}
-                placeholder="Add a comment..."
-                rows={1}
-                className="flex-1 resize-none border-0 border-b border-border/30 focus:border-primary/50 transition-all leading-relaxed rounded-none px-0 focus-visible:ring-0 focus-visible:ring-offset-0"
-                style={{ minHeight: '28px' }}
-              />
+              <div className="flex-1">
+                <RichTextEditor
+                  content={newComment}
+                  onChange={(html) => setNewComment(html)}
+                  placeholder="Add a comment... Type / for commands, * for bullets"
+                  variant="minimal"
+                  className="border-0 border-b rounded-none"
+                />
+                <Button
+                  onClick={handleAddComment}
+                  size="sm"
+                  className="mt-2 h-8"
+                  disabled={!newComment.trim()}
+                >
+                  Comment
+                </Button>
+              </div>
             </div>
           </div>
 
           {/* Notes - No Header Divider */}
           <div className="space-y-3 pb-12 transition-all duration-500">
-            <Textarea
-              ref={notesRef}
-              value={editedTask.notes || ""}
-              onChange={handleNotesChange}
-              placeholder="Write your notes, thoughts, or documentation here..."
-              className={`resize-none border-border/30 focus:border-primary/50 transition-all duration-500 ease-[cubic-bezier(0.34,1.56,0.64,1)] leading-relaxed text-base p-6 rounded-lg hover:border-primary/30 ${
-                isExpanded ? "min-h-[400px]" : "min-h-[300px]"
-              }`}
-              style={{ 
-                overflow: "hidden",
-                fontFamily: "'Inter', sans-serif"
-              }}
+            <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+              Notes
+            </Label>
+            <RichTextEditor
+              content={editedTask.notes || ""}
+              onChange={(html) => handleUpdate({ notes: html })}
+              placeholder="Write your notes, thoughts, or documentation here... Type / for commands, * for bullets, create tables and more!"
+              variant="full"
+              className="transition-all duration-500"
             />
-            <span className="text-xs text-muted-foreground">Cmd/Ctrl+D to focus notes</span>
+            <span className="text-xs text-muted-foreground">Cmd/Ctrl+D to focus notes • Full formatting available: headings, tables, code blocks, and Word Art!</span>
           </div>
             </div>
           )}
