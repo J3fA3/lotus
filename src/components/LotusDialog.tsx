@@ -35,7 +35,7 @@ const LotusDialog: React.FC<LotusDialogProps> = ({ open, onOpenChange, onTasksCr
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const { sendMessage, uploadPdfFast, approveProposals, rejectProposals, clearChat } = useChat();
+  const { sendMessage, uploadPdfFast, approveProposals, rejectProposals, clearChat, approveTask, rejectTask } = useChat();
   const messages = useChatMessages();
   const isProcessing = useIsProcessing();
   const pendingProposals = usePendingProposals();
@@ -150,42 +150,23 @@ const LotusDialog: React.FC<LotusDialogProps> = ({ open, onOpenChange, onTasksCr
             ))}
 
             {/* Pending Proposals */}
-            {pendingProposals && (
-              <div className="space-y-3 p-4 bg-lotus-green-light/20 rounded-lg border border-[hsl(var(--lotus-green-medium)/0.4)] shadow-zen-md transition-zen">
+            {pendingProposals && pendingProposals.tasks.length > 0 && (
+              <div className="space-y-3 p-4 bg-lotus-green-light/10 rounded-lg border border-[hsl(var(--lotus-green-medium)/0.3)] shadow-zen-sm transition-zen">
                 <div className="flex items-center justify-between">
-                  <h4 className="text-sm font-medium text-lotus-ink">
-                    Review {pendingProposals.tasks.length} task{pendingProposals.tasks.length !== 1 ? 's' : ''}
+                  <h4 className="text-sm font-semibold text-lotus-ink">
+                    {pendingProposals.tasks.length} Proposed Task{pendingProposals.tasks.length !== 1 ? 's' : ''}
                   </h4>
-                  <div className="flex gap-2">
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={handleReject}
-                      disabled={isProcessing}
-                      className="transition-zen"
-                    >
-                      Reject
-                    </Button>
-                    <Button
-                      size="sm"
-                      onClick={handleApprove}
-                      disabled={isProcessing}
-                      className="bg-lotus-green-medium hover:bg-[hsl(var(--lotus-green-dark))] transition-zen"
-                    >
-                      {isProcessing ? (
-                        <>
-                          <LotusLoading size={16} className="mr-2" />
-                          Approving...
-                        </>
-                      ) : (
-                        "Approve"
-                      )}
-                    </Button>
-                  </div>
+                  <p className="text-xs text-muted-foreground">Review and create</p>
                 </div>
-                <div className="space-y-2">
+                <div className="space-y-3">
                   {pendingProposals.tasks.map((task) => (
-                    <ProposedTaskCard key={task.id} task={task} />
+                    <ProposedTaskCard
+                      key={task.id}
+                      task={task}
+                      onApprove={approveTask}
+                      onReject={rejectTask}
+                      isProcessing={isProcessing}
+                    />
                   ))}
                 </div>
               </div>
