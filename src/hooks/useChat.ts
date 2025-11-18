@@ -13,6 +13,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import {
   processMessage,
+  processMessageWithFile,
   approveTasks,
   rejectTasks,
   getChatHistory,
@@ -55,7 +56,7 @@ interface ChatState {
   } | null;
 
   // Actions
-  sendMessage: (content: string, sourceType?: string) => Promise<void>;
+  sendMessage: (content: string, sourceType?: string, file?: File) => Promise<void>;
   approveProposals: () => Promise<void>;
   rejectProposals: (reason?: string) => Promise<void>;
   loadHistory: (sessionId: string) => Promise<void>;
@@ -77,14 +78,14 @@ export const useChatStore = create<ChatState>()(
       pendingProposals: null,
 
       // Send a message to the AI Assistant
-      sendMessage: async (content: string, sourceType: string = "manual") => {
+      sendMessage: async (content: string, sourceType: string = "manual", file?: File) => {
         const currentSessionId = get().sessionId || generateSessionId();
 
         // Add user message immediately
         const userMessage: ChatMessage = {
           id: `user-${Date.now()}`,
           role: "user",
-          content,
+          content: file ? `[Uploaded: ${file.name}]\n${content}` : content,
           timestamp: new Date(),
         };
 
@@ -96,11 +97,24 @@ export const useChatStore = create<ChatState>()(
 
         try {
           // Process message through orchestrator
-          const response: ProcessMessageResponse = await processMessage({
-            content,
-            source_type: sourceType,
-            session_id: currentSessionId,
-          });
+          let response: ProcessMessageResponse;
+
+          if (file) {
+            // Use file upload endpoint
+            response = await processMessageWithFile({
+              content,
+              source_type: sourceType,
+              session_id: currentSessionId,
+              file,
+            });
+          } else {
+            // Use regular endpoint
+            response = await processMessage({
+              content,
+              source_type: sourceType,
+              session_id: currentSessionId,
+            });
+          }
 
           // Update session ID
           set({ sessionId: response.session_id });

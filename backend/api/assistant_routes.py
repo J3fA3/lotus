@@ -11,7 +11,7 @@ This module provides FastAPI endpoints for the Phase 2 AI Assistant:
 All endpoints integrate with the orchestrator agent and database operations.
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, File, UploadFile, Form
 from pydantic import BaseModel, Field
 from typing import List, Dict, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -167,7 +167,121 @@ async def process_message(
         session_id=session_id,
         db=db,
         source_identifier=request.source_identifier,
-        user_id=request.user_id
+        user_id=request.user_id,
+        pdf_bytes=None
+    )
+
+    # Build response message
+    if result["recommended_action"] == "auto":
+        message = f"I found {len(result['proposed_tasks'])} task(s) and auto-created them with high confidence."
+    elif result["recommended_action"] == "ask":
+        message = f"I found {len(result['proposed_tasks'])} task(s). Please review and approve."
+    elif result["recommended_action"] == "clarify":
+        message = "I need some clarification to create tasks effectively."
+    elif result["recommended_action"] == "answer_question":
+        message = "I'll help answer your question based on the knowledge graph."
+    else:
+        message = "I've stored this context in the knowledge graph."
+
+    # Prepare response
+    response_data = {
+        "message": message,
+        "session_id": session_id,
+        "recommended_action": result["recommended_action"],
+        "needs_approval": result["needs_approval"],
+        "answer_text": result.get("answer_text"),
+        "proposed_tasks": [
+            TaskProposal(**task) for task in result["proposed_tasks"]
+        ],
+        "enrichment_operations": [
+            EnrichmentOperation(**op) for op in result["enrichment_operations"]
+        ],
+        "created_tasks": result["created_tasks"],
+        "enriched_tasks": result["enriched_tasks"],
+        "clarifying_questions": result["clarifying_questions"],
+        "overall_confidence": result["overall_confidence"],
+        "reasoning_trace": result["reasoning_trace"],
+        "context_item_id": result["context_item_id"]
+    }
+
+    # Store assistant message
+    await store_chat_message(
+        db=db,
+        session_id=session_id,
+        role="assistant",
+        content=message,
+        metadata={
+            "task_ids": [t["id"] for t in result["created_tasks"]],
+            "proposed_tasks": result["proposed_tasks"],
+            "enriched_tasks": result["enriched_tasks"],
+            "confidence": result["overall_confidence"],
+            "context_item_id": result["context_item_id"]
+        }
+    )
+
+    return ProcessMessageResponse(**response_data)
+
+
+@router.post("/process-with-file", response_model=ProcessMessageResponse)
+async def process_message_with_file(
+    content: str = Form(default=""),
+    source_type: str = Form(default="pdf"),
+    session_id: Optional[str] = Form(default=None),
+    source_identifier: Optional[str] = Form(default=None),
+    user_id: Optional[str] = Form(default=None),
+    file: Optional[UploadFile] = File(default=None),
+    db: AsyncSession = Depends(get_db)
+):
+    """Process a user message with an uploaded file (PDF, transcript, etc.).
+
+    This endpoint:
+    1. Accepts file uploads via multipart/form-data
+    2. Reads PDF bytes and passes to orchestrator
+    3. Runs the full processing pipeline with PDF parsing
+    4. Returns proposed/created tasks
+
+    Args:
+        content: User message content
+        source_type: Source type (pdf, transcript, etc.)
+        session_id: Chat session ID (auto-generated if not provided)
+        source_identifier: Optional source identifier
+        user_id: Optional user ID
+        file: Uploaded file (PDF, DOC, TXT, etc.)
+        db: Database session
+
+    Returns:
+        ProcessMessageResponse with proposed/created tasks and recommendations
+    """
+    # Generate session ID if not provided
+    session_id = session_id or str(uuid.uuid4())
+
+    # Read file bytes if uploaded
+    pdf_bytes = None
+    if file:
+        pdf_bytes = await file.read()
+        # Store user message with filename
+        content_with_file = f"[Uploaded: {file.filename}]\n{content}" if content else f"[Uploaded: {file.filename}]"
+    else:
+        content_with_file = content
+
+    # Store user message
+    await store_chat_message(
+        db=db,
+        session_id=session_id,
+        role="user",
+        content=content_with_file,
+        metadata={"source_type": source_type, "filename": file.filename if file else None}
+    )
+
+    # Process message through orchestrator with PDF bytes
+    result = await process_assistant_message(
+        content=content or "",
+        source_type=source_type,
+        session_id=session_id,
+        db=db,
+        source_identifier=source_identifier,
+        user_id=user_id,
+        pdf_bytes=pdf_bytes
     )
 
     # Build response message

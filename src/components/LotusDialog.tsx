@@ -61,12 +61,11 @@ const LotusDialog: React.FC<LotusDialogProps> = ({ open, onOpenChange, onTasksCr
 
     // Handle file upload - file uploads always use "pdf" source type
     if (uploadedFile) {
-      // TODO: Upload file and get content
       toast.info(`Processing ${uploadedFile.name}...`);
-      const fileName = uploadedFile.name;
+      const file = uploadedFile;
       setUploadedFile(null);
-      // For now, just send filename in message
-      await sendMessage(`[Uploaded: ${fileName}]\n${content}`, "pdf");
+      // Send file object to backend for processing
+      await sendMessage(content, "pdf", file);
     } else {
       // Use the selected source type (manual/slack/transcript)
       await sendMessage(content, sourceType);

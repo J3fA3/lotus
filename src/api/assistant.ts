@@ -103,6 +103,42 @@ export async function processMessage(
   }
 }
 
+export async function processMessageWithFile(
+  request: ProcessMessageRequest & { file: File }
+): Promise<ProcessMessageResponse> {
+  try {
+    const formData = new FormData();
+    formData.append("content", request.content);
+    formData.append("source_type", request.source_type || "pdf");
+    if (request.session_id) {
+      formData.append("session_id", request.session_id);
+    }
+    if (request.source_identifier) {
+      formData.append("source_identifier", request.source_identifier);
+    }
+    if (request.user_id) {
+      formData.append("user_id", request.user_id);
+    }
+    formData.append("file", request.file);
+
+    const response = await fetch(`${API_BASE}/process-with-file`, {
+      method: "POST",
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || "Failed to process message with file");
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error("Error processing message with file:", error);
+    toast.error("Failed to process file");
+    throw error;
+  }
+}
+
 export async function approveTasks(
   request: ApproveTasksRequest
 ): Promise<{ created_tasks: any[]; enriched_tasks: any[]; message: string }> {
