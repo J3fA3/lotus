@@ -113,6 +113,11 @@ async def classify_request(state: OrchestratorState) -> Dict:
     - Analyzing a document
     - Just providing context
 
+    IMPORTANT: source_type takes precedence:
+    - slack/transcript → Always task_creation (even if they contain questions)
+    - pdf → Always document_analysis
+    - manual → Use LLM to classify (question vs task_creation vs context_only)
+
     Returns:
         State updates with request_type
     """
@@ -121,7 +126,7 @@ async def classify_request(state: OrchestratorState) -> Dict:
     context = state["input_context"]
     source_type = state["source_type"]
 
-    # Check for explicit document upload
+    # Priority 1: Check for explicit document upload
     if state.get("pdf_bytes") or source_type == "pdf":
         request_type = "document_analysis"
         reasoning.append("→ Document uploaded → DOCUMENT_ANALYSIS")
@@ -130,14 +135,25 @@ async def classify_request(state: OrchestratorState) -> Dict:
             "reasoning_trace": reasoning
         }
 
-    # Use LLM to classify the request
+    # Priority 2: Slack messages and transcripts should ALWAYS create tasks
+    # (even if they contain questions - questions in context are different from direct queries)
+    if source_type in ["slack", "transcript"]:
+        request_type = "task_creation"
+        reasoning.append(f"→ Source type '{source_type}' → TASK_CREATION (bypass LLM classification)")
+        return {
+            "request_type": request_type,
+            "reasoning_trace": reasoning
+        }
+
+    # Priority 3: Manual input - use LLM to classify
+    # Only manual chat messages should be treated as potential questions
     prompt = f"""Classify this user input into ONE category:
 
 INPUT: {context}
 
 CATEGORIES:
 1. question - User is asking a question that needs an answer (e.g., "What's my highest priority?", "Who is working on X?", "When is Y due?")
-2. task_creation - User wants to create/update tasks (e.g., "Andy needs the dashboard by Friday", "Create a task for...", slack messages, transcripts)
+2. task_creation - User wants to create/update tasks (e.g., "Andy needs the dashboard by Friday", "Create a task for...")
 3. context_only - Just providing information to store (e.g., "FYI: meeting moved", "Note: project on hold")
 
 OUTPUT ONLY ONE WORD: question, task_creation, or context_only
@@ -170,7 +186,7 @@ Classification:"""
                 # Default: if unclear, assume task creation (existing behavior)
                 request_type = "task_creation"
 
-            reasoning.append(f"→ LLM classified as: {request_type.upper()}")
+            reasoning.append(f"→ Manual input, LLM classified as: {request_type.upper()}")
 
     except Exception as e:
         reasoning.append(f"⚠ Classification failed: {str(e)}")

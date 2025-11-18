@@ -9,7 +9,7 @@
  */
 
 import React, { useState, useRef, useEffect } from "react";
-import { Send, Loader2, Upload, X, Paperclip, Sparkles } from "lucide-react";
+import { Send, Loader2, Upload, X, Paperclip, Sparkles, MessageSquare, FileText, Mic } from "lucide-react";
 import { Button } from "./ui/button";
 import { Textarea } from "./ui/textarea";
 import { ScrollArea } from "./ui/scroll-area";
@@ -59,14 +59,16 @@ const LotusDialog: React.FC<LotusDialogProps> = ({ open, onOpenChange, onTasksCr
     const content = inputValue.trim();
     setInputValue("");
 
-    // Handle file upload
+    // Handle file upload - file uploads always use "pdf" source type
     if (uploadedFile) {
       // TODO: Upload file and get content
       toast.info(`Processing ${uploadedFile.name}...`);
+      const fileName = uploadedFile.name;
       setUploadedFile(null);
       // For now, just send filename in message
-      await sendMessage(`[Uploaded: ${uploadedFile.name}]\n${content}`, "pdf");
+      await sendMessage(`[Uploaded: ${fileName}]\n${content}`, "pdf");
     } else {
+      // Use the selected source type (manual/slack/transcript)
       await sendMessage(content, sourceType);
     }
   };
@@ -93,7 +95,7 @@ const LotusDialog: React.FC<LotusDialogProps> = ({ open, onOpenChange, onTasksCr
     const file = e.target.files?.[0];
     if (file) {
       setUploadedFile(file);
-      setSourceType("pdf");
+      // Note: sourceType will be "pdf" when sending, but we don't override the UI state
     }
   };
 
@@ -200,6 +202,40 @@ const LotusDialog: React.FC<LotusDialogProps> = ({ open, onOpenChange, onTasksCr
 
         {/* Input Area */}
         <div className="border-t px-6 py-4 bg-muted/30">
+          {/* Source Type Selector */}
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-xs text-muted-foreground">Input type:</span>
+            <div className="flex gap-1">
+              <Button
+                size="sm"
+                variant={sourceType === "manual" ? "default" : "outline"}
+                onClick={() => setSourceType("manual")}
+                className={`h-7 text-xs ${sourceType === "manual" ? "bg-emerald-600 hover:bg-emerald-700" : ""}`}
+              >
+                <MessageSquare className="h-3 w-3 mr-1" />
+                Manual
+              </Button>
+              <Button
+                size="sm"
+                variant={sourceType === "slack" ? "default" : "outline"}
+                onClick={() => setSourceType("slack")}
+                className={`h-7 text-xs ${sourceType === "slack" ? "bg-emerald-600 hover:bg-emerald-700" : ""}`}
+              >
+                <MessageSquare className="h-3 w-3 mr-1" />
+                Slack
+              </Button>
+              <Button
+                size="sm"
+                variant={sourceType === "transcript" ? "default" : "outline"}
+                onClick={() => setSourceType("transcript")}
+                className={`h-7 text-xs ${sourceType === "transcript" ? "bg-emerald-600 hover:bg-emerald-700" : ""}`}
+              >
+                <Mic className="h-3 w-3 mr-1" />
+                Transcript
+              </Button>
+            </div>
+          </div>
+
           {/* File Upload Preview */}
           {uploadedFile && (
             <div className="flex items-center gap-2 mb-3 p-2 bg-emerald-50 dark:bg-emerald-950/50 rounded-md">
@@ -221,7 +257,13 @@ const LotusDialog: React.FC<LotusDialogProps> = ({ open, onOpenChange, onTasksCr
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Describe what needs to be done, paste messages, or upload documents..."
+              placeholder={
+                sourceType === "slack"
+                  ? "Paste Slack message here..."
+                  : sourceType === "transcript"
+                  ? "Paste transcript or meeting notes here..."
+                  : "Ask a question or describe what needs to be done..."
+              }
               className="min-h-[60px] resize-none"
               disabled={isProcessing}
             />
