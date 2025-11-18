@@ -146,11 +146,12 @@ export const TaskFullPage = ({
         <div className="space-y-12">
           {/* Title */}
           <div>
-            <Input
-              value={editedTask.title}
-              onChange={(e) => handleUpdate({ title: e.target.value })}
-              className="text-5xl font-bold border-0 px-0 focus-visible:ring-0 tracking-tight bg-transparent h-auto py-2"
-              placeholder="Task title"
+            <RichTextEditor
+              content={editedTask.title}
+              onChange={(html) => handleUpdate({ title: html })}
+              placeholder="Task title - Type / for Word Art styles!"
+              variant="title"
+              className="text-5xl"
               autoFocus={false}
             />
           </div>

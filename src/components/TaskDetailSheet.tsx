@@ -355,13 +355,14 @@ export const TaskDetailSheet = ({
             <div className="space-y-8 animate-in fade-in duration-200">
               {/* Title */}
               <div className="transition-all duration-500">
-                <Input
-                  value={editedTask.title}
-                  onChange={(e) => handleUpdate({ title: e.target.value })}
-                  className={`font-semibold border-0 px-0 focus-visible:ring-0 tracking-tight bg-transparent transition-all duration-500 ease-[cubic-bezier(0.34,1.56,0.64,1)] ${
+                <RichTextEditor
+                  content={editedTask.title}
+                  onChange={(html) => handleUpdate({ title: html })}
+                  placeholder="Task title - Type / for Word Art styles!"
+                  variant="title"
+                  className={`transition-all duration-500 ease-[cubic-bezier(0.34,1.56,0.64,1)] ${
                     isExpanded ? "text-4xl" : "text-3xl"
                   }`}
-                  placeholder="Task title"
                   autoFocus={false}
                 />
               </div>

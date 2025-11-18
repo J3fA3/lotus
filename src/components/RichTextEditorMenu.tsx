@@ -1,4 +1,4 @@
-import React, { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
+import React, { useState, useEffect, forwardRef, useImperativeHandle, useRef } from 'react';
 import { Editor } from '@tiptap/react';
 
 export interface MenuItem {
@@ -20,11 +20,31 @@ export const SlashCommandMenu = forwardRef<any, MenuProps>((props, ref) => {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [filteredItems, setFilteredItems] = useState(props.items);
   const [query, setQuery] = useState('');
+  const selectedItemRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setFilteredItems(props.items);
     setSelectedIndex(0);
   }, [props.items]);
+
+  // Auto-scroll selected item into view
+  useEffect(() => {
+    if (selectedItemRef.current && menuRef.current) {
+      const menuRect = menuRef.current.getBoundingClientRect();
+      const itemRect = selectedItemRef.current.getBoundingClientRect();
+
+      const isAbove = itemRect.top < menuRect.top;
+      const isBelow = itemRect.bottom > menuRect.bottom;
+
+      if (isAbove || isBelow) {
+        selectedItemRef.current.scrollIntoView({
+          behavior: 'smooth',
+          block: 'nearest',
+        });
+      }
+    }
+  }, [selectedIndex]);
 
   const selectItem = (index: number) => {
     const item = filteredItems[index];
@@ -109,7 +129,7 @@ export const SlashCommandMenu = forwardRef<any, MenuProps>((props, ref) => {
 
   return (
     <div className="slash-menu-wrapper">
-      <div className="slash-menu">
+      <div className="slash-menu" ref={menuRef}>
         {query && (
           <div className="slash-menu-query">
             Searching: <span className="font-semibold">{query}</span>
@@ -117,6 +137,7 @@ export const SlashCommandMenu = forwardRef<any, MenuProps>((props, ref) => {
         )}
         {filteredItems.map((item, index) => (
           <button
+            ref={index === selectedIndex ? selectedItemRef : null}
             className={`slash-menu-item ${index === selectedIndex ? 'is-selected' : ''}`}
             key={index}
             onClick={() => selectItem(index)}

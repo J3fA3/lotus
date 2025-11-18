@@ -22,15 +22,46 @@ interface RichTextEditorProps {
   content?: string;
   onChange?: (content: string) => void;
   placeholder?: string;
-  variant?: 'minimal' | 'full';
+  variant?: 'minimal' | 'full' | 'title';
   className?: string;
   autoFocus?: boolean;
 }
 
 // Slash command configuration
-const getMenuItems = (editor: Editor): MenuItem[] => {
-  const items: MenuItem[] = [
-    // Headings
+const getMenuItems = (editor: Editor, variant?: string): MenuItem[] => {
+  const items: MenuItem[] = [];
+
+  // For title variant, only show Word Art
+  if (variant === 'title') {
+    WORD_ART_STYLES.forEach((style) => {
+      items.push({
+        title: `Word Art: ${style.name}`,
+        description: 'Retro-styled text formatting',
+        icon: style.preview,
+        keywords: ['wordart', 'word', 'art', 'style', 'retro', style.name.toLowerCase()],
+        command: (editor) => {
+          editor.chain().focus().setWordArt(style.id).run();
+        },
+      });
+    });
+
+    // Add plain text option
+    items.unshift({
+      title: 'Plain Text',
+      description: 'Remove Word Art styling',
+      icon: 'T',
+      keywords: ['plain', 'text', 'normal', 'remove', 'clear'],
+      command: (editor) => {
+        editor.chain().focus().setParagraph().run();
+      },
+    });
+
+    return items;
+  }
+
+  // For other variants, show all formatting options
+  // Headings
+  items.push(
     {
       title: 'Heading 1',
       description: 'Large section heading',
@@ -110,8 +141,8 @@ const getMenuItems = (editor: Editor): MenuItem[] => {
       command: (editor) => {
         editor.chain().focus().setHorizontalRule().run();
       },
-    },
-  ];
+    }
+  );
 
   // Add Word Art styles (fun feature!)
   WORD_ART_STYLES.forEach((style) => {
@@ -127,21 +158,23 @@ const getMenuItems = (editor: Editor): MenuItem[] => {
   });
 
   // Add table (only for full variant)
-  items.push({
-    title: 'Table',
-    description: 'Insert a table',
-    icon: '⊞',
-    keywords: ['table', 'grid', 'spreadsheet'],
-    command: (editor) => {
-      editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
-    },
-  });
+  if (variant === 'full') {
+    items.push({
+      title: 'Table',
+      description: 'Insert a table',
+      icon: '⊞',
+      keywords: ['table', 'grid', 'spreadsheet'],
+      command: (editor) => {
+        editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
+      },
+    });
+  }
 
   return items;
 };
 
-// Slash command extension
-const SlashCommand = Suggestion.configure({
+// Slash command extension factory
+const createSlashCommand = (variant?: string) => Suggestion.configure({
   suggestion: {
     char: '/',
     startOfLine: false,
@@ -149,7 +182,7 @@ const SlashCommand = Suggestion.configure({
       props.command({ editor, range });
     },
     items: ({ query, editor }: { query: string; editor: Editor }) => {
-      const items = getMenuItems(editor);
+      const items = getMenuItems(editor, variant);
       if (!query) return items;
 
       const lowerQuery = query.toLowerCase();
@@ -167,11 +200,20 @@ const SlashCommand = Suggestion.configure({
           component = new ReactRenderer(SlashCommandMenu, {
             props: {
               ...props,
-              items: getMenuItems(props.editor).map((item) => ({
+              items: getMenuItems(props.editor, variant).map((item) => ({
                 ...item,
                 command: () => {
-                  item.command(props.editor);
-                  props.editor.chain().focus().deleteRange(props.range).run();
+                  // Delete the slash and query text FIRST, then execute command
+                  props.editor
+                    .chain()
+                    .focus()
+                    .deleteRange(props.range)
+                    .run();
+
+                  // Small delay to ensure deletion completes before command
+                  setTimeout(() => {
+                    item.command(props.editor);
+                  }, 10);
                 },
               })),
             },
@@ -196,11 +238,20 @@ const SlashCommand = Suggestion.configure({
         onUpdate(props: any) {
           component.updateProps({
             ...props,
-            items: getMenuItems(props.editor).map((item) => ({
+            items: getMenuItems(props.editor, variant).map((item) => ({
               ...item,
               command: () => {
-                item.command(props.editor);
-                props.editor.chain().focus().deleteRange(props.range).run();
+                // Delete the slash and query text FIRST, then execute command
+                props.editor
+                  .chain()
+                  .focus()
+                  .deleteRange(props.range)
+                  .run();
+
+                // Small delay to ensure deletion completes before command
+                setTimeout(() => {
+                  item.command(props.editor);
+                }, 10);
               },
             })),
           });
@@ -247,7 +298,7 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
     Placeholder.configure({
       placeholder,
     }),
-    SlashCommand,
+    createSlashCommand(variant),
     WordArt,
   ];
 
@@ -264,7 +315,7 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
         lowlight,
       })
     );
-  } else {
+  } else if (variant === 'minimal') {
     // Still allow code blocks in minimal, just simpler
     extensions.push(
       CodeBlockLowlight.configure({
@@ -272,6 +323,7 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
       })
     );
   }
+  // For title variant, we don't need code blocks
 
   const editor = useEditor({
     extensions,
@@ -294,8 +346,10 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
     }
   }, [content, editor]);
 
+  const variantClass = variant === 'full' ? 'full-featured' : variant === 'title' ? 'title' : 'minimal';
+
   return (
-    <div className={`rich-text-editor ${variant === 'full' ? 'full-featured' : 'minimal'} ${className}`}>
+    <div className={`rich-text-editor ${variantClass} ${className}`}>
       <EditorContent editor={editor} />
     </div>
   );
