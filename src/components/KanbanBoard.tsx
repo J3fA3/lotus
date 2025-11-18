@@ -4,6 +4,7 @@ import { TaskCard } from "./TaskCard";
 import { TaskDetailSheet } from "./TaskDetailSheet";
 import { TaskFullPage } from "./TaskFullPage";
 import { QuickAddTask } from "./QuickAddTask";
+import { TaskSearchBar } from "./TaskSearchBar";
 import LotusDialog from "./LotusDialog";
 import { Button } from "./ui/button";
 import { Plus, Keyboard, Sparkles, Loader2 } from "lucide-react";
@@ -52,6 +53,11 @@ export const KanbanBoard = () => {
   const [focusedTaskIndex, setFocusedTaskIndex] = useState<number>(0);
   const [navigationMode, setNavigationMode] = useState(false); // Track if we're in keyboard navigation mode
 
+  // Search state
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<Set<string>>(new Set()); // Set of task IDs matching search
+  const [isSearching, setIsSearching] = useState(false);
+
   const { shortcuts, getShortcutByAction, updateShortcut } = useShortcuts();
 
   // Load tasks from backend on mount
@@ -96,11 +102,45 @@ export const KanbanBoard = () => {
     }
   }, []);
 
+  // Handle search
+  const handleSearch = useCallback(async (query: string) => {
+    setSearchQuery(query);
+
+    // If query is empty, clear search results
+    if (!query.trim()) {
+      setSearchResults(new Set());
+      setIsSearching(false);
+      return;
+    }
+
+    setIsSearching(true);
+    try {
+      const response = await tasksApi.searchTasks(query, 50, 0.3);
+      const matchingTaskIds = new Set(response.results.map(r => r.task.id));
+      setSearchResults(matchingTaskIds);
+    } catch (err) {
+      console.error("Search failed:", err);
+      toast.error("Search failed", {
+        description: err instanceof Error ? err.message : "Unknown error",
+      });
+      setSearchResults(new Set());
+    } finally {
+      setIsSearching(false);
+    }
+  }, []);
+
   // Helper function to get tasks in current column
   const getColumnTasks = useCallback((columnIndex: number) => {
     const status = COLUMNS[columnIndex].id;
-    return tasks.filter((t) => t.status === status);
-  }, [tasks]);
+    let columnTasks = tasks.filter((t) => t.status === status);
+
+    // Filter by search results if search is active
+    if (searchQuery.trim() && searchResults.size > 0) {
+      columnTasks = columnTasks.filter((t) => searchResults.has(t.id));
+    }
+
+    return columnTasks;
+  }, [tasks, searchQuery, searchResults]);
 
   // Helper function to get focused task
   const getFocusedTask = useCallback(() => {
@@ -429,6 +469,7 @@ export const KanbanBoard = () => {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <TaskSearchBar onSearch={handleSearch} />
             <Button
               variant="default"
               size="sm"

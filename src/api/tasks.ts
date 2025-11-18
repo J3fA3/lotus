@@ -122,7 +122,7 @@ export async function deleteTask(taskId: string): Promise<void> {
   if (!taskId) {
     throw new Error("Task ID is required");
   }
-  
+
   try {
     const response = await fetch(`${API_BASE_URL}/tasks/${taskId}`, {
       method: "DELETE",
@@ -137,6 +137,62 @@ export async function deleteTask(taskId: string): Promise<void> {
       throw error;
     }
     throw new Error("Unknown error occurred while deleting task");
+  }
+}
+
+/**
+ * Search result with similarity score
+ */
+export interface TaskSearchResult {
+  task: Task;
+  similarity_score: number;
+}
+
+/**
+ * Search response
+ */
+export interface TaskSearchResponse {
+  query: string;
+  results: TaskSearchResult[];
+  total: number;
+  threshold: number;
+}
+
+/**
+ * Search tasks using semantic similarity
+ */
+export async function searchTasks(
+  query: string,
+  limit: number = 50,
+  threshold: number = 0.3
+): Promise<TaskSearchResponse> {
+  if (!query.trim()) {
+    return {
+      query: "",
+      results: [],
+      total: 0,
+      threshold
+    };
+  }
+
+  try {
+    const params = new URLSearchParams();
+    params.append("limit", limit.toString());
+    params.append("threshold", threshold.toString());
+
+    const url = `${API_BASE_URL}/tasks/search/${encodeURIComponent(query)}?${params.toString()}`;
+    const response = await fetch(url);
+
+    if (!response.ok) {
+      throw new Error(`Failed to search tasks: ${response.statusText}`);
+    }
+
+    return response.json();
+  } catch (error) {
+    if (error instanceof Error) {
+      throw error;
+    }
+    throw new Error("Unknown error occurred while searching tasks");
   }
 }
 

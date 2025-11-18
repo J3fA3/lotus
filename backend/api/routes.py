@@ -240,6 +240,89 @@ async def delete_task(task_id: str, db: AsyncSession = Depends(get_db)):
     return {"message": "Task deleted successfully"}
 
 
+@router.get("/tasks/search/{query}")
+async def search_tasks(
+    query: str,
+    limit: int = 50,
+    threshold: float = 0.3,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Search tasks using semantic similarity
+
+    Args:
+        query: Search query string
+        limit: Maximum number of results to return (default: 50)
+        threshold: Minimum similarity threshold 0.0-1.0 (default: 0.3)
+
+    Returns:
+        List of tasks with similarity scores, sorted by relevance
+    """
+    try:
+        from services.knowledge_graph_embeddings import embedding_service
+
+        # Get all tasks
+        result = await db.execute(
+            select(Task)
+            .options(selectinload(Task.comments), selectinload(Task.attachments))
+        )
+        tasks = result.scalars().all()
+
+        if not tasks:
+            return {
+                "query": query,
+                "results": [],
+                "total": 0
+            }
+
+        # Build searchable text for each task
+        task_texts = []
+        task_map = {}
+
+        for task in tasks:
+            # Combine title, description, and notes for rich search
+            searchable_parts = [task.title]
+
+            if task.description:
+                searchable_parts.append(task.description)
+
+            if task.notes:
+                searchable_parts.append(task.notes)
+
+            searchable_text = " ".join(searchable_parts)
+            task_texts.append(searchable_text)
+            task_map[searchable_text] = task
+
+        # Use embedding service to find similar tasks
+        similar_texts = embedding_service.find_similar_texts(
+            query_text=query,
+            candidate_texts=task_texts,
+            top_k=limit,
+            threshold=threshold
+        )
+
+        # Build response with matched tasks and scores
+        results = []
+        for text, similarity_score in similar_texts:
+            task = task_map[text]
+            task_schema = _task_to_schema(task, load_relationships=True)
+
+            results.append({
+                "task": task_schema,
+                "similarity_score": round(similarity_score, 3)
+            })
+
+        return {
+            "query": query,
+            "results": results,
+            "total": len(results),
+            "threshold": threshold
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
+
+
 # ============= AI Task Inference =============
 
 @router.post("/infer-tasks", response_model=InferenceResponse)
