@@ -6,6 +6,16 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sess
 from sqlalchemy.orm import declarative_base
 from .models import Base
 
+# Import knowledge graph models so they're registered with Base.metadata
+# This ensures their tables are created when init_db() runs
+from .knowledge_graph_models import (  # noqa: F401
+    KnowledgeNode,
+    KnowledgeEdge,
+    EntityKnowledgeLink,
+    TeamStructureEvolution,
+    KnowledgeGraphStats
+)
+
 # Configuration
 DEFAULT_DATABASE_URL = "sqlite:///./tasks.db"
 

@@ -20,6 +20,15 @@ export default defineConfig(({ mode }) => ({
         rewrite: (path) => path,
       },
     },
+    fs: {
+      // Exclude backend directory from Vite's file system access
+      deny: ['**/backend/**'],
+    },
+  },
+  optimizeDeps: {
+    // Exclude backend directory from dependency optimization
+    exclude: ['backend'],
+    entries: ['src/**/*.tsx', 'src/**/*.ts', 'index.html'],
   },
   plugins: [
     react(),
