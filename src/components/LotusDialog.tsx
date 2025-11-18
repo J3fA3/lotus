@@ -18,7 +18,6 @@ import { Badge } from "./ui/badge";
 import { useChat, useChatMessages, useIsProcessing, usePendingProposals } from "../hooks/useChat";
 import ProposedTaskCard from "./ProposedTaskCard";
 import ChatMessageComponent from "./ChatMessageComponent";
-import { TaskDetailSheet } from "./TaskDetailSheet";
 import { toast } from "sonner";
 import { LotusIcon } from "./LotusIcon";
 import { LotusLoading } from "./LotusLoading";
@@ -28,14 +27,13 @@ interface LotusDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onTasksCreated?: () => void;
+  onTaskClick?: (task: Task) => void;
 }
 
-const LotusDialog: React.FC<LotusDialogProps> = ({ open, onOpenChange, onTasksCreated }) => {
+const LotusDialog: React.FC<LotusDialogProps> = ({ open, onOpenChange, onTasksCreated, onTaskClick }) => {
   const [inputValue, setInputValue] = useState("");
   const [sourceType, setSourceType] = useState<string>("manual");
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
-  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
-  const [isTaskDetailOpen, setIsTaskDetailOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -104,11 +102,6 @@ const LotusDialog: React.FC<LotusDialogProps> = ({ open, onOpenChange, onTasksCr
     }
   };
 
-  const handleTaskClick = (task: Task) => {
-    setSelectedTask(task);
-    setIsTaskDetailOpen(true);
-  };
-
   const handleClose = () => {
     onOpenChange(false);
   };
@@ -158,7 +151,7 @@ const LotusDialog: React.FC<LotusDialogProps> = ({ open, onOpenChange, onTasksCr
               <ChatMessageComponent
                 key={message.id}
                 message={message}
-                onTaskClick={handleTaskClick}
+                onTaskClick={onTaskClick}
               />
             ))}
 
@@ -296,15 +289,6 @@ const LotusDialog: React.FC<LotusDialogProps> = ({ open, onOpenChange, onTasksCr
           </div>
         </div>
       </DialogContent>
-
-      {/* Task Detail Sheet */}
-      {selectedTask && (
-        <TaskDetailSheet
-          task={selectedTask}
-          open={isTaskDetailOpen}
-          onOpenChange={setIsTaskDetailOpen}
-        />
-      )}
     </Dialog>
   );
 };

@@ -313,6 +313,12 @@ export const KanbanBoard = () => {
     }
   }, []);
 
+  // Handle task click from Lotus chat
+  const handleTaskClickFromLotus = useCallback((task: Task) => {
+    setSelectedTask(task);
+    setIsDialogOpen(true);
+  }, []);
+
   const handleDeleteTask = useCallback(async (taskId: string) => {
     try {
       await tasksApi.deleteTask(taskId);
@@ -673,6 +679,7 @@ export const KanbanBoard = () => {
         open={isLotusOpen}
         onOpenChange={setIsLotusOpen}
         onTasksCreated={loadTasks}
+        onTaskClick={handleTaskClickFromLotus}
       />
 
       {selectedTask && !isFullPageOpen && (
