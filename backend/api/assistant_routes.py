@@ -195,6 +195,7 @@ async def process_message(
         ],
         "enrichment_operations": [
             EnrichmentOperation(**op) for op in result["enrichment_operations"]
+            if op.get("task_id") is not None  # Filter out operations with None task_id
         ],
         "created_tasks": result["created_tasks"],
         "enriched_tasks": result["enriched_tasks"],
@@ -308,6 +309,7 @@ async def process_message_with_file(
         ],
         "enrichment_operations": [
             EnrichmentOperation(**op) for op in result["enrichment_operations"]
+            if op.get("task_id") is not None  # Filter out operations with None task_id
         ],
         "created_tasks": result["created_tasks"],
         "enriched_tasks": result["enriched_tasks"],
@@ -333,6 +335,129 @@ async def process_message_with_file(
     )
 
     return ProcessMessageResponse(**response_data)
+
+
+@router.post("/process-pdf-fast")
+async def process_pdf_fast(
+    file: UploadFile = File(...),
+    session_id: Optional[str] = Form(default=None),
+    db: AsyncSession = Depends(get_db)
+):
+    """Fast PDF processing endpoint - bypasses orchestrator for speed.
+
+    This endpoint:
+    1. Processes PDF with AdvancedPDFProcessor
+    2. Runs Phase 1 agents (cognitive nexus)
+    3. Auto-creates all tasks without confidence scoring
+    4. Returns results immediately
+
+    Use this for large PDFs or when speed is critical.
+    """
+    from agents.advanced_pdf_processor import AdvancedPDFProcessor
+    from agents.cognitive_nexus_graph import process_context
+    from services.assistant_db_operations import create_tasks_from_proposals, store_context_item
+    from sqlalchemy import select
+    from db.models import Task
+
+    # Generate session ID
+    session_id = session_id or str(uuid.uuid4())
+
+    try:
+        # Read PDF bytes
+        pdf_bytes = await file.read()
+
+        # Process PDF
+        processed_doc = await AdvancedPDFProcessor.process_document(pdf_bytes)
+        context_text = processed_doc.raw_text
+
+        # Add table data
+        if processed_doc.tables:
+            context_text += "\n\n### Tables Found:\n"
+            for i, table in enumerate(processed_doc.tables, 1):
+                context_text += f"\nTable {i}:\n{table.get('text', '')}\n"
+
+        # Get existing tasks
+        tasks_query = select(Task).order_by(Task.created_at.desc()).limit(20)
+        result = await db.execute(tasks_query)
+        task_models = result.scalars().all()
+        existing_tasks = [
+            {
+                "id": t.id,
+                "title": t.title,
+                "assignee": t.assignee,
+                "value_stream": t.value_stream,
+                "description": t.description,
+                "status": t.status,
+                "due_date": t.due_date
+            }
+            for t in task_models
+        ]
+
+        # Run Phase 1 agents
+        phase1_result = await process_context(
+            text=context_text,
+            source_type="pdf",
+            source_identifier=file.filename,
+            existing_tasks=existing_tasks
+        )
+
+        # Store context
+        context_item_id = await store_context_item(
+            db=db,
+            content=context_text,
+            source_type="pdf",
+            entities=phase1_result["extracted_entities"],
+            relationships=phase1_result["inferred_relationships"],
+            quality_metrics={
+                "extraction_strategy": "fast",
+                "context_complexity": phase1_result.get("context_complexity", 0.0),
+                "entity_quality": phase1_result.get("entity_quality", 0.0),
+                "relationship_quality": phase1_result.get("relationship_quality", 0.0),
+                "task_quality": phase1_result.get("task_quality", 0.0)
+            },
+            reasoning_trace=phase1_result.get("reasoning_steps", []),
+            source_identifier=file.filename
+        )
+
+        # Convert task operations to proposals
+        proposed_tasks = []
+        for operation in phase1_result["task_operations"]:
+            if operation.get("operation") == "CREATE":
+                data = operation.get("data", {})
+                proposed_tasks.append({
+                    "id": f"temp_{uuid.uuid4().hex[:8]}",
+                    "title": data.get("title", "Untitled Task"),
+                    "description": data.get("description", ""),
+                    "assignee": data.get("assignee", "Unassigned"),
+                    "due_date": data.get("due_date"),
+                    "priority": data.get("priority", "medium"),
+                    "value_stream": data.get("project") or data.get("value_stream"),
+                    "tags": [],
+                    "status": "todo",
+                    "operation": "CREATE",
+                    "reasoning": operation.get("reasoning", "")
+                })
+
+        # Auto-create all tasks
+        created_tasks = await create_tasks_from_proposals(
+            db=db,
+            proposed_tasks=proposed_tasks,
+            context_item_id=context_item_id,
+            auto_created=True
+        )
+
+        return {
+            "message": f"Successfully processed PDF and created {len(created_tasks)} tasks",
+            "session_id": session_id,
+            "created_tasks": created_tasks,
+            "entities_found": len(phase1_result["extracted_entities"]),
+            "relationships_found": len(phase1_result["inferred_relationships"]),
+            "context_item_id": context_item_id,
+            "filename": file.filename
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"PDF processing failed: {str(e)}")
 
 
 @router.post("/approve", response_model=ApproveTasksResponse)

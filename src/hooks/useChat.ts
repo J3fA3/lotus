@@ -14,6 +14,7 @@ import { persist } from "zustand/middleware";
 import {
   processMessage,
   processMessageWithFile,
+  processPdfFast,
   approveTasks,
   rejectTasks,
   getChatHistory,
@@ -57,6 +58,7 @@ interface ChatState {
 
   // Actions
   sendMessage: (content: string, sourceType?: string, file?: File) => Promise<void>;
+  uploadPdfFast: (file: File) => Promise<void>;
   approveProposals: () => Promise<void>;
   rejectProposals: (reason?: string) => Promise<void>;
   loadHistory: (sessionId: string) => Promise<void>;
@@ -161,6 +163,68 @@ export const useChatStore = create<ChatState>()(
             role: "assistant",
             content:
               "Sorry, I encountered an error processing your message. Please try again.",
+            timestamp: new Date(),
+          };
+
+          set({
+            messages: [...get().messages, errorMessage],
+            isProcessing: false,
+          });
+        }
+      },
+
+      // Fast PDF upload (bypasses orchestrator for speed)
+      uploadPdfFast: async (file: File) => {
+        const currentSessionId = get().sessionId || generateSessionId();
+
+        // Add user message immediately
+        const userMessage: ChatMessage = {
+          id: `user-${Date.now()}`,
+          role: "user",
+          content: `[Uploaded: ${file.name}]`,
+          timestamp: new Date(),
+        };
+
+        set({
+          messages: [...get().messages, userMessage],
+          isProcessing: true,
+          sessionId: currentSessionId,
+        });
+
+        try {
+          // Use fast PDF processing endpoint
+          const response = await processPdfFast(file, currentSessionId);
+
+          // Update session ID
+          set({ sessionId: response.session_id });
+
+          // Create assistant message
+          const assistantMessage: ChatMessage = {
+            id: `assistant-${Date.now()}`,
+            role: "assistant",
+            content: response.message,
+            timestamp: new Date(),
+            metadata: {
+              created_tasks: response.created_tasks,
+              recommended_action: "auto",
+              context_item_id: response.context_item_id,
+            },
+          };
+
+          // Update state
+          set({
+            messages: [...get().messages, assistantMessage],
+            isProcessing: false,
+          });
+        } catch (error) {
+          console.error("Error uploading PDF:", error);
+
+          // Add error message
+          const errorMessage: ChatMessage = {
+            id: `error-${Date.now()}`,
+            role: "assistant",
+            content:
+              "Sorry, I encountered an error processing your PDF. Please try again.",
             timestamp: new Date(),
           };
 

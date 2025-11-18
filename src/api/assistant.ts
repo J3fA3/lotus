@@ -139,6 +139,44 @@ export async function processMessageWithFile(
   }
 }
 
+export async function processPdfFast(
+  file: File,
+  session_id?: string
+): Promise<{
+  message: string;
+  session_id: string;
+  created_tasks: any[];
+  entities_found: number;
+  relationships_found: number;
+  context_item_id: number;
+  filename: string;
+}> {
+  try {
+    const formData = new FormData();
+    formData.append("file", file);
+    if (session_id) {
+      formData.append("session_id", session_id);
+    }
+
+    const response = await fetch(`${API_BASE}/process-pdf-fast`, {
+      method: "POST",
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || "Failed to process PDF");
+    }
+
+    toast.success("PDF processed successfully!");
+    return await response.json();
+  } catch (error) {
+    console.error("Error processing PDF:", error);
+    toast.error("Failed to process PDF");
+    throw error;
+  }
+}
+
 export async function approveTasks(
   request: ApproveTasksRequest
 ): Promise<{ created_tasks: any[]; enriched_tasks: any[]; message: string }> {

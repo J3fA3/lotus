@@ -33,7 +33,7 @@ const LotusDialog: React.FC<LotusDialogProps> = ({ open, onOpenChange, onTasksCr
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const { sendMessage, approveProposals, rejectProposals, clearChat } = useChat();
+  const { sendMessage, uploadPdfFast, approveProposals, rejectProposals, clearChat } = useChat();
   const messages = useChatMessages();
   const isProcessing = useIsProcessing();
   const pendingProposals = usePendingProposals();
@@ -59,13 +59,13 @@ const LotusDialog: React.FC<LotusDialogProps> = ({ open, onOpenChange, onTasksCr
     const content = inputValue.trim();
     setInputValue("");
 
-    // Handle file upload - file uploads always use "pdf" source type
+    // Handle file upload - use fast endpoint for PDFs
     if (uploadedFile) {
       toast.info(`Processing ${uploadedFile.name}...`);
       const file = uploadedFile;
       setUploadedFile(null);
-      // Send file object to backend for processing
-      await sendMessage(content, "pdf", file);
+      // Use fast PDF processing (bypasses orchestrator for speed)
+      await uploadPdfFast(file);
     } else {
       // Use the selected source type (manual/slack/transcript)
       await sendMessage(content, sourceType);
