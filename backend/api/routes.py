@@ -53,6 +53,9 @@ from agents.knowledge_base import KnowledgeBase
 from api.context_routes import router as context_router
 from api.knowledge_routes import router as knowledge_router
 
+# Import Document-Cognitive Nexus Integration
+from services.document_cognitive_integration import DocumentCognitiveIntegration
+
 router = APIRouter()
 
 # Include Cognitive Nexus routes
@@ -395,20 +398,32 @@ async def infer_tasks_from_pdf(
 async def analyze_document(
     file: UploadFile = File(...),
     assignee: str = Form("You"),
+    enable_knowledge_graph: bool = Form(True),
     db: AsyncSession = Depends(get_db)
 ):
     """
     Advanced PDF analysis with structure extraction, summarization, and entity extraction
+
+    NEW: Now integrates with Cognitive Nexus Knowledge Graph!
+
+    When enable_knowledge_graph=true (default):
+    - Automatically extracts entities (people, organizations, dates)
+    - Builds persistent cross-document knowledge graph
+    - Infers relationships between entities
+    - Enables cross-document intelligence
+    - Tracks organizational context over time
 
     Returns:
     - Document summary (executive summary, key points, document type)
     - Extracted entities (people, organizations, dates, locations, decisions)
     - Extracted tasks with full context
     - Document metadata and statistics
+    - Knowledge graph results (if enabled)
     """
     try:
         # Read and validate PDF file
         pdf_bytes = await file.read()
+        filename = file.filename or "document.pdf"
 
         if not advanced_pdf_processor.validate_pdf(pdf_bytes):
             raise HTTPException(status_code=400, detail="Invalid PDF file")
@@ -425,33 +440,55 @@ async def analyze_document(
             assignee
         )
 
-        # Save tasks to database
-        saved_tasks = []
-        for task_data in task_result["tasks"]:
-            task = _create_task_from_data(task_data)
-            db.add(task)
-            saved_tasks.append(task)
+        # Knowledge Graph Integration (NEW!)
+        kg_results = None
+        if enable_knowledge_graph:
+            integration_service = DocumentCognitiveIntegration(db)
+            kg_results = await integration_service.process_document_with_knowledge_graph(
+                processed_doc=processed_doc,
+                analysis=analysis,
+                source_identifier=filename
+            )
 
-        # Save inference history
-        history = InferenceHistory(
-            input_text=processed_doc.raw_text[:1000],
-            input_type="pdf_advanced",
-            tasks_inferred=len(saved_tasks),
-            model_used=analysis.model_used,
-            inference_time=analysis.inference_time_ms
-        )
-        db.add(history)
+            # Tasks are already created by the integration service
+            # Fetch them for response
+            saved_tasks = []
+            if kg_results.get("tasks_created", 0) > 0:
+                # Get recently created tasks
+                result = await db.execute(
+                    select(Task)
+                    .order_by(Task.created_at.desc())
+                    .limit(kg_results["tasks_created"])
+                )
+                saved_tasks = result.scalars().all()
+        else:
+            # Legacy path: Save tasks manually
+            saved_tasks = []
+            for task_data in task_result["tasks"]:
+                task = _create_task_from_data(task_data)
+                db.add(task)
+                saved_tasks.append(task)
 
-        await db.commit()
+            # Save inference history
+            history = InferenceHistory(
+                input_text=processed_doc.raw_text[:1000],
+                input_type="pdf_advanced",
+                tasks_inferred=len(saved_tasks),
+                model_used=analysis.model_used,
+                inference_time=analysis.inference_time_ms
+            )
+            db.add(history)
 
-        # Refresh all tasks
-        for task in saved_tasks:
-            await db.refresh(task)
+            await db.commit()
+
+            # Refresh all tasks
+            for task in saved_tasks:
+                await db.refresh(task)
 
         # Build comprehensive response
         from dataclasses import asdict
 
-        return {
+        response = {
             "tasks": [_task_to_schema(task) for task in saved_tasks],
             "summary": asdict(analysis.summary),
             "entities": asdict(analysis.entities),
@@ -463,6 +500,25 @@ async def analyze_document(
             "tables": processed_doc.tables,
             "model_used": analysis.model_used
         }
+
+        # Add knowledge graph results if enabled
+        if kg_results:
+            response["knowledge_graph"] = {
+                "enabled": True,
+                "context_item_id": kg_results["context_item_id"],
+                "entities_extracted": kg_results["entities_extracted"],
+                "relationships_inferred": kg_results["relationships_inferred"],
+                "tasks_created": kg_results["tasks_created"],
+                "tasks_updated": kg_results["tasks_updated"],
+                "comments_added": kg_results["comments_added"],
+                "quality_metrics": kg_results["quality_metrics"],
+                "extraction_strategy": kg_results["extraction_strategy"],
+                "reasoning_steps": kg_results["reasoning_steps"]
+            }
+        else:
+            response["knowledge_graph"] = {"enabled": False}
+
+        return response
 
     except HTTPException:
         raise
