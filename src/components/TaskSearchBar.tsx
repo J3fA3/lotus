@@ -1,29 +1,31 @@
 import { useState, useRef, useEffect } from "react";
-import { Search, X } from "lucide-react";
+import { Search, X, Loader2 } from "lucide-react";
 import { Input } from "./ui/input";
 import { cn } from "@/lib/utils";
 
 interface TaskSearchBarProps {
   onSearch: (query: string) => void;
+  isSearching?: boolean;
   className?: string;
 }
 
-export const TaskSearchBar = ({ onSearch, className }: TaskSearchBarProps) => {
+export const TaskSearchBar = ({ onSearch, isSearching = false, className }: TaskSearchBarProps) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const debounceTimerRef = useRef<NodeJS.Timeout>();
 
-  // Handle search with debouncing
+  // Handle search with debouncing (reduced to 150ms for faster feel)
   useEffect(() => {
     if (debounceTimerRef.current) {
       clearTimeout(debounceTimerRef.current);
     }
 
     debounceTimerRef.current = setTimeout(() => {
+      console.log('[TaskSearchBar] Triggering search with query:', searchQuery);
       onSearch(searchQuery);
-    }, 300);
+    }, 150);
 
     return () => {
       if (debounceTimerRef.current) {
@@ -90,7 +92,11 @@ export const TaskSearchBar = ({ onSearch, className }: TaskSearchBarProps) => {
       ) : (
         // Expanded: Show search input
         <div className="flex items-center gap-2 bg-card border border-primary/30 rounded-lg px-3 py-1.5 shadow-zen-sm hover:shadow-zen-md transition-all duration-300 min-w-[280px]">
-          <Search className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+          {isSearching ? (
+            <Loader2 className="h-4 w-4 text-primary flex-shrink-0 animate-spin" />
+          ) : (
+            <Search className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+          )}
           <Input
             ref={inputRef}
             value={searchQuery}

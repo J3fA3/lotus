@@ -106,24 +106,43 @@ export const KanbanBoard = () => {
 
   // Handle search
   const handleSearch = useCallback(async (query: string) => {
+    console.log('[KanbanBoard] handleSearch called with query:', query);
     setSearchQuery(query);
 
     // If query is empty, clear search results
     if (!query.trim()) {
+      console.log('[KanbanBoard] Empty query, clearing results');
       setSearchResults(new Set());
       setIsSearching(false);
       return;
     }
 
     setIsSearching(true);
+    console.log('[KanbanBoard] Starting search for:', query);
+
     try {
       const response = await tasksApi.searchTasks(query, 50, 0.3);
+      console.log('[KanbanBoard] Search response:', response);
+
       const matchingTaskIds = new Set(response.results.map(r => r.task.id));
+      console.log('[KanbanBoard] Matching task IDs:', Array.from(matchingTaskIds));
+
       setSearchResults(matchingTaskIds);
+
+      // Show feedback if no results
+      if (matchingTaskIds.size === 0) {
+        toast.info("No matching tasks found", {
+          description: "Try different search terms",
+          duration: 2000,
+        });
+      } else {
+        console.log(`[KanbanBoard] Found ${matchingTaskIds.size} matching tasks`);
+      }
     } catch (err) {
-      console.error("Search failed:", err);
+      console.error("[KanbanBoard] Search failed:", err);
       toast.error("Search failed", {
         description: err instanceof Error ? err.message : "Unknown error",
+        duration: 3000,
       });
       setSearchResults(new Set());
     } finally {
@@ -483,7 +502,7 @@ export const KanbanBoard = () => {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <TaskSearchBar onSearch={handleSearch} />
+            <TaskSearchBar onSearch={handleSearch} isSearching={isSearching} />
             <Button
               variant="default"
               size="sm"

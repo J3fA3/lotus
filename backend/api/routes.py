@@ -261,6 +261,13 @@ async def search_tasks(
     try:
         from services.knowledge_graph_embeddings import embedding_service
 
+        # Check if embedding service is available
+        if not embedding_service.is_available():
+            raise HTTPException(
+                status_code=503,
+                detail="Semantic search is not available. The embedding service is not initialized. Please ensure sentence-transformers is installed."
+            )
+
         # Get all tasks
         result = await db.execute(
             select(Task)
@@ -272,7 +279,8 @@ async def search_tasks(
             return {
                 "query": query,
                 "results": [],
-                "total": 0
+                "total": 0,
+                "threshold": threshold
             }
 
         # Build searchable text for each task
@@ -319,7 +327,11 @@ async def search_tasks(
             "threshold": threshold
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
 
 

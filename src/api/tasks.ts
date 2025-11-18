@@ -181,14 +181,36 @@ export async function searchTasks(
     params.append("threshold", threshold.toString());
 
     const url = `${API_BASE_URL}/tasks/search/${encodeURIComponent(query)}?${params.toString()}`;
+    console.log('[searchTasks] Calling API:', url);
+
     const response = await fetch(url);
+    console.log('[searchTasks] Response status:', response.status);
 
     if (!response.ok) {
-      throw new Error(`Failed to search tasks: ${response.statusText}`);
+      const errorBody = await response.text();
+      console.error('[searchTasks] Error response:', errorBody);
+
+      let errorMessage = `Failed to search tasks: ${response.statusText}`;
+      try {
+        const errorJson = JSON.parse(errorBody);
+        if (errorJson.detail) {
+          errorMessage = errorJson.detail;
+        }
+      } catch (e) {
+        // Couldn't parse JSON, use text
+        if (errorBody) {
+          errorMessage = errorBody;
+        }
+      }
+
+      throw new Error(errorMessage);
     }
 
-    return response.json();
+    const data = await response.json();
+    console.log('[searchTasks] Response data:', data);
+    return data;
   } catch (error) {
+    console.error('[searchTasks] Error:', error);
     if (error instanceof Error) {
       throw error;
     }
