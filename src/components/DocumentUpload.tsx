@@ -199,9 +199,11 @@ export function DocumentUpload({
           <div className="flex-shrink-0">
             <FileText className="w-10 h-10 text-primary" />
           </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-foreground truncate">{selectedFile.name}</p>
-            <p className="text-xs text-muted-foreground mt-0.5">
+          <div className="flex-1 min-w-0 overflow-hidden">
+            <p className="text-sm font-medium text-foreground truncate" title={selectedFile.name}>
+              {selectedFile.name}
+            </p>
+            <p className="text-xs text-muted-foreground mt-0.5 truncate">
               {getFileTypeName(selectedFile.name)} • {formatFileSize(selectedFile.size)}
             </p>
           </div>

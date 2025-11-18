@@ -140,18 +140,18 @@ export const AIInferenceDialog = ({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-2xl overflow-hidden">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-xl">
             <Sparkles className="h-5 w-5 text-primary" />
             AI Task Inference
           </DialogTitle>
-          <DialogDescription>
+          <DialogDescription className="truncate">
             Paste text or upload documents (PDF, Word, Excel, Markdown). AI will automatically extract tasks.
           </DialogDescription>
         </DialogHeader>
 
-        <Tabs defaultValue="text" className="w-full">
+        <Tabs defaultValue="text" className="w-full overflow-hidden">
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="text" className="gap-2">
               <FileText className="h-4 w-4" />
@@ -223,8 +223,8 @@ export const AIInferenceDialog = ({
             </Button>
           </TabsContent>
 
-          <TabsContent value="pdf" className="space-y-4 mt-4">
-            <div className="space-y-3">
+          <TabsContent value="pdf" className="space-y-4 mt-4 overflow-hidden">
+            <div className="space-y-3 overflow-hidden">
               <Label className="text-sm font-medium">
                 Upload Document
               </Label>

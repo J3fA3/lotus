@@ -125,7 +125,7 @@ class Document(Base):
 
     # Metadata
     page_count = Column(Integer, nullable=True)  # For PDFs
-    metadata = Column(JSON, default=dict)  # Additional metadata
+    document_metadata = Column(JSON, default=dict)  # Additional metadata
 
     # Relationships
     task_id = Column(String, ForeignKey("tasks.id", ondelete="CASCADE"), nullable=True)
@@ -135,7 +135,7 @@ class Document(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    # Relationships
+    # Relationships - using selectinload for async compatibility
     task = relationship("Task", backref="documents")
     inference_history = relationship("InferenceHistory", backref="documents")
 

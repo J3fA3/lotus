@@ -365,15 +365,20 @@ async def infer_tasks_from_pdf(
 
         await db.commit()
 
-        # Refresh all tasks
-        for task in saved_tasks:
-            await db.refresh(task)
+        # Reload tasks with eager-loaded relationships to avoid greenlet errors
+        task_ids = [task.id for task in saved_tasks]
+        stmt = select(Task).where(Task.id.in_(task_ids)).options(
+            selectinload(Task.comments),
+            selectinload(Task.attachments)
+        )
+        result_tasks = await db.execute(stmt)
+        refreshed_tasks = result_tasks.scalars().all()
 
         return InferenceResponse(
-            tasks=[_task_to_schema(task) for task in saved_tasks],
+            tasks=[_task_to_schema(task) for task in refreshed_tasks],
             inference_time_ms=result["inference_time_ms"],
             model_used=result["model_used"],
-            tasks_inferred=len(saved_tasks)
+            tasks_inferred=len(refreshed_tasks)
         )
 
     except HTTPException:
@@ -792,15 +797,20 @@ async def upload_document_for_inference(
 
         await db.commit()
 
-        # Refresh all tasks
-        for task in saved_tasks:
-            await db.refresh(task)
+        # Reload tasks with eager-loaded relationships to avoid greenlet errors
+        task_ids = [task.id for task in saved_tasks]
+        stmt = select(Task).where(Task.id.in_(task_ids)).options(
+            selectinload(Task.comments),
+            selectinload(Task.attachments)
+        )
+        result_tasks = await db.execute(stmt)
+        refreshed_tasks = result_tasks.scalars().all()
 
         return InferenceResponse(
-            tasks=[_task_to_schema(task) for task in saved_tasks],
+            tasks=[_task_to_schema(task) for task in refreshed_tasks],
             inference_time_ms=result["inference_time_ms"],
             model_used=result["model_used"],
-            tasks_inferred=len(saved_tasks)
+            tasks_inferred=len(refreshed_tasks)
         )
 
     except HTTPException:
