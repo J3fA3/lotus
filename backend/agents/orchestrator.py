@@ -190,18 +190,24 @@ async def load_user_profile(state: OrchestratorState) -> Dict:
     reasoning = ["\n=== LOAD USER PROFILE ==="]
 
     db = state.get("db")
-    user_id = int(state.get("user_id", 1))  # Default to user 1
+    user_id = state.get("user_id") or 1
+    user_id = int(user_id)  # Convert to int, default 1
 
     if not db:
         reasoning.append("⚠ No database session - using default profile")
         # Return minimal profile
         return {
             "user_profile": {
+                "id": 1,
+                "user_id": 1,
                 "name": "User",
                 "aliases": [],
+                "role": None,
+                "company": None,
                 "projects": [],
                 "markets": [],
-                "colleagues": {}
+                "colleagues": {},
+                "preferences": {}
             },
             "reasoning_trace": reasoning
         }
@@ -229,11 +235,16 @@ async def load_user_profile(state: OrchestratorState) -> Dict:
         # Return minimal profile
         return {
             "user_profile": {
+                "id": 1,
+                "user_id": user_id,
                 "name": "User",
                 "aliases": [],
+                "role": None,
+                "company": None,
                 "projects": [],
                 "markets": [],
-                "colleagues": {}
+                "colleagues": {},
+                "preferences": {}
             },
             "reasoning_trace": reasoning
         }

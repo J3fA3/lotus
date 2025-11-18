@@ -135,15 +135,18 @@ class UserProfile(BaseModel):
         return None
 
     def to_dict(self) -> Dict[str, Any]:
-        """Convert profile to dictionary for AI prompts."""
+        """Convert profile to dictionary for AI prompts and state storage."""
         return {
+            "id": self.id,
+            "user_id": self.user_id,
             "name": self.name,
             "aliases": self.aliases,
             "role": self.role,
             "company": self.company,
             "projects": self.projects,
             "markets": self.markets,
-            "colleagues": self.colleagues
+            "colleagues": self.colleagues,
+            "preferences": self.preferences
         }
 
 

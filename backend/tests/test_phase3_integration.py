@@ -48,8 +48,9 @@ async def test_graph_compilation():
         ]
 
         print("\n🔍 Verifying nodes:")
+        graph_nodes = list(graph.nodes.keys()) if hasattr(graph.nodes, 'keys') else graph.nodes
         for node_name in expected_nodes:
-            if node_name in [n.name for n in graph.nodes]:
+            if node_name in graph_nodes:
                 print(f"   ✓ {node_name}")
             else:
                 print(f"   ✗ {node_name} - MISSING!")
