@@ -29,14 +29,22 @@ export const TaskFullPage = ({
   onDelete,
   onClose,
 }: TaskFullPageProps) => {
-  const [editedTask, setEditedTask] = useState<Task>(task);
+  const [editedTask, setEditedTask] = useState<Task>({
+    ...task,
+    comments: task.comments || [],
+    attachments: task.attachments || [],
+  });
   const [newComment, setNewComment] = useState("");
   const [newAttachment, setNewAttachment] = useState("");
   const notesRef = useRef<HTMLTextAreaElement>(null);
 
   // Update editedTask when the task prop changes
   useEffect(() => {
-    setEditedTask(task);
+    setEditedTask({
+      ...task,
+      comments: task.comments || [],
+      attachments: task.attachments || [],
+    });
   }, [task]);
 
   // Keyboard shortcuts
@@ -84,7 +92,7 @@ export const TaskFullPage = ({
       createdAt: new Date().toISOString(),
     };
 
-    handleUpdate({ comments: [...editedTask.comments, comment] });
+    handleUpdate({ comments: [...(editedTask.comments || []), comment] });
     setNewComment("");
   };
 
@@ -94,12 +102,12 @@ export const TaskFullPage = ({
       return;
     }
     
-    handleUpdate({ attachments: [...editedTask.attachments, trimmedUrl] });
+    handleUpdate({ attachments: [...(editedTask.attachments || []), trimmedUrl] });
     setNewAttachment("");
   };
 
   const handleRemoveAttachment = (index: number) => {
-    const updatedAttachments = editedTask.attachments.filter((_, i) => i !== index);
+    const updatedAttachments = (editedTask.attachments || []).filter((_, i) => i !== index);
     handleUpdate({ attachments: updatedAttachments });
   };
 

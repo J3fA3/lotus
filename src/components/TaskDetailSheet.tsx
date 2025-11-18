@@ -49,7 +49,11 @@ export const TaskDetailSheet = ({
   onToggleExpanded,
   onFullPage,
 }: TaskDetailSheetProps) => {
-  const [editedTask, setEditedTask] = useState<Task>(task);
+  const [editedTask, setEditedTask] = useState<Task>({
+    ...task,
+    comments: task.comments || [],
+    attachments: task.attachments || [],
+  });
   const [newComment, setNewComment] = useState("");
   const [newAttachment, setNewAttachment] = useState("");
   const [isExpanded, setIsExpanded] = useState(isExpandedProp);
@@ -69,7 +73,11 @@ export const TaskDetailSheet = ({
       
       // Quick skeleton flash (150ms) then update content
       const timer = setTimeout(() => {
-        setEditedTask(task);
+        setEditedTask({
+          ...task,
+          comments: task.comments || [],
+          attachments: task.attachments || [],
+        });
         previousTaskIdRef.current = task.id;
         setIsTransitioning(false);
       }, 150);
@@ -77,7 +85,11 @@ export const TaskDetailSheet = ({
       return () => clearTimeout(timer);
     } else {
       // Same task, just update the data (in-place edits)
-      setEditedTask(task);
+      setEditedTask({
+        ...task,
+        comments: task.comments || [],
+        attachments: task.attachments || [],
+      });
     }
   }, [task]);
 
@@ -155,7 +167,7 @@ export const TaskDetailSheet = ({
       createdAt: new Date().toISOString(),
     };
 
-    handleUpdate({ comments: [...editedTask.comments, comment] });
+    handleUpdate({ comments: [...(editedTask.comments || []), comment] });
     setNewComment("");
   };
 
@@ -165,12 +177,12 @@ export const TaskDetailSheet = ({
       return;
     }
     
-    handleUpdate({ attachments: [...editedTask.attachments, trimmedUrl] });
+    handleUpdate({ attachments: [...(editedTask.attachments || []), trimmedUrl] });
     setNewAttachment("");
   };
 
   const handleRemoveAttachment = (index: number) => {
-    const updatedAttachments = editedTask.attachments.filter((_, i) => i !== index);
+    const updatedAttachments = (editedTask.attachments || []).filter((_, i) => i !== index);
     handleUpdate({ attachments: updatedAttachments });
   };
 

@@ -19,6 +19,8 @@ import { TaskDetailSheet } from "./TaskDetailSheet";
 import { LotusIcon } from "./LotusIcon";
 import { LotusLoading } from "./LotusLoading";
 import type { Task } from "../types/task";
+import { updateTask, deleteTask } from "../api/tasks";
+import { toast } from "sonner";
 
 const AIAssistant: React.FC = () => {
   const [inputValue, setInputValue] = useState("");
@@ -66,6 +68,29 @@ const AIAssistant: React.FC = () => {
   const handleTaskClick = (task: Task) => {
     setSelectedTask(task);
     setIsTaskDetailOpen(true);
+  };
+
+  const handleUpdateTask = async (updatedTask: Task) => {
+    try {
+      await updateTask(updatedTask.id, updatedTask);
+      setSelectedTask(updatedTask);
+      toast.success("Task updated");
+    } catch (error) {
+      console.error("Failed to update task:", error);
+      toast.error("Failed to update task");
+    }
+  };
+
+  const handleDeleteTask = async (taskId: string) => {
+    try {
+      await deleteTask(taskId);
+      setIsTaskDetailOpen(false);
+      setSelectedTask(null);
+      toast.success("Task deleted");
+    } catch (error) {
+      console.error("Failed to delete task:", error);
+      toast.error("Failed to delete task");
+    }
   };
 
   return (
@@ -212,6 +237,8 @@ const AIAssistant: React.FC = () => {
           task={selectedTask}
           open={isTaskDetailOpen}
           onOpenChange={setIsTaskDetailOpen}
+          onUpdate={handleUpdateTask}
+          onDelete={handleDeleteTask}
         />
       )}
     </div>
