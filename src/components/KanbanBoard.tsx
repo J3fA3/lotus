@@ -156,8 +156,16 @@ export const KanbanBoard = () => {
     let columnTasks = tasks.filter((t) => t.status === status);
 
     // Filter by search results if search is active
-    if (searchQuery.trim() && searchResults.size > 0) {
-      columnTasks = columnTasks.filter((t) => searchResults.has(t.id));
+    if (searchQuery.trim()) {
+      if (searchResults.size > 0) {
+        // Show only matching tasks
+        columnTasks = columnTasks.filter((t) => searchResults.has(t.id));
+        console.log(`[getColumnTasks] Column ${status}: ${columnTasks.length} tasks match search`);
+      } else {
+        // No matches, show empty list
+        console.log(`[getColumnTasks] Column ${status}: No matches, showing empty`);
+        columnTasks = [];
+      }
     }
 
     return columnTasks;

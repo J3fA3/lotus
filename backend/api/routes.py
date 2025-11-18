@@ -248,7 +248,7 @@ async def search_tasks(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Search tasks using semantic similarity
+    Search tasks using hybrid semantic + keyword search
 
     Args:
         query: Search query string
@@ -260,13 +260,6 @@ async def search_tasks(
     """
     try:
         from services.knowledge_graph_embeddings import embedding_service
-
-        # Check if embedding service is available
-        if not embedding_service.is_available():
-            raise HTTPException(
-                status_code=503,
-                detail="Semantic search is not available. The embedding service is not initialized. Please ensure sentence-transformers is installed."
-            )
 
         # Get all tasks
         result = await db.execute(
@@ -301,24 +294,58 @@ async def search_tasks(
             task_texts.append(searchable_text)
             task_map[searchable_text] = task
 
-        # Use embedding service to find similar tasks
-        similar_texts = embedding_service.find_similar_texts(
-            query_text=query,
-            candidate_texts=task_texts,
-            top_k=limit,
-            threshold=threshold
-        )
+        # Hybrid search: keyword + semantic
+        query_lower = query.lower()
+        matched_tasks = {}  # task_id -> (task, score, method)
 
-        # Build response with matched tasks and scores
+        # 1. Keyword search (exact matches get high score)
+        for text, task in task_map.items():
+            if query_lower in text.lower():
+                # Exact substring match - give high score
+                task_id = task.id
+                # Score based on how well it matches (shorter text = better match)
+                score = 0.95 if len(query) > 2 else 0.85
+                matched_tasks[task_id] = (task, score, "keyword")
+
+        # 2. Semantic search (if service available and query is meaningful)
+        if embedding_service.is_available() and len(query.strip()) > 2:
+            try:
+                similar_texts = embedding_service.find_similar_texts(
+                    query_text=query,
+                    candidate_texts=task_texts,
+                    top_k=limit,
+                    threshold=max(0.2, threshold - 0.1)  # Lower threshold for semantic
+                )
+
+                for text, similarity_score in similar_texts:
+                    task = task_map[text]
+                    task_id = task.id
+
+                    # If already found via keyword, keep the higher score
+                    if task_id in matched_tasks:
+                        existing_score = matched_tasks[task_id][1]
+                        if similarity_score > existing_score:
+                            matched_tasks[task_id] = (task, similarity_score, "semantic")
+                    else:
+                        matched_tasks[task_id] = (task, similarity_score, "semantic")
+            except Exception as e:
+                # If semantic search fails, continue with keyword results
+                print(f"Semantic search failed, using keyword results only: {e}")
+
+        # Build response sorted by score
         results = []
-        for text, similarity_score in similar_texts:
-            task = task_map[text]
+        for task_id, (task, score, method) in matched_tasks.items():
             task_schema = _task_to_schema(task, load_relationships=True)
-
             results.append({
                 "task": task_schema,
-                "similarity_score": round(similarity_score, 3)
+                "similarity_score": round(score, 3)
             })
+
+        # Sort by score descending
+        results.sort(key=lambda x: x["similarity_score"], reverse=True)
+
+        # Limit results
+        results = results[:limit]
 
         return {
             "query": query,
