@@ -37,10 +37,10 @@ const ProposedTaskCard: React.FC<ProposedTaskCardProps> = ({ task }) => {
     <Card
       className={`transition-all ${
         isHighConfidence
-          ? "border-green-500 bg-green-50 dark:bg-green-950"
+          ? "border-emerald-500 bg-emerald-50 dark:bg-emerald-950"
           : isMediumConfidence
-          ? "border-yellow-500 bg-yellow-50 dark:bg-yellow-950"
-          : "border-red-500 bg-red-50 dark:bg-red-950"
+          ? "border-emerald-300 bg-emerald-50/50 dark:bg-emerald-950/50"
+          : "border-orange-400 bg-orange-50 dark:bg-orange-950"
       }`}
     >
       <CardHeader className="pb-3">
@@ -55,10 +55,10 @@ const ProposedTaskCard: React.FC<ProposedTaskCardProps> = ({ task }) => {
           </div>
           <div className="flex items-center gap-2">
             {isHighConfidence && (
-              <CheckCircle className="h-5 w-5 text-green-600" />
+              <CheckCircle className="h-5 w-5 text-emerald-600" />
             )}
             {!isHighConfidence && (
-              <AlertCircle className="h-5 w-5 text-yellow-600" />
+              <AlertCircle className="h-5 w-5 text-orange-500" />
             )}
           </div>
         </div>
@@ -112,10 +112,10 @@ const ProposedTaskCard: React.FC<ProposedTaskCardProps> = ({ task }) => {
             value={task.confidence}
             className={`h-2 ${
               isHighConfidence
-                ? "bg-green-200 dark:bg-green-900"
+                ? "bg-emerald-200 dark:bg-emerald-900"
                 : isMediumConfidence
-                ? "bg-yellow-200 dark:bg-yellow-900"
-                : "bg-red-200 dark:bg-red-900"
+                ? "bg-emerald-100 dark:bg-emerald-900/50"
+                : "bg-orange-200 dark:bg-orange-900"
             }`}
           />
           {task.reasoning && (

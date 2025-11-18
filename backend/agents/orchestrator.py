@@ -30,6 +30,7 @@ import json
 import uuid
 
 from agents.cognitive_nexus_graph import process_context
+from agents.advanced_pdf_processor import AdvancedPDFProcessor
 from services.confidence_scorer import ConfidenceScorer, ConfidenceScore
 from services.task_matcher import TaskMatcher, TaskMatch, find_duplicate_tasks
 from services.field_extractor import FieldExtractor
@@ -54,8 +55,9 @@ class OrchestratorState(TypedDict):
     """
     # Input
     input_context: str
-    source_type: str  # "slack", "transcript", "manual", "question"
+    source_type: str  # "slack", "transcript", "manual", "question", "pdf"
     source_identifier: Optional[str]
+    pdf_bytes: Optional[bytes]  # For document uploads
     session_id: str  # Chat session ID
     user_id: Optional[str]
 
@@ -104,6 +106,7 @@ async def run_phase1_agents(state: OrchestratorState) -> Dict:
     """Node 1: Run Phase 1 Cognitive Nexus agents.
 
     This node calls the existing Phase 1 agent pipeline:
+    - (Optional) PDF Processing - if document uploaded
     - Context Analysis Agent
     - Entity Extraction Agent
     - Relationship Synthesis Agent
@@ -113,6 +116,27 @@ async def run_phase1_agents(state: OrchestratorState) -> Dict:
         State updates with entities, relationships, task operations, and quality metrics
     """
     reasoning = ["\n=== PHASE 1: Cognitive Nexus Agents ==="]
+
+    # Process PDF if uploaded
+    context_text = state["input_context"]
+    if state.get("pdf_bytes") and state["source_type"] == "pdf":
+        reasoning.append("→ Processing uploaded PDF document...")
+        try:
+            processed_doc = await AdvancedPDFProcessor.process_document(state["pdf_bytes"])
+            # Extract text from processed document
+            context_text = processed_doc.raw_text
+            reasoning.append(f"→ Extracted {len(context_text)} characters from PDF")
+            reasoning.append(f"→ Found {len(processed_doc.tables)} tables")
+            reasoning.append(f"→ Document has {processed_doc.metadata.page_count} pages")
+
+            # Add table data to context if present
+            if processed_doc.tables:
+                context_text += "\n\n### Tables Found:\n"
+                for i, table in enumerate(processed_doc.tables[:3], 1):  # First 3 tables
+                    context_text += f"\nTable {i}:\n{table.get('text', '')}\n"
+        except Exception as e:
+            reasoning.append(f"⚠ PDF processing failed: {str(e)}")
+            reasoning.append("→ Falling back to input context")
 
     # Call Phase 1 agent graph
     # Note: We need to get existing tasks from database first
@@ -141,7 +165,7 @@ async def run_phase1_agents(state: OrchestratorState) -> Dict:
     # Run Phase 1 agents
     reasoning.append("→ Running Cognitive Nexus agent pipeline...")
     phase1_result = await process_context(
-        text=state["input_context"],
+        text=context_text,
         source_type=state["source_type"],
         source_identifier=state.get("source_identifier"),
         existing_tasks=existing_tasks
@@ -598,19 +622,21 @@ async def process_assistant_message(
     session_id: str,
     db: AsyncSession,
     source_identifier: Optional[str] = None,
-    user_id: Optional[str] = None
+    user_id: Optional[str] = None,
+    pdf_bytes: Optional[bytes] = None
 ) -> Dict:
     """Process a message through the AI Assistant orchestrator.
 
-    This is the main entry point for the Phase 2 AI Assistant.
+    This is the main entry point for the Phase 2 AI Assistant (Lotus).
 
     Args:
         content: User message content
-        source_type: Type of source ("slack", "transcript", "manual", "question")
+        source_type: Type of source ("slack", "transcript", "manual", "question", "pdf")
         session_id: Chat session ID
         db: Database session
         source_identifier: Optional source identifier
         user_id: Optional user ID
+        pdf_bytes: Optional PDF document bytes for processing
 
     Returns:
         Final state dictionary with:
@@ -628,6 +654,7 @@ async def process_assistant_message(
         "input_context": content,
         "source_type": source_type,
         "source_identifier": source_identifier,
+        "pdf_bytes": pdf_bytes,
         "session_id": session_id,
         "user_id": user_id,
         "db": db,  # Pass database session through state

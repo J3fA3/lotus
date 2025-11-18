@@ -1,14 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useNavigate } from "react-router-dom";
 import { Task, TaskStatus } from "@/types/task";
 import { TaskCard } from "./TaskCard";
 import { TaskDetailSheet } from "./TaskDetailSheet";
 import { TaskFullPage } from "./TaskFullPage";
 import { QuickAddTask } from "./QuickAddTask";
-import { AIInferenceDialog } from "./AIInferenceDialog";
-import { ContextAnalysisDialog } from "./ContextAnalysisDialog";
+import LotusDialog from "./LotusDialog";
 import { Button } from "./ui/button";
-import { Plus, Keyboard, Sparkles, Loader2, Brain, MessageSquare } from "lucide-react";
+import { Plus, Keyboard, Sparkles, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import * as tasksApi from "@/api/tasks";
 import { InferenceResponse } from "@/api/tasks";
@@ -36,7 +34,6 @@ const TOAST_DURATION = {
 } as const;
 
 export const KanbanBoard = () => {
-  const navigate = useNavigate();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -45,8 +42,7 @@ export const KanbanBoard = () => {
   const [draggedTask, setDraggedTask] = useState<Task | null>(null);
   const [quickAddColumn, setQuickAddColumn] = useState<TaskStatus | null>(null);
   const [showShortcuts, setShowShortcuts] = useState(false);
-  const [isAIDialogOpen, setIsAIDialogOpen] = useState(false);
-  const [isContextAnalysisOpen, setIsContextAnalysisOpen] = useState(false);
+  const [isLotusOpen, setIsLotusOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [backendConnected, setBackendConnected] = useState(false);
   const [editingShortcut, setEditingShortcut] = useState<string | null>(null);
@@ -436,32 +432,12 @@ export const KanbanBoard = () => {
             <Button
               variant="default"
               size="sm"
-              onClick={() => navigate("/assistant")}
-              className="gap-2 bg-purple-600 hover:bg-purple-700"
-              disabled={!backendConnected}
-            >
-              <MessageSquare className="h-4 w-4" />
-              <span className="text-xs font-semibold">AI Assistant</span>
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setIsContextAnalysisOpen(true)}
-              className="gap-2"
-              disabled={!backendConnected}
-            >
-              <Brain className="h-4 w-4" />
-              <span className="text-xs">Context Analysis</span>
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setIsAIDialogOpen(true)}
-              className="gap-2"
+              onClick={() => setIsLotusOpen(true)}
+              className="gap-2 bg-emerald-600 hover:bg-emerald-700"
               disabled={!backendConnected}
             >
               <Sparkles className="h-4 w-4" />
-              <span className="text-xs">AI Infer Tasks</span>
+              <span className="text-xs font-semibold">Lotus</span>
             </Button>
             <Button
               variant="ghost"
@@ -691,15 +667,10 @@ export const KanbanBoard = () => {
         )}
       </div>
 
-      <AIInferenceDialog
-        open={isAIDialogOpen}
-        onOpenChange={setIsAIDialogOpen}
-        onTasksInferred={handleTasksInferred}
-      />
-
-      <ContextAnalysisDialog
-        open={isContextAnalysisOpen}
-        onOpenChange={setIsContextAnalysisOpen}
+      <LotusDialog
+        open={isLotusOpen}
+        onOpenChange={setIsLotusOpen}
+        onTasksCreated={loadTasks}
       />
 
       {selectedTask && !isFullPageOpen && (
