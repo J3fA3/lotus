@@ -22,7 +22,12 @@ Base = declarative_base()
 
 class Task(Base):
     """Main task entity with support for comments, attachments, and notes.
-    
+
+    Phase 2 Additions:
+    - confidence_score: AI confidence when task was created (0.0-1.0)
+    - source_context_id: Links to ContextItem that generated this task
+    - auto_created: Whether task was auto-created by AI (vs user approval)
+
     Relationships:
     - comments: One-to-many with Comment (cascade delete)
     - attachments: One-to-many with Attachment (cascade delete)
@@ -41,9 +46,15 @@ class Task(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+    # Phase 2: AI Assistant fields
+    confidence_score = Column(Float, nullable=True)  # 0.0-1.0 confidence when created
+    source_context_id = Column(Integer, ForeignKey("context_items.id", ondelete="SET NULL"), nullable=True)
+    auto_created = Column(Boolean, default=False)  # True if AI auto-created without user approval
+
     # Relationships
     comments = relationship("Comment", back_populates="task", cascade="all, delete-orphan")
     attachments = relationship("Attachment", back_populates="task", cascade="all, delete-orphan")
+    source_context = relationship("ContextItem", backref="generated_tasks")
 
 
 class Comment(Base):
@@ -258,3 +269,96 @@ class Relationship(Base):
     subject_entity = relationship("Entity", foreign_keys=[subject_entity_id], back_populates="subject_relationships")
     object_entity = relationship("Entity", foreign_keys=[object_entity_id], back_populates="object_relationships")
     context_item = relationship("ContextItem", back_populates="relationships_from_context")
+
+
+# ============================================================================
+# PHASE 2: AI ASSISTANT MODELS
+# ============================================================================
+
+class ChatMessage(Base):
+    """Stores chat messages between user and AI Assistant.
+
+    This model tracks the conversation history in the AI Assistant interface,
+    including user messages and assistant responses with embedded task proposals.
+
+    Metadata JSON Format:
+    {
+        "task_ids": ["task-123", "task-456"],  # Tasks mentioned/proposed in message
+        "confidence_scores": [0.85, 0.92],     # Confidence for each proposed task
+        "proposed_tasks": [                     # Full task proposals for assistant messages
+            {
+                "id": "temp_123",
+                "title": "...",
+                "confidence": 0.85,
+                "auto_approved": true
+            }
+        ],
+        "enriched_tasks": [                     # Tasks that were enriched (not created)
+            {
+                "task_id": "task-456",
+                "task_title": "...",
+                "added_note": "..."
+            }
+        ],
+        "source_type": "slack",                 # For user messages
+        "context_item_id": 123                  # Link to ContextItem if processed
+    }
+
+    Relationships:
+    - No explicit relationships, uses session_id for grouping
+    """
+    __tablename__ = "chat_messages"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    session_id = Column(String(255), nullable=False, index=True)  # UUID for chat session
+    role = Column(String(20), nullable=False)  # 'user' or 'assistant'
+    content = Column(Text, nullable=False)  # Message text
+    metadata = Column(JSON, nullable=True)  # Task IDs, confidence scores, proposals, etc.
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+
+class FeedbackEvent(Base):
+    """Tracks user feedback events for AI learning (Phase 3).
+
+    This model captures how users interact with AI-proposed tasks:
+    - Approved without changes
+    - Edited before approval (what fields changed?)
+    - Rejected (why?)
+    - Deleted after creation (was AI wrong?)
+
+    This data will be used in Phase 3 to improve confidence scoring
+    and task generation quality.
+
+    Event Types:
+    - 'approved': User approved task without changes
+    - 'edited': User edited task before/after approval
+    - 'rejected': User rejected AI-proposed task
+    - 'deleted': User deleted AI-created task
+
+    original_data and modified_data are JSON objects containing:
+    {
+        "title": "...",
+        "description": "...",
+        "assignee": "...",
+        "due_date": "...",
+        "priority": "...",
+        "tags": [...]
+    }
+
+    Relationships:
+    - task: Many-to-one with Task (nullable for rejected tasks)
+    - context_item: Many-to-one with ContextItem (which context led to this)
+    """
+    __tablename__ = "feedback_events"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    task_id = Column(String, ForeignKey("tasks.id", ondelete="CASCADE"), nullable=True)  # NULL for rejected tasks
+    event_type = Column(String(50), nullable=False, index=True)  # approved, edited, rejected, deleted
+    original_data = Column(JSON, nullable=True)  # Task data as proposed by AI
+    modified_data = Column(JSON, nullable=True)  # Task data after user edits
+    context_item_id = Column(Integer, ForeignKey("context_items.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+    # Relationships
+    task = relationship("Task", backref="feedback_events")
+    context_item = relationship("ContextItem", backref="feedback_events")
