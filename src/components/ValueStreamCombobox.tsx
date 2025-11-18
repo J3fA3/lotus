@@ -6,7 +6,7 @@
  * - Create new value streams on-the-fly
  */
 import * as React from "react";
-import { Check, ChevronsUpDown, Plus } from "lucide-react";
+import { Check, ChevronsUpDown, Plus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -23,7 +23,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { ValueStream } from "@/types/task";
-import { fetchValueStreams, createValueStream } from "@/api/valueStreams";
+import { fetchValueStreams, createValueStream, deleteValueStream } from "@/api/valueStreams";
 import { toast } from "sonner";
 
 interface ValueStreamComboboxProps {
@@ -100,6 +100,29 @@ export function ValueStreamCombobox({
     setSearchValue("");
   };
 
+  const handleDelete = async (e: React.MouseEvent, stream: ValueStream) => {
+    e.stopPropagation();
+    
+    try {
+      await deleteValueStream(stream.id);
+      setValueStreams((prev) => prev.filter((vs) => vs.id !== stream.id));
+      
+      // Clear selection if the deleted stream was selected
+      if (value === stream.name) {
+        onChange("");
+      }
+      
+      toast.success(`Deleted value stream "${stream.name}"`);
+    } catch (error) {
+      console.error("Failed to delete value stream:", error);
+      if (error instanceof Error) {
+        toast.error(error.message);
+      } else {
+        toast.error("Failed to delete value stream");
+      }
+    }
+  };
+
   const showCreateOption =
     searchValue.trim() !== "" &&
     !valueStreams.some(
@@ -142,6 +165,7 @@ export function ValueStreamCombobox({
                     key={stream.id}
                     value={stream.name}
                     onSelect={handleSelect}
+                    className="group"
                   >
                     <Check
                       className={cn(
@@ -149,7 +173,14 @@ export function ValueStreamCombobox({
                         value === stream.name ? "opacity-100" : "opacity-0"
                       )}
                     />
-                    {stream.name}
+                    <span className="flex-1">{stream.name}</span>
+                    <button
+                      onClick={(e) => handleDelete(e, stream)}
+                      className="opacity-0 group-hover:opacity-100 transition-opacity ml-2 p-1 hover:bg-destructive/10 rounded"
+                      title="Delete value stream"
+                    >
+                      <X className="h-3 w-3 text-muted-foreground hover:text-destructive" />
+                    </button>
                   </CommandItem>
                 ))}
               </CommandGroup>
