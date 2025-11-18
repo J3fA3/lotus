@@ -9,7 +9,7 @@ echo "🚀 Starting AI Task Inference Backend"
 echo ""
 
 # Navigate to backend directory
-cd "$(dirname "$0")/backend"
+cd "$(dirname "$0")/../backend"
 
 # Check if venv exists
 if [ ! -d "venv" ]; then

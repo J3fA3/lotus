@@ -6,6 +6,7 @@ This module provides FastAPI endpoints for:
 - AI-powered task extraction from text and PDFs
 - Keyboard shortcut configuration
 - System health checks
+- Cognitive Nexus context ingestion (Phase 1)
 
 All task queries use eager loading (selectinload) to avoid async relationship issues.
 Comments and attachments are stored in separate tables with cascade delete.
@@ -31,26 +32,45 @@ from api.schemas import (
     ShortcutCreateRequest,
     ShortcutUpdateRequest,
     ShortcutBulkUpdateRequest,
-    ShortcutResetRequest
+    ShortcutResetRequest,
+    DocumentSchema,
+    DocumentUploadResponse,
+    DocumentListResponse,
+    KnowledgeBaseSummaryResponse
 )
 from db.database import get_db
-from db.models import Task, Comment, Attachment, InferenceHistory, ShortcutConfig
+from db.models import Task, Comment, Attachment, InferenceHistory, ShortcutConfig, Document
 from db.default_shortcuts import get_default_shortcuts
 from agents.task_extractor import TaskExtractor
 from agents.pdf_processor import PDFProcessor
 from agents.advanced_pdf_processor import AdvancedPDFProcessor
 from agents.document_analyzer import DocumentAnalyzer
+from agents.document_processor import DocumentProcessor
+from agents.document_storage import DocumentStorage
+from agents.knowledge_base import KnowledgeBase
+
+# Import Cognitive Nexus routers
+from api.context_routes import router as context_router
+from api.knowledge_routes import router as knowledge_router
 
 router = APIRouter()
+
+# Include Cognitive Nexus routes
+router.include_router(context_router)
+router.include_router(knowledge_router)
 
 # Initialize AI components
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:7b-instruct")
+DOCUMENT_STORAGE_PATH = os.getenv("DOCUMENT_STORAGE_PATH", "./data/documents")
 
 task_extractor = TaskExtractor(OLLAMA_BASE_URL, OLLAMA_MODEL)
 pdf_processor = PDFProcessor()
 advanced_pdf_processor = AdvancedPDFProcessor()
 document_analyzer = DocumentAnalyzer(OLLAMA_BASE_URL, OLLAMA_MODEL)
+document_processor = DocumentProcessor()
+document_storage = DocumentStorage(DOCUMENT_STORAGE_PATH)
+knowledge_base = KnowledgeBase()
 
 
 # ============= Health Check =============
@@ -108,7 +128,7 @@ async def create_task(
 
     db.add(task)
     await db.commit()
-    await db.refresh(task)
+    await db.refresh(task, ['attachments', 'comments'])
 
     return _task_to_schema(task)
 
@@ -275,13 +295,15 @@ async def infer_tasks_from_pdf(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Infer tasks from PDF file
+    Infer tasks from PDF file and save the document
     """
     try:
-        # Read and validate PDF file
+        # Read file
         pdf_bytes = await file.read()
+        filename = file.filename or "document.pdf"
 
-        if not pdf_processor.validate_pdf(pdf_bytes):
+        # Validate PDF
+        if not await pdf_processor.validate_pdf(pdf_bytes):
             raise HTTPException(status_code=400, detail="Invalid PDF file")
 
         # Extract text from PDF
@@ -310,17 +332,57 @@ async def infer_tasks_from_pdf(
         )
         db.add(history)
 
+        # Flush to get history ID
+        await db.flush()
+
+        # Save document to storage
+        doc_info = await document_storage.save_document(
+            pdf_bytes,
+            filename,
+            category="inference",
+            metadata={
+                "inference_id": history.id,
+                "tasks_inferred": len(saved_tasks)
+            }
+        )
+
+        # Get document metadata
+        doc_metadata = await document_processor.get_document_info(pdf_bytes, filename)
+
+        # Create document record
+        document = Document(
+            id=str(uuid.uuid4()),
+            file_id=doc_info["file_id"],
+            original_filename=filename,
+            file_extension=doc_metadata.get("extension", ".pdf"),
+            mime_type=doc_metadata.get("mime_type"),
+            file_hash=doc_info["file_hash"],
+            size_bytes=doc_info["size_bytes"],
+            storage_path=doc_info["relative_path"],
+            category="inference",
+            extracted_text=extracted_text,
+            text_preview=extracted_text[:500] if extracted_text else None,
+            page_count=doc_metadata.get("page_count"),
+            inference_history_id=history.id
+        )
+        db.add(document)
+
         await db.commit()
 
-        # Refresh all tasks
-        for task in saved_tasks:
-            await db.refresh(task)
+        # Reload tasks with eager-loaded relationships to avoid greenlet errors
+        task_ids = [task.id for task in saved_tasks]
+        stmt = select(Task).where(Task.id.in_(task_ids)).options(
+            selectinload(Task.comments),
+            selectinload(Task.attachments)
+        )
+        result_tasks = await db.execute(stmt)
+        refreshed_tasks = result_tasks.scalars().all()
 
         return InferenceResponse(
-            tasks=[_task_to_schema(task) for task in saved_tasks],
+            tasks=[_task_to_schema(task) for task in refreshed_tasks],
             inference_time_ms=result["inference_time_ms"],
             model_used=result["model_used"],
-            tasks_inferred=len(saved_tasks)
+            tasks_inferred=len(refreshed_tasks)
         )
 
     except HTTPException:
@@ -750,6 +812,317 @@ async def import_shortcuts(
         raise HTTPException(status_code=400, detail=f"Import failed: {str(e)}")
 
 
+# ============= Document Management =============
+
+@router.post("/documents/upload", response_model=DocumentUploadResponse)
+async def upload_document(
+    file: UploadFile = File(...),
+    category: str = Form("knowledge"),
+    task_id: Optional[str] = Form(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Upload a document (PDF, Word, Markdown, etc.) to the knowledge base
+
+    Supports: .pdf, .docx, .doc, .txt, .md, .xlsx, .xls
+    """
+    try:
+        # Read file
+        file_bytes = await file.read()
+        filename = file.filename or "document"
+
+        # Validate document
+        is_valid, error_msg = await document_processor.validate_document(file_bytes, filename)
+        if not is_valid:
+            raise HTTPException(status_code=400, detail=error_msg)
+
+        # Extract text
+        extracted_text = await document_processor.extract_text(file_bytes, filename)
+
+        # Save to storage
+        doc_info = await document_storage.save_document(
+            file_bytes,
+            filename,
+            category=category,
+            metadata={"task_id": task_id} if task_id else {}
+        )
+
+        # Get document metadata
+        doc_metadata = await document_processor.get_document_info(file_bytes, filename)
+
+        # Create document record
+        document = Document(
+            id=str(uuid.uuid4()),
+            file_id=doc_info["file_id"],
+            original_filename=filename,
+            file_extension=doc_metadata.get("extension", ""),
+            mime_type=doc_metadata.get("mime_type"),
+            file_hash=doc_info["file_hash"],
+            size_bytes=doc_info["size_bytes"],
+            storage_path=doc_info["relative_path"],
+            category=category,
+            extracted_text=extracted_text,
+            text_preview=extracted_text[:500] if extracted_text else None,
+            page_count=doc_metadata.get("page_count"),
+            task_id=task_id
+        )
+        db.add(document)
+        await db.commit()
+        await db.refresh(document)
+
+        # Index for knowledge base
+        await knowledge_base.index_document(db, document.id, extracted_text)
+
+        return DocumentUploadResponse(
+            document=_document_to_schema(document),
+            message=f"Document '{filename}' uploaded successfully"
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Document upload failed: {str(e)}")
+
+
+@router.post("/documents/upload-for-inference", response_model=InferenceResponse)
+async def upload_document_for_inference(
+    file: UploadFile = File(...),
+    assignee: str = Form("You"),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Upload any supported document for AI task inference
+
+    Supports: .pdf, .docx, .doc, .txt, .md, .xlsx, .xls
+    """
+    try:
+        # Read file
+        file_bytes = await file.read()
+        filename = file.filename or "document"
+
+        # Validate and extract text
+        is_valid, error_msg = await document_processor.validate_document(file_bytes, filename)
+        if not is_valid:
+            raise HTTPException(status_code=400, detail=error_msg)
+
+        extracted_text = await document_processor.extract_text(file_bytes, filename)
+
+        if not extracted_text.strip():
+            raise HTTPException(status_code=400, detail="No text found in document")
+
+        # Extract tasks using AI
+        result = await task_extractor.extract_tasks(extracted_text, assignee)
+
+        # Save tasks to database
+        saved_tasks = []
+        for task_data in result["tasks"]:
+            task = _create_task_from_data(task_data)
+            db.add(task)
+            saved_tasks.append(task)
+
+        # Save inference history
+        doc_metadata = await document_processor.get_document_info(file_bytes, filename)
+        history = InferenceHistory(
+            input_text=extracted_text[:1000],
+            input_type=doc_metadata.get("extension", "document"),
+            tasks_inferred=len(saved_tasks),
+            model_used=result["model_used"],
+            inference_time=result["inference_time_ms"]
+        )
+        db.add(history)
+        await db.flush()
+
+        # Save document to storage
+        doc_info = await document_storage.save_document(
+            file_bytes,
+            filename,
+            category="inference",
+            metadata={
+                "inference_id": history.id,
+                "tasks_inferred": len(saved_tasks)
+            }
+        )
+
+        # Create document record
+        document = Document(
+            id=str(uuid.uuid4()),
+            file_id=doc_info["file_id"],
+            original_filename=filename,
+            file_extension=doc_metadata.get("extension", ""),
+            mime_type=doc_metadata.get("mime_type"),
+            file_hash=doc_info["file_hash"],
+            size_bytes=doc_info["size_bytes"],
+            storage_path=doc_info["relative_path"],
+            category="inference",
+            extracted_text=extracted_text,
+            text_preview=extracted_text[:500] if extracted_text else None,
+            page_count=doc_metadata.get("page_count"),
+            inference_history_id=history.id
+        )
+        db.add(document)
+
+        await db.commit()
+
+        # Reload tasks with eager-loaded relationships to avoid greenlet errors
+        task_ids = [task.id for task in saved_tasks]
+        stmt = select(Task).where(Task.id.in_(task_ids)).options(
+            selectinload(Task.comments),
+            selectinload(Task.attachments)
+        )
+        result_tasks = await db.execute(stmt)
+        refreshed_tasks = result_tasks.scalars().all()
+
+        return InferenceResponse(
+            tasks=[_task_to_schema(task) for task in refreshed_tasks],
+            inference_time_ms=result["inference_time_ms"],
+            model_used=result["model_used"],
+            tasks_inferred=len(refreshed_tasks)
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Document processing failed: {str(e)}")
+
+
+@router.get("/documents", response_model=DocumentListResponse)
+async def list_documents(
+    category: Optional[str] = None,
+    task_id: Optional[str] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    List all documents, optionally filtered by category or task
+    """
+    try:
+        stmt = select(Document)
+
+        if category:
+            stmt = stmt.where(Document.category == category)
+
+        if task_id:
+            stmt = stmt.where(Document.task_id == task_id)
+
+        result = await db.execute(stmt)
+        documents = result.scalars().all()
+
+        return DocumentListResponse(
+            documents=[_document_to_schema(doc) for doc in documents],
+            total=len(documents),
+            category=category
+        )
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to list documents: {str(e)}")
+
+
+@router.get("/documents/{document_id}", response_model=DocumentSchema)
+async def get_document(document_id: str, db: AsyncSession = Depends(get_db)):
+    """
+    Get document metadata by ID
+    """
+    result = await db.execute(
+        select(Document).where(Document.id == document_id)
+    )
+    document = result.scalar_one_or_none()
+
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    return _document_to_schema(document)
+
+
+@router.get("/documents/{document_id}/download")
+async def download_document(document_id: str, db: AsyncSession = Depends(get_db)):
+    """
+    Download document file
+    """
+    from fastapi.responses import Response
+
+    # Get document metadata
+    result = await db.execute(
+        select(Document).where(Document.id == document_id)
+    )
+    document = result.scalar_one_or_none()
+
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    # Retrieve file from storage
+    file_bytes = await document_storage.get_document(document.file_id, document.category)
+
+    if not file_bytes:
+        raise HTTPException(status_code=404, detail="Document file not found in storage")
+
+    # Return file with appropriate headers
+    return Response(
+        content=file_bytes,
+        media_type=document.mime_type or "application/octet-stream",
+        headers={
+            "Content-Disposition": f'attachment; filename="{document.original_filename}"'
+        }
+    )
+
+
+@router.delete("/documents/{document_id}")
+async def delete_document(document_id: str, db: AsyncSession = Depends(get_db)):
+    """
+    Delete a document and its file
+    """
+    # Get document
+    result = await db.execute(
+        select(Document).where(Document.id == document_id)
+    )
+    document = result.scalar_one_or_none()
+
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    # Delete file from storage
+    await document_storage.delete_document(document.file_id, document.category)
+
+    # Delete database record
+    await db.delete(document)
+    await db.commit()
+
+    return {"message": "Document deleted successfully"}
+
+
+@router.get("/documents/search/{query}")
+async def search_documents(
+    query: str,
+    category: Optional[str] = None,
+    limit: int = 10,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Search documents by text content
+    """
+    try:
+        documents = await knowledge_base.search_documents(db, query, category, limit)
+
+        return {
+            "query": query,
+            "results": [_document_to_schema(doc) for doc in documents],
+            "total": len(documents)
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
+
+
+@router.get("/knowledge-base/summary", response_model=KnowledgeBaseSummaryResponse)
+async def get_knowledge_base_summary(db: AsyncSession = Depends(get_db)):
+    """
+    Get knowledge base statistics
+    """
+    try:
+        summary = await knowledge_base.get_knowledge_base_summary(db)
+        return KnowledgeBaseSummaryResponse(**summary)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get summary: {str(e)}")
+
+
 # ============= Helper Functions =============
 
 def _task_to_schema(task: Task, load_relationships: bool = False) -> TaskSchema:
@@ -870,3 +1243,27 @@ async def seed_default_shortcuts(db: AsyncSession):
         db.add(shortcut)
 
     await db.commit()
+
+
+def _document_to_schema(document: Document) -> DocumentSchema:
+    """Convert SQLAlchemy Document model to Pydantic DocumentSchema"""
+    created_at = document.created_at if document.created_at else datetime.utcnow()
+    updated_at = document.updated_at if document.updated_at else datetime.utcnow()
+
+    return DocumentSchema(
+        id=document.id,
+        file_id=document.file_id,
+        original_filename=document.original_filename,
+        file_extension=document.file_extension,
+        mime_type=document.mime_type,
+        file_hash=document.file_hash,
+        size_bytes=document.size_bytes,
+        storage_path=document.storage_path,
+        category=document.category,
+        text_preview=document.text_preview,
+        page_count=document.page_count,
+        task_id=document.task_id,
+        inference_history_id=document.inference_history_id,
+        created_at=created_at.isoformat(),
+        updated_at=updated_at.isoformat()
+    )

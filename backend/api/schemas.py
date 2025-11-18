@@ -46,6 +46,7 @@ class TaskCreateRequest(BaseModel):
     dueDate: Optional[str] = None
     valueStream: Optional[str] = None
     description: Optional[str] = None
+    notes: Optional[str] = None
 
 
 class TaskUpdateRequest(BaseModel):
@@ -129,3 +130,48 @@ class ShortcutBulkUpdateRequest(BaseModel):
 class ShortcutResetRequest(BaseModel):
     """Request for resetting shortcuts"""
     user_id: Optional[int] = None  # If provided, reset user overrides; if None, reset all
+
+
+class DocumentSchema(BaseModel):
+    """Document metadata schema"""
+    id: str
+    file_id: str
+    original_filename: str
+    file_extension: str
+    mime_type: Optional[str] = None
+    file_hash: str
+    size_bytes: int
+    storage_path: str
+    category: str
+    text_preview: Optional[str] = None
+    page_count: Optional[int] = None
+    task_id: Optional[str] = None
+    inference_history_id: Optional[int] = None
+    created_at: str
+    updated_at: str
+
+    class Config:
+        from_attributes = True
+
+
+class DocumentUploadResponse(BaseModel):
+    """Response for document upload"""
+    document: DocumentSchema
+    message: str
+
+
+class DocumentListResponse(BaseModel):
+    """Response for listing documents"""
+    documents: List[DocumentSchema]
+    total: int
+    category: Optional[str] = None
+
+
+class KnowledgeBaseSummaryResponse(BaseModel):
+    """Knowledge base statistics"""
+    total_documents: int
+    total_size_bytes: int
+    total_size_mb: float
+    by_category: dict
+    by_extension: dict
+    last_updated: str

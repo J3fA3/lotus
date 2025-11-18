@@ -5,8 +5,9 @@ import { TaskDetailSheet } from "./TaskDetailSheet";
 import { TaskFullPage } from "./TaskFullPage";
 import { QuickAddTask } from "./QuickAddTask";
 import { AIInferenceDialog } from "./AIInferenceDialog";
+import { ContextAnalysisDialog } from "./ContextAnalysisDialog";
 import { Button } from "./ui/button";
-import { Plus, Keyboard, Sparkles, Loader2 } from "lucide-react";
+import { Plus, Keyboard, Sparkles, Loader2, Brain } from "lucide-react";
 import { toast } from "sonner";
 import * as tasksApi from "@/api/tasks";
 import { InferenceResponse } from "@/api/tasks";
@@ -43,6 +44,7 @@ export const KanbanBoard = () => {
   const [quickAddColumn, setQuickAddColumn] = useState<TaskStatus | null>(null);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [isAIDialogOpen, setIsAIDialogOpen] = useState(false);
+  const [isContextAnalysisOpen, setIsContextAnalysisOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [backendConnected, setBackendConnected] = useState(false);
   const [editingShortcut, setEditingShortcut] = useState<string | null>(null);
@@ -432,6 +434,16 @@ export const KanbanBoard = () => {
             <Button
               variant="default"
               size="sm"
+              onClick={() => setIsContextAnalysisOpen(true)}
+              className="gap-2"
+              disabled={!backendConnected}
+            >
+              <Brain className="h-4 w-4" />
+              <span className="text-xs">Context Analysis</span>
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
               onClick={() => setIsAIDialogOpen(true)}
               className="gap-2"
               disabled={!backendConnected}
@@ -671,6 +683,11 @@ export const KanbanBoard = () => {
         open={isAIDialogOpen}
         onOpenChange={setIsAIDialogOpen}
         onTasksInferred={handleTasksInferred}
+      />
+
+      <ContextAnalysisDialog
+        open={isContextAnalysisOpen}
+        onOpenChange={setIsContextAnalysisOpen}
       />
 
       {selectedTask && !isFullPageOpen && (
