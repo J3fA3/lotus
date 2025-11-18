@@ -36,7 +36,14 @@ export const TaskCard = ({ task, onClick, onDragStart }: TaskCardProps) => {
           <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
             <Calendar className="h-3 w-3 opacity-60" />
             <span className="font-normal">
-              {format(new Date(task.dueDate), "MMM d")}
+              {(() => {
+                try {
+                  const date = new Date(task.dueDate);
+                  return isNaN(date.getTime()) ? task.dueDate : format(date, "MMM d");
+                } catch {
+                  return task.dueDate;
+                }
+              })()}
             </span>
           </div>
         )}
