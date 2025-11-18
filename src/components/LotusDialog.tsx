@@ -9,7 +9,7 @@
  */
 
 import React, { useState, useRef, useEffect } from "react";
-import { Send, Loader2, Upload, X, Paperclip, Sparkles, MessageSquare, FileText, Mic } from "lucide-react";
+import { Send, Upload, X, Paperclip, MessageSquare, FileText, Mic } from "lucide-react";
 import { Button } from "./ui/button";
 import { Textarea } from "./ui/textarea";
 import { ScrollArea } from "./ui/scroll-area";
@@ -19,6 +19,8 @@ import { useChat, useChatMessages, useIsProcessing, usePendingProposals } from "
 import ProposedTaskCard from "./ProposedTaskCard";
 import ChatMessageComponent from "./ChatMessageComponent";
 import { toast } from "sonner";
+import { LotusIcon } from "./LotusIcon";
+import { LotusLoading } from "./LotusLoading";
 
 interface LotusDialogProps {
   open: boolean;
@@ -106,22 +108,22 @@ const LotusDialog: React.FC<LotusDialogProps> = ({ open, onOpenChange, onTasksCr
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-4xl h-[85vh] flex flex-col p-0">
         {/* Header */}
-        <DialogHeader className="px-6 py-4 border-b bg-gradient-to-r from-emerald-50 to-green-50 dark:from-emerald-950 dark:to-green-950">
+        <DialogHeader className="px-6 py-4 border-b border-[hsl(var(--border)/0.5)] bg-gradient-to-b from-[hsl(var(--lotus-paper))] to-background">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-emerald-500 to-green-600 flex items-center justify-center">
-                <Sparkles className="h-5 w-5 text-white" />
+              <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[hsl(var(--lotus-green-light))] to-[hsl(var(--lotus-green-medium))] flex items-center justify-center shadow-zen-sm">
+                <LotusIcon className="h-5 w-5 text-[hsl(var(--lotus-paper))]" size={20} />
               </div>
               <div>
-                <DialogTitle className="text-xl font-semibold">Lotus</DialogTitle>
-                <p className="text-sm text-muted-foreground">Unified task management</p>
+                <DialogTitle className="text-xl font-semibold text-lotus-ink">Lotus</DialogTitle>
+                <p className="text-sm text-muted-foreground">Transform ideas into action</p>
               </div>
             </div>
             <Button
               variant="ghost"
               size="sm"
               onClick={clearChat}
-              className="text-muted-foreground"
+              className="text-muted-foreground hover:text-lotus-ink transition-zen"
             >
               Clear
             </Button>
@@ -133,12 +135,12 @@ const LotusDialog: React.FC<LotusDialogProps> = ({ open, onOpenChange, onTasksCr
           <div className="space-y-4">
             {messages.length === 0 && (
               <div className="text-center py-8">
-                <div className="w-16 h-16 rounded-full bg-gradient-to-br from-emerald-100 to-green-100 dark:from-emerald-900 dark:to-green-900 mx-auto mb-4 flex items-center justify-center">
-                  <Sparkles className="h-8 w-8 text-emerald-600 dark:text-emerald-400" />
+                <div className="w-16 h-16 rounded-full bg-gradient-to-br from-[hsl(var(--lotus-green-light))] to-[hsl(var(--lotus-green-medium))] mx-auto mb-4 flex items-center justify-center shadow-zen-md">
+                  <LotusIcon className="h-8 w-8 text-[hsl(var(--lotus-paper))]" size={32} />
                 </div>
-                <h3 className="text-lg font-medium mb-2">What would you like to work on?</h3>
+                <h3 className="text-lg font-medium mb-2 text-lotus-ink">What would you like to work on?</h3>
                 <p className="text-sm text-muted-foreground max-w-md mx-auto">
-                  Paste messages, upload documents, or just tell me what needs to be done.
+                  Share messages, upload documents, or describe what needs to be done.
                 </p>
               </div>
             )}
@@ -149,9 +151,9 @@ const LotusDialog: React.FC<LotusDialogProps> = ({ open, onOpenChange, onTasksCr
 
             {/* Pending Proposals */}
             {pendingProposals && (
-              <div className="space-y-3 p-4 bg-emerald-50 dark:bg-emerald-950/50 rounded-lg border border-emerald-200 dark:border-emerald-800">
+              <div className="space-y-3 p-4 bg-lotus-green-light/20 rounded-lg border border-[hsl(var(--lotus-green-medium)/0.4)] shadow-zen-md transition-zen">
                 <div className="flex items-center justify-between">
-                  <h4 className="text-sm font-medium">
+                  <h4 className="text-sm font-medium text-lotus-ink">
                     Review {pendingProposals.tasks.length} task{pendingProposals.tasks.length !== 1 ? 's' : ''}
                   </h4>
                   <div className="flex gap-2">
@@ -160,6 +162,7 @@ const LotusDialog: React.FC<LotusDialogProps> = ({ open, onOpenChange, onTasksCr
                       variant="ghost"
                       onClick={handleReject}
                       disabled={isProcessing}
+                      className="transition-zen"
                     >
                       Reject
                     </Button>
@@ -167,11 +170,11 @@ const LotusDialog: React.FC<LotusDialogProps> = ({ open, onOpenChange, onTasksCr
                       size="sm"
                       onClick={handleApprove}
                       disabled={isProcessing}
-                      className="bg-emerald-600 hover:bg-emerald-700"
+                      className="bg-lotus-green-medium hover:bg-[hsl(var(--lotus-green-dark))] transition-zen"
                     >
                       {isProcessing ? (
                         <>
-                          <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                          <LotusLoading size={16} className="mr-2" />
                           Approving...
                         </>
                       ) : (
@@ -189,9 +192,9 @@ const LotusDialog: React.FC<LotusDialogProps> = ({ open, onOpenChange, onTasksCr
             )}
 
             {isProcessing && (
-              <div className="flex items-center gap-2 text-muted-foreground text-sm">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                <span>Processing...</span>
+              <div className="flex items-center gap-3 text-muted-foreground text-sm">
+                <LotusLoading size={24} />
+                <span>Lotus is processing...</span>
               </div>
             )}
 
@@ -200,7 +203,7 @@ const LotusDialog: React.FC<LotusDialogProps> = ({ open, onOpenChange, onTasksCr
         </ScrollArea>
 
         {/* Input Area */}
-        <div className="border-t px-6 py-4 bg-muted/30">
+        <div className="border-t border-[hsl(var(--border)/0.5)] px-6 py-4 bg-[hsl(var(--lotus-paper))]">
           {/* Source Type Selector */}
           <div className="flex items-center gap-2 mb-3">
             <span className="text-xs text-muted-foreground">Input type:</span>
@@ -209,7 +212,7 @@ const LotusDialog: React.FC<LotusDialogProps> = ({ open, onOpenChange, onTasksCr
                 size="sm"
                 variant={sourceType === "manual" ? "default" : "outline"}
                 onClick={() => setSourceType("manual")}
-                className={`h-7 text-xs ${sourceType === "manual" ? "bg-emerald-600 hover:bg-emerald-700" : ""}`}
+                className={`h-7 text-xs transition-zen ${sourceType === "manual" ? "bg-lotus-green-medium hover:bg-[hsl(var(--lotus-green-dark))]" : ""}`}
               >
                 <MessageSquare className="h-3 w-3 mr-1" />
                 Manual
@@ -218,7 +221,7 @@ const LotusDialog: React.FC<LotusDialogProps> = ({ open, onOpenChange, onTasksCr
                 size="sm"
                 variant={sourceType === "slack" ? "default" : "outline"}
                 onClick={() => setSourceType("slack")}
-                className={`h-7 text-xs ${sourceType === "slack" ? "bg-emerald-600 hover:bg-emerald-700" : ""}`}
+                className={`h-7 text-xs transition-zen ${sourceType === "slack" ? "bg-lotus-green-medium hover:bg-[hsl(var(--lotus-green-dark))]" : ""}`}
               >
                 <MessageSquare className="h-3 w-3 mr-1" />
                 Slack
@@ -227,7 +230,7 @@ const LotusDialog: React.FC<LotusDialogProps> = ({ open, onOpenChange, onTasksCr
                 size="sm"
                 variant={sourceType === "transcript" ? "default" : "outline"}
                 onClick={() => setSourceType("transcript")}
-                className={`h-7 text-xs ${sourceType === "transcript" ? "bg-emerald-600 hover:bg-emerald-700" : ""}`}
+                className={`h-7 text-xs transition-zen ${sourceType === "transcript" ? "bg-lotus-green-medium hover:bg-[hsl(var(--lotus-green-dark))]" : ""}`}
               >
                 <Mic className="h-3 w-3 mr-1" />
                 Transcript
@@ -237,14 +240,14 @@ const LotusDialog: React.FC<LotusDialogProps> = ({ open, onOpenChange, onTasksCr
 
           {/* File Upload Preview */}
           {uploadedFile && (
-            <div className="flex items-center gap-2 mb-3 p-2 bg-emerald-50 dark:bg-emerald-950/50 rounded-md">
-              <Paperclip className="h-4 w-4 text-emerald-600" />
-              <span className="text-sm flex-1 truncate">{uploadedFile.name}</span>
+            <div className="flex items-center gap-2 mb-3 p-2 bg-lotus-green-light/20 rounded-md border border-[hsl(var(--lotus-green-medium)/0.3)]">
+              <Paperclip className="h-4 w-4 text-lotus-green" />
+              <span className="text-sm flex-1 truncate text-lotus-ink">{uploadedFile.name}</span>
               <Button
                 size="sm"
                 variant="ghost"
                 onClick={() => setUploadedFile(null)}
-                className="h-6 w-6 p-0"
+                className="h-6 w-6 p-0 transition-zen"
               >
                 <X className="h-4 w-4" />
               </Button>
@@ -279,7 +282,7 @@ const LotusDialog: React.FC<LotusDialogProps> = ({ open, onOpenChange, onTasksCr
                 variant="outline"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={isProcessing}
-                className="h-[60px] w-[60px]"
+                className="h-[60px] w-[60px] transition-zen hover:border-lotus-green-medium"
               >
                 <Upload className="h-5 w-5" />
               </Button>
@@ -287,10 +290,10 @@ const LotusDialog: React.FC<LotusDialogProps> = ({ open, onOpenChange, onTasksCr
                 onClick={handleSendMessage}
                 disabled={(!inputValue.trim() && !uploadedFile) || isProcessing}
                 size="icon"
-                className="h-[60px] w-[60px] bg-emerald-600 hover:bg-emerald-700"
+                className="h-[60px] w-[60px] bg-lotus-green-medium hover:bg-[hsl(var(--lotus-green-dark))] transition-zen shadow-zen-sm hover:shadow-zen-md"
               >
                 {isProcessing ? (
-                  <Loader2 className="h-5 w-5 animate-spin" />
+                  <LotusLoading size={24} />
                 ) : (
                   <Send className="h-5 w-5" />
                 )}

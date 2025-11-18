@@ -7,11 +7,12 @@
 
 import React from "react";
 import ReactMarkdown from "react-markdown";
-import { User, Bot, CheckCircle, AlertTriangle, Info } from "lucide-react";
+import { User, CheckCircle, AlertTriangle, Info } from "lucide-react";
 import { Card } from "./ui/card";
 import { Badge } from "./ui/badge";
 import type { ChatMessage } from "../hooks/useChat";
 import ProposedTaskCard from "./ProposedTaskCard";
+import { LotusIcon } from "./LotusIcon";
 
 interface ChatMessageComponentProps {
   message: ChatMessage;
@@ -25,22 +26,24 @@ const ChatMessageComponent: React.FC<ChatMessageComponentProps> = ({ message }) 
     <div className={`flex gap-3 ${isUser ? "flex-row-reverse" : "flex-row"}`}>
       {/* Avatar */}
       <div
-        className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center ${
-          isUser ? "bg-blue-500" : "bg-purple-500"
+        className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center transition-zen ${
+          isUser
+            ? "bg-gradient-to-br from-[hsl(var(--lotus-earth))] to-[hsl(var(--secondary))]"
+            : "bg-gradient-to-br from-[hsl(var(--lotus-green-light))] to-[hsl(var(--lotus-green-medium))]"
         }`}
       >
         {isUser ? (
-          <User className="h-5 w-5 text-white" />
+          <User className="h-5 w-5 text-[hsl(var(--lotus-ink))]" />
         ) : (
-          <Bot className="h-5 w-5 text-white" />
+          <LotusIcon className="text-[hsl(var(--lotus-paper))]" size={20} />
         )}
       </div>
 
       {/* Message Content */}
       <div className={`flex-1 max-w-[80%] ${isUser ? "items-end" : "items-start"}`}>
         <div className="flex items-center gap-2 mb-1">
-          <span className="text-sm font-medium">
-            {isUser ? "You" : "AI Assistant"}
+          <span className="text-sm font-medium text-lotus-ink">
+            {isUser ? "You" : "Lotus"}
           </span>
           <span className="text-xs text-muted-foreground">
             {message.timestamp.toLocaleTimeString([], {
@@ -67,9 +70,9 @@ const ChatMessageComponent: React.FC<ChatMessageComponentProps> = ({ message }) 
         <Card
           className={`${
             isUser
-              ? "bg-blue-100 dark:bg-blue-950 border-blue-200 dark:border-blue-800"
-              : "bg-muted"
-          } p-3`}
+              ? "paper-subtle shadow-zen-sm"
+              : "bg-muted/50 border-[hsl(var(--border)/0.3)] shadow-zen-sm"
+          } p-4 transition-zen hover:shadow-zen-md`}
         >
           {/* Main Message */}
           <div className="prose prose-sm dark:prose-invert max-w-none">
@@ -103,13 +106,13 @@ const ChatMessageComponent: React.FC<ChatMessageComponentProps> = ({ message }) 
           {/* Auto-Created Tasks */}
           {metadata?.created_tasks && metadata.created_tasks.length > 0 && (
             <div className="mt-3 space-y-2">
-              <p className="text-sm font-medium text-green-700 dark:text-green-400">
+              <p className="text-sm font-medium text-lotus-green">
                 ✓ Created {metadata.created_tasks.length} task(s)
               </p>
               {metadata.created_tasks.map((task: any) => (
                 <div
                   key={task.id}
-                  className="text-sm p-2 bg-green-50 dark:bg-green-950 rounded border border-green-200 dark:border-green-800"
+                  className="text-sm p-2 bg-lotus-green-light/30 rounded border border-[hsl(var(--lotus-green-medium)/0.3)] transition-zen"
                 >
                   <div className="font-medium">{task.title}</div>
                   {task.assignee && (
@@ -136,14 +139,14 @@ const ChatMessageComponent: React.FC<ChatMessageComponentProps> = ({ message }) 
 
           {/* Question Answer */}
           {metadata?.answer_text && metadata.recommended_action === "answer_question" && (
-            <div className="mt-3 p-3 bg-emerald-50 dark:bg-emerald-950/50 rounded-lg border border-emerald-200 dark:border-emerald-800">
+            <div className="mt-3 p-3 bg-lotus-green-light/20 rounded-lg border border-[hsl(var(--lotus-green-medium)/0.3)] transition-zen">
               <div className="flex items-start gap-2">
-                <Info className="h-5 w-5 text-emerald-600 dark:text-emerald-400 flex-shrink-0 mt-0.5" />
+                <Info className="h-5 w-5 text-lotus-green flex-shrink-0 mt-0.5" />
                 <div className="flex-1">
-                  <p className="text-sm font-medium text-emerald-900 dark:text-emerald-100 mb-1">
+                  <p className="text-sm font-medium text-lotus-ink mb-1">
                     Answer:
                   </p>
-                  <p className="text-sm text-emerald-800 dark:text-emerald-200">
+                  <p className="text-sm text-foreground/90">
                     {metadata.answer_text}
                   </p>
                 </div>
