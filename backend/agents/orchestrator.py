@@ -699,6 +699,12 @@ async def execute_actions(state: OrchestratorState) -> Dict:
     """
     reasoning = ["\n=== EXECUTION ==="]
 
+    # Handle context_only requests that bypass confidence calculation
+    recommended_action = state.get("recommended_action", "")
+    if state.get("request_type") == "context_only" and not recommended_action:
+        recommended_action = "store_only"
+        reasoning.append("→ Context-only request: storing without task creation")
+
     db = state.get("db")
     if not db:
         reasoning.append("⚠ No database session, cannot execute")
@@ -706,6 +712,7 @@ async def execute_actions(state: OrchestratorState) -> Dict:
             "created_tasks": [],
             "enriched_tasks": [],
             "context_item_id": None,
+            "recommended_action": recommended_action,
             "reasoning_trace": reasoning,
             "processing_end": datetime.now()
         }
@@ -733,7 +740,7 @@ async def execute_actions(state: OrchestratorState) -> Dict:
     enriched_tasks = []
 
     # If auto-approved, create/enrich tasks
-    if state["recommended_action"] == "auto":
+    if recommended_action == "auto":
         reasoning.append("→ AUTO-APPROVED: Creating/enriching tasks")
 
         # Create new tasks
@@ -755,12 +762,13 @@ async def execute_actions(state: OrchestratorState) -> Dict:
             )
             reasoning.append(f"→ Enriched {len(enriched_tasks)} existing tasks")
     else:
-        reasoning.append(f"→ Not auto-approved ({state['recommended_action']}), skipping task creation")
+        reasoning.append(f"→ Not auto-approved ({recommended_action}), skipping task creation")
 
     return {
         "created_tasks": created_tasks,
         "enriched_tasks": enriched_tasks,
         "context_item_id": context_item_id,
+        "recommended_action": recommended_action,
         "reasoning_trace": reasoning,
         "processing_end": datetime.now()
     }
