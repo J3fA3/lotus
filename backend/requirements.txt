@@ -16,9 +16,13 @@ ollama==0.3.3
 langgraph==1.0.3
 langchain-core==1.0.5
 
-# PDF Processing
-PyMuPDF==1.24.13
-python-multipart==0.0.12
+# PDF Processing & Document Handling
+PyMuPDF==1.24.13              # PDF processing
+python-multipart==0.0.12      # File upload support
+python-docx==1.1.2            # Word document processing
+openpyxl==3.1.5               # Excel files
+markdown==3.7                 # Markdown processing
+chardet==5.2.0                # Text encoding detection
 
 # Utilities
 python-dotenv==1.0.1

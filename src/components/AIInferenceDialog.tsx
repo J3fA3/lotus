@@ -12,11 +12,11 @@ import { Label } from "./ui/label";
 import { Input } from "./ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import { Sparkles, FileText, Loader2, CheckCircle, AlertCircle, Upload } from "lucide-react";
-import { inferTasksFromText, inferTasksFromPDF, InferenceResponse } from "@/api/tasks";
+import { inferTasksFromText, inferTasksFromDocument, InferenceResponse } from "@/api/tasks";
 import { toast } from "sonner";
+import { DocumentUpload } from "./DocumentUpload";
 
 // Constants
-const MAX_PDF_SIZE = 10 * 1024 * 1024; // 10MB
 const CLOSE_DELAY = 1500; // ms
 const PLACEHOLDER_TEXT = `Paste Slack messages, meeting notes, emails, etc.
 
@@ -90,9 +90,9 @@ export const AIInferenceDialog = ({
     }
   }, [inputText, onTasksInferred, onOpenChange]);
 
-  const handleInferFromPDF = useCallback(async () => {
+  const handleInferFromDocument = useCallback(async () => {
     if (!selectedFile) {
-      toast.error("Please select a PDF file");
+      toast.error("Please select a document file");
       return;
     }
 
@@ -100,12 +100,12 @@ export const AIInferenceDialog = ({
     setError(null);
 
     try {
-      const result = await inferTasksFromPDF(selectedFile);
+      const result = await inferTasksFromDocument(selectedFile);
       setInferenceResult(result);
 
       const taskCount = result.tasks_inferred;
       if (taskCount === 0) {
-        toast.info("No tasks found in the PDF");
+        toast.info("No tasks found in the document");
       } else {
         const taskWord = taskCount === 1 ? "task" : "tasks";
         toast.success(`Found ${taskCount} ${taskWord}!`);
@@ -120,7 +120,7 @@ export const AIInferenceDialog = ({
         }, CLOSE_DELAY);
       }
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : "Failed to process PDF";
+      const errorMessage = err instanceof Error ? err.message : "Failed to process document";
       setError(errorMessage);
       toast.error(errorMessage);
     } finally {
@@ -128,41 +128,30 @@ export const AIInferenceDialog = ({
     }
   }, [selectedFile, onTasksInferred, onOpenChange]);
 
-  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    
-    if (!file) {
-      return;
-    }
-    
-    if (file.type !== "application/pdf") {
-      toast.error("Please select a PDF file");
-      return;
-    }
-    
-    if (file.size > MAX_PDF_SIZE) {
-      toast.error(`File is too large. Maximum size is ${MAX_PDF_SIZE / (1024 * 1024)}MB`);
-      return;
-    }
-    
+  const handleFileSelect = useCallback((file: File) => {
     setSelectedFile(file);
+    setError(null);
+  }, []);
+
+  const handleFileRemove = useCallback(() => {
+    setSelectedFile(null);
     setError(null);
   }, []);
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-2xl overflow-hidden">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-xl">
             <Sparkles className="h-5 w-5 text-primary" />
             AI Task Inference
           </DialogTitle>
-          <DialogDescription>
-            Paste Slack messages, meeting notes, or upload a PDF. AI will automatically extract tasks.
+          <DialogDescription className="truncate">
+            Paste text or upload documents (PDF, Word, Excel, Markdown). AI will automatically extract tasks.
           </DialogDescription>
         </DialogHeader>
 
-        <Tabs defaultValue="text" className="w-full">
+        <Tabs defaultValue="text" className="w-full overflow-hidden">
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="text" className="gap-2">
               <FileText className="h-4 w-4" />
@@ -170,7 +159,7 @@ export const AIInferenceDialog = ({
             </TabsTrigger>
             <TabsTrigger value="pdf" className="gap-2">
               <Upload className="h-4 w-4" />
-              Upload PDF
+              Upload Document
             </TabsTrigger>
           </TabsList>
 
@@ -234,47 +223,22 @@ export const AIInferenceDialog = ({
             </Button>
           </TabsContent>
 
-          <TabsContent value="pdf" className="space-y-4 mt-4">
-            <div className="space-y-3">
-              <Label htmlFor="pdf-upload" className="text-sm font-medium">
-                Upload PDF Document
+          <TabsContent value="pdf" className="space-y-4 mt-4 overflow-hidden">
+            <div className="space-y-3 overflow-hidden">
+              <Label className="text-sm font-medium">
+                Upload Document
               </Label>
 
-              <div
-                className="border-2 border-dashed border-border rounded-lg p-8 text-center cursor-pointer hover:border-primary/50 transition-colors"
-                onClick={() => fileInputRef.current?.click()}
-              >
-                <Upload className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
-                {selectedFile ? (
-                  <div>
-                    <p className="font-medium text-sm">{selectedFile.name}</p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {(selectedFile.size / 1024).toFixed(1)} KB
-                    </p>
-                  </div>
-                ) : (
-                  <div>
-                    <p className="text-sm text-muted-foreground">
-                      Click to upload or drag and drop
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      PDF files only (max 10MB)
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              <Input
-                ref={fileInputRef}
-                id="pdf-upload"
-                type="file"
-                accept=".pdf"
-                onChange={handleFileSelect}
-                className="hidden"
+              <DocumentUpload
+                onFileSelect={handleFileSelect}
+                onFileRemove={handleFileRemove}
+                selectedFile={selectedFile}
+                disabled={isInferring}
+                showFileInfo={true}
               />
 
               <p className="text-xs text-muted-foreground">
-                💡 Works best with meeting transcripts, project plans, and status reports
+                💡 Works best with meeting transcripts, project plans, status reports, and meeting notes
               </p>
             </div>
 
@@ -300,7 +264,7 @@ export const AIInferenceDialog = ({
             )}
 
             <Button
-              onClick={handleInferFromPDF}
+              onClick={handleInferFromDocument}
               disabled={isInferring || !selectedFile}
               className="w-full"
               size="lg"
@@ -308,12 +272,12 @@ export const AIInferenceDialog = ({
               {isInferring ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                  Processing PDF with AI...
+                  Processing Document with AI...
                 </>
               ) : (
                 <>
                   <Sparkles className="h-4 w-4 mr-2" />
-                  Infer Tasks from PDF
+                  Infer Tasks from Document
                 </>
               )}
             </Button>
