@@ -7,10 +7,11 @@ import { TableCell } from '@tiptap/extension-table-cell';
 import { TableHeader } from '@tiptap/extension-table-header';
 import { CodeBlockLowlight } from '@tiptap/extension-code-block-lowlight';
 import { Placeholder } from '@tiptap/extension-placeholder';
+import Link from '@tiptap/extension-link';
 import { common, createLowlight } from 'lowlight';
 import { ReactRenderer } from '@tiptap/react';
 import tippy, { Instance as TippyInstance } from 'tippy.js';
-import Suggestion, { SuggestionOptions } from '@tiptap/suggestion';
+import Suggestion from '@tiptap/suggestion';
 
 import { SlashCommandMenu, MenuItem } from './RichTextEditorMenu';
 import { WordArt, WORD_ART_STYLES } from './WordArtExtension';
@@ -337,8 +338,25 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
     Placeholder.configure({
       placeholder,
     }),
+    // Link extension with autolink and custom paste handler
+    Link.configure({
+      openOnClick: false,
+      HTMLAttributes: {
+        class: 'text-blue-600 underline hover:text-blue-800',
+      },
+    }),
     createSlashCommand(variant),
     WordArt,
+    // Custom keyboard shortcuts extension
+    Extension.create({
+      name: 'customKeyboardShortcuts',
+      addKeyboardShortcuts() {
+        return {
+          // Cmd+> or Ctrl+> for blockquote (Slack-style)
+          'Mod->': () => this.editor.commands.toggleBlockquote(),
+        };
+      },
+    }),
   ];
 
   // Add table extensions only for full variant
@@ -362,7 +380,7 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
       })
     );
   }
-  // For title variant, we don't need code blocks
+  // For title variant, we don't need code blocks or links
 
   const editor = useEditor({
     extensions,
@@ -370,6 +388,40 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
     editorProps: {
       attributes: {
         class: 'focus:outline-none',
+      },
+      // Custom paste handler for Slack-style paste-link-over-selection
+      handlePaste: (view, event) => {
+        const text = event.clipboardData?.getData('text/plain');
+
+        // Check if pasted text is a URL
+        const isUrl = text && (
+          text.startsWith('http://') ||
+          text.startsWith('https://') ||
+          text.startsWith('www.')
+        );
+
+        // Get current selection
+        const { from, to } = view.state.selection;
+        const hasSelection = from !== to;
+
+        // If we have selected text and pasting a URL, create a link
+        if (isUrl && hasSelection) {
+          const { state } = view;
+          const selectedText = state.doc.textBetween(from, to);
+
+          // Use the editor to set the link
+          if (editor) {
+            editor
+              .chain()
+              .focus()
+              .setLink({ href: text })
+              .run();
+
+            return true; // Prevent default paste behavior
+          }
+        }
+
+        return false; // Use default paste behavior
       },
     },
     onUpdate: ({ editor }) => {
