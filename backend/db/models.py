@@ -362,3 +362,109 @@ class FeedbackEvent(Base):
     # Relationships
     task = relationship("Task", backref="feedback_events")
     context_item = relationship("ContextItem", backref="feedback_events")
+
+
+# ============================================================================
+# PHASE 3: USER PROFILE & PERSONALIZATION
+# ============================================================================
+
+class UserProfile(Base):
+    """Stores user profile information for personalized task management.
+
+    This model enables context-aware AI by storing information about:
+    - User's name and aliases (for name correction like "Jeff" → "Jef")
+    - Role and company
+    - Projects and markets they work on
+    - Colleagues and their roles
+    - Personal preferences
+
+    Used by:
+    - Relevance Filter: Only extract tasks relevant to this user
+    - Task Enrichment: Auto-tag tasks with correct projects/markets
+    - Comment Generator: Reference people and projects naturally
+
+    Example Profile:
+    {
+        "name": "Jef Adriaenssens",
+        "aliases": ["Jeff", "Jef", "jef"],  # Auto-correct spelling
+        "role": "Product Manager",
+        "company": "JustEat Takeaway",
+        "projects": ["CRESCO", "RF16", "Just Deals"],
+        "markets": ["Spain", "UK", "Netherlands"],
+        "colleagues": {
+            "Andy": "Andy Maclean",
+            "Alberto": "Alberto Moraleda Fernandez - Spain market",
+            "Maran": "Maran Vleems"
+        }
+    }
+
+    Relationships:
+    - No explicit relationships (user_id links to future User model)
+    """
+    __tablename__ = "user_profiles"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, nullable=False, default=1, index=True)  # Default user ID for single-user mode
+
+    # Basic info
+    name = Column(String(255), nullable=False)
+    aliases = Column(JSON, default=list)  # ["Jeff", "Jef"] for name correction
+    role = Column(String(255), nullable=True)
+    company = Column(String(255), nullable=True)
+
+    # Work context
+    projects = Column(JSON, default=list)  # ["CRESCO", "RF16"]
+    markets = Column(JSON, default=list)  # ["Spain", "UK"]
+    colleagues = Column(JSON, default=dict)  # {"Andy": "Andy Maclean"}
+
+    # Preferences
+    preferences = Column(JSON, default=dict)  # Future: time zones, work hours, etc.
+
+    # Metadata
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class TaskEnrichment(Base):
+    """Tracks task enrichments (auto-updates to existing tasks).
+
+    When new context arrives that relates to existing tasks, the AI can:
+    - Update deadlines
+    - Add notes/comments
+    - Change priority
+    - Link related tasks
+
+    This model tracks these enrichment operations for:
+    - User visibility (what changed and why)
+    - Learning (did enrichment improve quality?)
+    - Rollback (undo if needed)
+
+    Relationships:
+    - task: Many-to-one with Task
+    - context_item: Many-to-one with ContextItem (what triggered the enrichment)
+    """
+    __tablename__ = "task_enrichments"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    task_id = Column(String, ForeignKey("tasks.id", ondelete="CASCADE"), nullable=False, index=True)
+    context_item_id = Column(Integer, ForeignKey("context_items.id", ondelete="SET NULL"), nullable=True)
+
+    # What changed
+    enrichment_type = Column(String(50), nullable=False)  # deadline_update, note_added, priority_change, etc.
+    before_value = Column(JSON, nullable=True)  # State before enrichment
+    after_value = Column(JSON, nullable=True)  # State after enrichment
+
+    # Why it changed
+    reasoning = Column(Text, nullable=True)  # AI explanation
+    confidence_score = Column(Float, nullable=True)  # Confidence in enrichment (0.0-1.0)
+    auto_applied = Column(Boolean, default=False)  # True if applied without user approval
+
+    # User feedback
+    user_approved = Column(Boolean, nullable=True)  # NULL = pending, True = approved, False = rejected
+
+    # Metadata
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+    # Relationships
+    task = relationship("Task", backref="enrichments")
+    context_item = relationship("ContextItem", backref="enrichments")

@@ -27,9 +27,14 @@ chardet==5.2.0                # Text encoding detection
 
 # Utilities
 python-dotenv==1.0.1
+python-dateutil==2.8.2  # Better date parsing for Phase 3
 
 # Advanced Knowledge Graph Features
 sentence-transformers==3.3.1  # Semantic similarity with embeddings
 strawberry-graphql[fastapi]>=0.230.0  # GraphQL API
 apscheduler==3.10.4  # Background task scheduling for decay
 numpy==1.26.4  # Vector operations
+
+# Phase 3: Gemini Integration & Performance
+google-generativeai==0.3.2  # Gemini 2.0 Flash API
+redis==5.0.1  # Caching for performance optimization
