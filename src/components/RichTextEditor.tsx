@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { useEditor, EditorContent, Editor } from '@tiptap/react';
+import { useEditor, EditorContent, Editor, Extension } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { Table } from '@tiptap/extension-table';
 import { TableRow } from '@tiptap/extension-table-row';
@@ -10,7 +10,7 @@ import { Placeholder } from '@tiptap/extension-placeholder';
 import { common, createLowlight } from 'lowlight';
 import { ReactRenderer } from '@tiptap/react';
 import tippy, { Instance as TippyInstance } from 'tippy.js';
-import Suggestion from '@tiptap/suggestion';
+import Suggestion, { SuggestionOptions } from '@tiptap/suggestion';
 
 import { SlashCommandMenu, MenuItem } from './RichTextEditorMenu';
 import { WordArt, WORD_ART_STYLES } from './WordArtExtension';
@@ -174,112 +174,119 @@ const getMenuItems = (editor: Editor, variant?: string): MenuItem[] => {
 };
 
 // Slash command extension factory
-const createSlashCommand = (variant?: string) => Suggestion.configure({
-  suggestion: {
-    char: '/',
-    startOfLine: false,
-    command: ({ editor, range, props }: any) => {
-      props.command({ editor, range });
-    },
-    items: ({ query, editor }: { query: string; editor: Editor }) => {
-      const items = getMenuItems(editor, variant);
-      if (!query) return items;
+const createSlashCommand = (variant?: string) => Extension.create({
+  name: 'slashCommand',
 
-      const lowerQuery = query.toLowerCase();
-      return items.filter((item) => {
-        const searchString = `${item.title} ${item.description} ${item.keywords?.join(' ')}`.toLowerCase();
-        return searchString.includes(lowerQuery);
-      });
-    },
-    render: () => {
-      let component: ReactRenderer<any>;
-      let popup: TippyInstance[];
+  addProseMirrorPlugins() {
+    return [
+      Suggestion({
+        editor: this.editor,
+        char: '/',
+        startOfLine: false,
+        command: ({ editor, range, props }: any) => {
+          props.command({ editor, range });
+        },
+        items: ({ query, editor }: { query: string; editor: Editor }) => {
+          const items = getMenuItems(editor, variant);
+          if (!query) return items;
 
-      return {
-        onStart: (props: any) => {
-          component = new ReactRenderer(SlashCommandMenu, {
-            props: {
-              ...props,
-              items: getMenuItems(props.editor, variant).map((item) => ({
-                ...item,
-                command: () => {
-                  // Delete the slash and query text FIRST, then execute command
-                  props.editor
-                    .chain()
-                    .focus()
-                    .deleteRange(props.range)
-                    .run();
+          const lowerQuery = query.toLowerCase();
+          return items.filter((item) => {
+            const searchString = `${item.title} ${item.description} ${item.keywords?.join(' ')}`.toLowerCase();
+            return searchString.includes(lowerQuery);
+          });
+        },
+        render: () => {
+          let component: ReactRenderer<any>;
+          let popup: TippyInstance[];
 
-                  // Small delay to ensure deletion completes before command
-                  setTimeout(() => {
-                    item.command(props.editor);
-                  }, 10);
+          return {
+            onStart: (props: any) => {
+              component = new ReactRenderer(SlashCommandMenu, {
+                props: {
+                  ...props,
+                  items: getMenuItems(props.editor, variant).map((item) => ({
+                    ...item,
+                    command: () => {
+                      // Delete the slash and query text FIRST, then execute command
+                      props.editor
+                        .chain()
+                        .focus()
+                        .deleteRange(props.range)
+                        .run();
+
+                      // Small delay to ensure deletion completes before command
+                      setTimeout(() => {
+                        item.command(props.editor);
+                      }, 10);
+                    },
+                  })),
                 },
-              })),
+                editor: props.editor,
+              });
+
+              if (!props.clientRect) {
+                return;
+              }
+
+              popup = tippy('body', {
+                getReferenceClientRect: props.clientRect,
+                appendTo: () => document.body,
+                content: component.element,
+                showOnCreate: true,
+                interactive: true,
+                trigger: 'manual',
+                placement: 'bottom-start',
+              });
             },
-            editor: props.editor,
-          });
 
-          if (!props.clientRect) {
-            return;
-          }
+            onUpdate(props: any) {
+              component.updateProps({
+                ...props,
+                items: getMenuItems(props.editor, variant).map((item) => ({
+                  ...item,
+                  command: () => {
+                    // Delete the slash and query text FIRST, then execute command
+                    props.editor
+                      .chain()
+                      .focus()
+                      .deleteRange(props.range)
+                      .run();
 
-          popup = tippy('body', {
-            getReferenceClientRect: props.clientRect,
-            appendTo: () => document.body,
-            content: component.element,
-            showOnCreate: true,
-            interactive: true,
-            trigger: 'manual',
-            placement: 'bottom-start',
-          });
+                    // Small delay to ensure deletion completes before command
+                    setTimeout(() => {
+                      item.command(props.editor);
+                    }, 10);
+                  },
+                })),
+              });
+
+              if (!props.clientRect) {
+                return;
+              }
+
+              popup[0].setProps({
+                getReferenceClientRect: props.clientRect,
+              });
+            },
+
+            onKeyDown(props: any) {
+              if (props.event.key === 'Escape') {
+                popup[0].hide();
+                return true;
+              }
+
+              return component.ref?.onKeyDown(props);
+            },
+
+            onExit() {
+              popup[0].destroy();
+              component.destroy();
+            },
+          };
         },
-
-        onUpdate(props: any) {
-          component.updateProps({
-            ...props,
-            items: getMenuItems(props.editor, variant).map((item) => ({
-              ...item,
-              command: () => {
-                // Delete the slash and query text FIRST, then execute command
-                props.editor
-                  .chain()
-                  .focus()
-                  .deleteRange(props.range)
-                  .run();
-
-                // Small delay to ensure deletion completes before command
-                setTimeout(() => {
-                  item.command(props.editor);
-                }, 10);
-              },
-            })),
-          });
-
-          if (!props.clientRect) {
-            return;
-          }
-
-          popup[0].setProps({
-            getReferenceClientRect: props.clientRect,
-          });
-        },
-
-        onKeyDown(props: any) {
-          if (props.event.key === 'Escape') {
-            popup[0].hide();
-            return true;
-          }
-
-          return component.ref?.onKeyDown(props);
-        },
-
-        onExit() {
-          popup[0].destroy();
-          component.destroy();
-        },
-      };
-    },
+      }),
+    ];
   },
 });
 
