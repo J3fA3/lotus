@@ -38,6 +38,14 @@ async def lifespan(app: FastAPI):
     await init_db()
     print("✅ Database initialized")
 
+    # Initialize work preferences (Phase 4)
+    print("📋 Initializing user preferences...")
+    from services.work_preferences import ensure_preferences_exist
+    from db.database import AsyncSessionLocal
+    async with AsyncSessionLocal() as db:
+        await ensure_preferences_exist(db, user_id=1)
+    print("✅ Preferences initialized")
+
     ollama_model = os.getenv("OLLAMA_MODEL", DEFAULT_OLLAMA_MODEL)
     ollama_url = os.getenv("OLLAMA_BASE_URL", DEFAULT_OLLAMA_URL)
     print(f"🤖 AI Model: {ollama_model}")
