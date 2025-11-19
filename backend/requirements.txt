@@ -38,3 +38,9 @@ numpy==1.26.4  # Vector operations
 # Phase 3: Gemini Integration & Performance
 google-generativeai==0.3.2  # Gemini 2.0 Flash API
 redis==5.0.1  # Caching for performance optimization
+
+# Phase 4: Google Calendar Integration
+google-auth==2.35.0
+google-auth-oauthlib==1.2.1
+google-auth-httplib2==0.2.0
+google-api-python-client==2.149.0

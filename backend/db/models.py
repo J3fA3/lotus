@@ -468,3 +468,295 @@ class TaskEnrichment(Base):
     # Relationships
     task = relationship("Task", backref="enrichments")
     context_item = relationship("ContextItem", backref="enrichments")
+
+
+# ============================================================================
+# PHASE 4: GOOGLE CALENDAR INTEGRATION
+# ============================================================================
+
+class GoogleOAuthToken(Base):
+    """Stores Google OAuth tokens for calendar integration.
+
+    This model manages OAuth credentials for accessing Google Calendar API.
+    Tokens are refreshed automatically when expired.
+
+    Security Notes:
+    - access_token: Short-lived token (typically 1 hour)
+    - refresh_token: Long-lived token for getting new access tokens
+    - Tokens should be encrypted in production
+
+    Relationships:
+    - No explicit relationships (user_id links to future User model)
+    """
+    __tablename__ = "google_oauth_tokens"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, nullable=False, default=1, index=True)
+    access_token = Column(Text, nullable=False)
+    refresh_token = Column(Text, nullable=False)
+    token_expiry = Column(DateTime, nullable=False)
+    scopes = Column(JSON, nullable=False)  # List of granted scopes
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class CalendarEvent(Base):
+    """Cached Google Calendar events.
+
+    This model caches calendar events from Google Calendar for:
+    - Fast availability analysis (no API calls needed)
+    - Offline access to schedule
+    - Meeting context extraction
+    - Related task linking
+
+    Events are synced every 15 minutes via background scheduler.
+
+    Event Types:
+    - Meetings: Multiple attendees
+    - Focus blocks: Single attendee (user)
+    - Task blocks: Created by Lotus (🪷 prefix)
+
+    Relationships:
+    - No explicit relationships to Task (uses related_task_ids JSON)
+    """
+    __tablename__ = "calendar_events"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, nullable=False, default=1, index=True)
+    google_event_id = Column(String(255), unique=True, nullable=False, index=True)
+
+    # Event details
+    title = Column(String(500), nullable=False)
+    description = Column(Text, nullable=True)
+    location = Column(String(500), nullable=True)
+
+    # Timing
+    start_time = Column(DateTime, nullable=False, index=True)
+    end_time = Column(DateTime, nullable=False, index=True)
+    timezone = Column(String(100), nullable=True, default="Europe/Amsterdam")
+    all_day = Column(Boolean, default=False)
+
+    # Participants
+    attendees = Column(JSON, default=list)  # List of email addresses
+    organizer = Column(String(255), nullable=True)
+    is_meeting = Column(Boolean, default=True)  # False for personal blocks
+
+    # Context extraction (from MeetingParserAgent)
+    importance_score = Column(Integer, nullable=True)  # 0-100
+    related_projects = Column(JSON, default=list)  # ["CRESCO", "RF16"]
+    related_task_ids = Column(JSON, default=list)  # Task IDs mentioned in meeting
+    prep_needed = Column(Boolean, default=False)
+    prep_checklist = Column(JSON, default=list)  # List of prep items
+
+    # Sync metadata
+    last_synced = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class ScheduledBlock(Base):
+    """Scheduled time blocks for task work.
+
+    This model tracks scheduling suggestions and approved time blocks:
+    - AI suggests optimal times for tasks
+    - User approves/reschedules/dismisses
+    - Approved blocks create Google Calendar events
+
+    Status Flow:
+    1. 'suggested': SchedulingAgent proposed this time
+    2. 'approved': User approved, calendar event created
+    3. 'rescheduled': User requested different time
+    4. 'dismissed': User rejected suggestion
+    5. 'completed': Task work finished
+    6. 'cancelled': Block cancelled (meeting conflict, etc.)
+
+    Relationships:
+    - task: Many-to-one with Task (which task to work on)
+    """
+    __tablename__ = "scheduled_blocks"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    task_id = Column(String, ForeignKey("tasks.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, nullable=False, default=1, index=True)
+
+    # Timing
+    start_time = Column(DateTime, nullable=False, index=True)
+    end_time = Column(DateTime, nullable=False, index=True)
+    duration_minutes = Column(Integer, nullable=False)
+
+    # Google Calendar integration
+    calendar_event_id = Column(String(255), nullable=True)  # Google Calendar event ID (when approved)
+
+    # AI scheduling metadata
+    status = Column(String(50), nullable=False, default='suggested', index=True)
+    confidence_score = Column(Integer, nullable=True)  # 0-100
+    reasoning = Column(Text, nullable=True)  # Why this time was suggested
+    quality_score = Column(Integer, nullable=True)  # Time block quality (0-100)
+
+    # User feedback
+    user_feedback = Column(JSON, nullable=True)  # Why rescheduled/dismissed
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    task = relationship("Task", backref="scheduled_blocks")
+
+
+class WorkPreferences(Base):
+    """User work preferences for scheduling.
+
+    This model stores user preferences used by SchedulingAgent:
+    - Best time for deep work (morning/afternoon/evening)
+    - Meeting preferences (back-to-back vs spaced out)
+    - Work hours (no meetings before 9am)
+    - Task block sizes (30min, 1hr, 2hr)
+
+    Example Preferences (Jef):
+    {
+        "deep_work_time": "afternoon_evening",
+        "preferred_task_time": "afternoon",
+        "no_meetings_before": "09:00",
+        "meeting_style": "back_to_back",
+        "meeting_buffer": 0,
+        "min_task_block": 30,
+        "preferred_block_sizes": [30, 60, 90, 120],
+        "task_event_prefix": "🪷 ",
+        "task_event_color": "9",
+        "auto_create_blocks": false
+    }
+
+    Relationships:
+    - No explicit relationships (user_id links to future User model)
+    """
+    __tablename__ = "work_preferences"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, nullable=False, default=1, unique=True, index=True)
+
+    # Time preferences
+    deep_work_time = Column(String(50), default="afternoon")  # morning, afternoon, evening, afternoon_evening
+    preferred_task_time = Column(String(50), default="afternoon")
+    no_meetings_before = Column(String(10), default="09:00")  # HH:MM format
+    no_meetings_after = Column(String(10), default="18:00")
+
+    # Meeting style
+    meeting_style = Column(String(50), default="back_to_back")  # back_to_back, spaced_out
+    meeting_buffer = Column(Integer, default=0)  # Minutes between meetings
+
+    # Task scheduling
+    min_task_block = Column(Integer, default=30)  # Minimum minutes for task block
+    preferred_block_sizes = Column(JSON, default=list)  # [30, 60, 90, 120]
+
+    # Calendar preferences
+    task_event_prefix = Column(String(50), default="🪷 ")  # Prefix for task events
+    task_event_color = Column(String(10), default="9")  # Google Calendar color ID
+
+    # Automation
+    auto_create_blocks = Column(Boolean, default=False)  # Phase 4: Always false (needs approval)
+    high_confidence_threshold = Column(Integer, default=90)  # Future: auto-create if >90%
+
+    # Additional preferences
+    preferences_json = Column(JSON, default=dict)  # Extensible preferences
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class TaskTimeLog(Base):
+    """Track actual time spent on tasks vs estimated.
+
+    This model enables pattern learning:
+    - How long do tasks actually take?
+    - Which time blocks are most productive?
+    - Does Jef work better in afternoon vs morning?
+
+    Used for:
+    - Improving scheduling suggestions (learn from history)
+    - Better time estimates
+    - Productivity analytics
+
+    Relationships:
+    - task: Many-to-one with Task
+    - scheduled_block: Many-to-one with ScheduledBlock (optional)
+    """
+    __tablename__ = "task_time_logs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    task_id = Column(String, ForeignKey("tasks.id", ondelete="CASCADE"), nullable=False, index=True)
+    scheduled_block_id = Column(Integer, ForeignKey("scheduled_blocks.id", ondelete="SET NULL"), nullable=True)
+    user_id = Column(Integer, nullable=False, default=1, index=True)
+
+    # Time tracking
+    estimated_duration = Column(Integer, nullable=True)  # Minutes (from AI estimate)
+    actual_duration = Column(Integer, nullable=True)  # Minutes (actual time spent)
+    started_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+
+    # Productivity metrics
+    time_of_day = Column(String(50), nullable=True)  # morning, afternoon, evening
+    productivity_rating = Column(Integer, nullable=True)  # 1-5 (optional user rating)
+    interruptions = Column(Integer, default=0)  # Number of interruptions
+
+    # Context
+    work_location = Column(String(50), nullable=True)  # office, home, etc.
+    notes = Column(Text, nullable=True)
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    task = relationship("Task", backref="time_logs")
+    scheduled_block = relationship("ScheduledBlock", backref="time_logs")
+
+
+class MeetingPrep(Base):
+    """Meeting preparation suggestions.
+
+    This model tracks meeting prep needs:
+    - Which meetings need preparation?
+    - What tasks should be completed before?
+    - What materials to review?
+
+    Generated by MeetingPrepAssistant and displayed in dashboard.
+
+    Urgency Levels:
+    - 'critical': Meeting in <4 hours
+    - 'high': Meeting in <24 hours
+    - 'medium': Meeting in <48 hours
+    - 'low': Meeting in >48 hours
+
+    Relationships:
+    - calendar_event: Many-to-one with CalendarEvent
+    """
+    __tablename__ = "meeting_prep"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    calendar_event_id = Column(Integer, ForeignKey("calendar_events.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, nullable=False, default=1, index=True)
+
+    # Prep details
+    prep_needed = Column(Boolean, default=True)
+    prep_checklist = Column(JSON, default=list)  # List of prep items
+    incomplete_task_ids = Column(JSON, default=list)  # Tasks to finish before meeting
+    estimated_prep_time = Column(Integer, nullable=True)  # Minutes
+
+    # Urgency
+    urgency = Column(String(50), nullable=False, default='medium')  # critical, high, medium, low
+    priority_score = Column(Integer, nullable=True)  # 0-100
+
+    # AI reasoning
+    reasoning = Column(Text, nullable=True)  # Why prep is needed
+
+    # User status
+    prep_completed = Column(Boolean, default=False)
+    completed_at = Column(DateTime, nullable=True)
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    calendar_event = relationship("CalendarEvent", backref="prep_suggestions")
