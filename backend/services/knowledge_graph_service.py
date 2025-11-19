@@ -34,6 +34,7 @@ from db.knowledge_graph_models import (
 )
 from services.knowledge_graph_config import config
 from services.knowledge_graph_embeddings import embedding_service
+from services import kg_cache
 
 
 class KnowledgeGraphService:
@@ -89,6 +90,10 @@ class KnowledgeGraphService:
         # Learn team structures if this is a TEAM entity
         if entity.type == "TEAM" and entity.entity_metadata:
             await self._learn_team_structure(entity, node)
+
+        # Invalidate cache for this entity (Phase 5 cache invalidation)
+        # Clear cache since entity knowledge has been updated
+        kg_cache.clear_cache()
 
         return node
 
@@ -539,6 +544,10 @@ class KnowledgeGraphService:
             self.db.add(edge)
 
         await self.db.flush()
+
+        # Invalidate cache for affected entities (Phase 5 cache invalidation)
+        kg_cache.clear_cache()
+
         return edge
 
     def _calculate_edge_strength(
@@ -602,7 +611,14 @@ class KnowledgeGraphService:
         - All relationships (incoming and outgoing)
         - Team structure associations
         - Temporal evolution
+
+        **Cached with 60s TTL (Phase 5 optimization)**
         """
+        # Check cache first (Phase 5 caching layer)
+        cached = kg_cache.cache_entity_lookup(entity_name, entity_type)
+        if cached is not None:
+            return cached
+
         # Find the node
         query = select(KnowledgeNode).where(
             or_(
@@ -655,7 +671,7 @@ class KnowledgeGraphService:
             for edge, source in incoming.all()
         ]
 
-        return {
+        result_data = {
             "entity": node.canonical_name,
             "type": node.entity_type,
             "aliases": node.aliases,
@@ -669,6 +685,11 @@ class KnowledgeGraphService:
                 "incoming": incoming_rels
             }
         }
+
+        # Cache the result (Phase 5 caching layer)
+        kg_cache.set_entity_lookup_cache(entity_name, entity_type or "", [result_data])
+
+        return result_data
 
     async def get_discovered_team_structures(self) -> Dict:
         """Get all discovered team structures organized hierarchically."""
