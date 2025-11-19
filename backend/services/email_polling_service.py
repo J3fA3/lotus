@@ -18,6 +18,7 @@ from services.gmail_service import get_gmail_service
 from services.email_parser import get_email_parser
 from agents.email_classification import classify_email_content
 from agents.orchestrator import process_assistant_message  # Phase 5: Orchestrator integration
+from services.email_calendar_intelligence import get_email_calendar_intelligence  # Phase 5: Calendar integration
 from db.database import get_async_session
 from db.models import EmailAccount, EmailMessage
 
@@ -232,6 +233,40 @@ class EmailPollingService:
 
                             except Exception as e:
                                 logger.error(f"Failed to create task from email {email_data.id}: {e}")
+                                # Continue processing - don't fail entire sync
+
+                        # Phase 5: Create calendar event if meeting invite
+                        if email_data.is_meeting_invite:
+                            logger.info(f"Processing meeting invite: {email_data.subject}")
+
+                            try:
+                                # Get email record from database
+                                from sqlalchemy import select
+                                result = await db.execute(
+                                    select(EmailMessage).where(
+                                        EmailMessage.gmail_message_id == email_data.id
+                                    )
+                                )
+                                email_record = result.scalar_one_or_none()
+
+                                if email_record:
+                                    calendar_intelligence = get_email_calendar_intelligence()
+                                    calendar_result = await calendar_intelligence.process_meeting_invite(
+                                        email=email_record,
+                                        db=db,
+                                        user_id=1
+                                    )
+
+                                    if calendar_result and calendar_result.get("created"):
+                                        logger.info(
+                                            f"Created calendar event {calendar_result['event_id']} "
+                                            f"from email {email_data.id}"
+                                        )
+                                else:
+                                    logger.warning(f"Could not find email record for {email_data.id}")
+
+                            except Exception as e:
+                                logger.error(f"Failed to create calendar event from email {email_data.id}: {e}")
                                 # Continue processing - don't fail entire sync
 
                         # Mark as processed in Gmail
