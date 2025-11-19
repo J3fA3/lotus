@@ -760,3 +760,194 @@ class MeetingPrep(Base):
 
     # Relationships
     calendar_event = relationship("CalendarEvent", backref="prep_suggestions")
+
+
+# ============================================================================
+# Phase 5: Gmail Integration Models
+# ============================================================================
+
+
+class EmailAccount(Base):
+    """Gmail account for email ingestion.
+
+    Stores account credentials and sync settings.
+    Uses shared OAuth from GoogleOAuthToken.
+
+    Relationships:
+    - email_messages: One-to-many with EmailMessage
+    - email_threads: One-to-many with EmailThread
+    """
+    __tablename__ = "email_accounts"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, nullable=False, default=1, index=True)
+    email_address = Column(String(255), nullable=False, unique=True)
+    provider = Column(String(50), nullable=False, default='gmail')
+
+    # Auth (uses shared GoogleOAuthToken, this is for future encryption)
+    auth_token_encrypted = Column(Text, nullable=True)
+
+    # Sync settings
+    last_sync_at = Column(DateTime, nullable=True)
+    sync_enabled = Column(Boolean, default=True)
+    sync_interval_minutes = Column(Integer, default=20)
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    email_messages = relationship("EmailMessage", back_populates="account", cascade="all, delete-orphan")
+    email_threads = relationship("EmailThread", back_populates="account", cascade="all, delete-orphan")
+
+
+class EmailMessage(Base):
+    """Processed email message.
+
+    Stores email content, classification, and links to tasks.
+
+    Classification Types:
+    - 'actionable': Email requires action → create task
+    - 'meeting_invite': Calendar invitation
+    - 'fyi': Informational only
+    - 'automated': Automated/system email
+    - 'unprocessed': Not yet classified
+
+    Relationships:
+    - account: Many-to-one with EmailAccount
+    - task: Many-to-one with Task (primary task created from email)
+    - thread: Many-to-one with EmailThread
+    - task_links: Many-to-many with Task via EmailTaskLink
+    """
+    __tablename__ = "email_messages"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+
+    # Gmail identifiers
+    gmail_message_id = Column(String(255), nullable=False, unique=True, index=True)
+    thread_id = Column(String(255), nullable=False, index=True)
+
+    # Relationships
+    account_id = Column(Integer, ForeignKey("email_accounts.id", ondelete="CASCADE"), nullable=False)
+
+    # Email content
+    subject = Column(Text, nullable=True)
+    sender = Column(String(500), nullable=True)  # Full "Name <email>" format
+    sender_name = Column(String(255), nullable=True)
+    sender_email = Column(String(255), nullable=True, index=True)
+    recipient_to = Column(Text, nullable=True)
+    recipient_cc = Column(Text, nullable=True)
+    recipient_bcc = Column(Text, nullable=True)
+
+    # Body
+    body_text = Column(Text, nullable=True)
+    body_html = Column(Text, nullable=True)
+    snippet = Column(Text, nullable=True)
+
+    # Metadata
+    labels = Column(JSON, default=list)
+    has_attachments = Column(Boolean, default=False)
+    links = Column(JSON, default=list)
+    action_phrases = Column(JSON, default=list)
+    is_meeting_invite = Column(Boolean, default=False)
+
+    # Timestamps
+    received_at = Column(DateTime, nullable=True, index=True)
+    processed_at = Column(DateTime, nullable=True, index=True)
+
+    # Classification
+    classification = Column(String(50), nullable=True, index=True)  # actionable, meeting_invite, fyi, automated
+    classification_confidence = Column(Float, nullable=True)
+
+    # Task relationship
+    task_id = Column(String, ForeignKey("tasks.id", ondelete="SET NULL"), nullable=True, index=True)
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    account = relationship("EmailAccount", back_populates="email_messages")
+    task = relationship("Task", foreign_keys=[task_id], backref="source_emails")
+    task_links = relationship("EmailTaskLink", back_populates="email", cascade="all, delete-orphan")
+
+
+class EmailThread(Base):
+    """Email thread consolidation.
+
+    Groups related emails and optionally creates consolidated task.
+
+    When thread has 5+ messages, create single consolidated task
+    instead of individual tasks.
+
+    Relationships:
+    - account: Many-to-one with EmailAccount
+    - messages: One-to-many with EmailMessage (via thread_id)
+    - consolidated_task: Many-to-one with Task
+    """
+    __tablename__ = "email_threads"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+
+    # Gmail identifiers
+    gmail_thread_id = Column(String(255), nullable=False, unique=True, index=True)
+
+    # Relationship
+    account_id = Column(Integer, ForeignKey("email_accounts.id", ondelete="CASCADE"), nullable=False)
+
+    # Thread metadata
+    subject = Column(Text, nullable=True)
+    participant_emails = Column(JSON, default=list)
+    message_count = Column(Integer, default=1)
+
+    # Timestamps
+    first_message_at = Column(DateTime, nullable=True)
+    last_message_at = Column(DateTime, nullable=True, index=True)
+
+    # Consolidation
+    is_consolidated = Column(Boolean, default=False)
+    consolidated_task_id = Column(String, ForeignKey("tasks.id", ondelete="SET NULL"), nullable=True, index=True)
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relationships
+    account = relationship("EmailAccount", back_populates="email_threads")
+    consolidated_task = relationship("Task", foreign_keys=[consolidated_task_id], backref="consolidated_from_thread")
+
+
+class EmailTaskLink(Base):
+    """Many-to-many relationship between emails and tasks.
+
+    Links emails to tasks they created or are related to.
+
+    Relationship Types:
+    - 'created_from': Task created from this email
+    - 'related_to': Email mentions existing task
+    - 'thread_member': Part of thread that created task
+    - 'meeting_prep': Email for meeting with prep task
+
+    Unique constraint ensures no duplicate links.
+
+    Relationships:
+    - email: Many-to-one with EmailMessage
+    - task: Many-to-one with Task
+    """
+    __tablename__ = "email_task_links"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+
+    # Relationships
+    email_id = Column(Integer, ForeignKey("email_messages.id", ondelete="CASCADE"), nullable=False, index=True)
+    task_id = Column(String, ForeignKey("tasks.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    # Link metadata
+    relationship_type = Column(String(50), default='created_from')
+
+    # Timestamp
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    email = relationship("EmailMessage", back_populates="task_links")
+    task = relationship("Task", backref="email_links")
