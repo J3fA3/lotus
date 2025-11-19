@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from services.gmail_service import get_gmail_service
 from services.email_parser import get_email_parser
 from agents.email_classification import classify_email_content
+from agents.orchestrator import process_assistant_message  # Phase 5: Orchestrator integration
 from db.database import get_async_session
 from db.models import EmailAccount, EmailMessage
 
@@ -186,7 +187,52 @@ class EmailPollingService:
                         )
 
                         # Store in database
-                        await self._store_email(db, email_data, classification_result)
+                        email_message_id = await self._store_email(db, email_data, classification_result)
+
+                        # Phase 5: Create task if actionable with high confidence
+                        classification = classification_result.get("classification")
+                        should_create_task = (
+                            classification
+                            and classification.is_actionable
+                            and classification.confidence >= 0.8  # 80% confidence threshold
+                            and classification.action_type == "task"
+                        )
+
+                        if should_create_task:
+                            logger.info(
+                                f"Creating task from email: {email_data.subject} "
+                                f"(confidence: {classification.confidence*100:.0f}%)"
+                            )
+
+                            try:
+                                # Build context from email
+                                email_context = self._build_email_context(email_data, classification)
+
+                                # Call orchestrator to create task
+                                orchestrator_result = await process_assistant_message(
+                                    content=email_context,
+                                    source_type="email",  # Phase 5: New source type
+                                    session_id=f"email_{email_data.id}",
+                                    db=db,
+                                    source_identifier=email_data.id,
+                                    user_id=1
+                                )
+
+                                # Link created tasks to email
+                                created_tasks = orchestrator_result.get("created_tasks", [])
+                                if created_tasks:
+                                    await self._link_email_to_tasks(
+                                        db,
+                                        email_message_id,
+                                        created_tasks
+                                    )
+                                    logger.info(
+                                        f"Created {len(created_tasks)} tasks from email {email_data.id}"
+                                    )
+
+                            except Exception as e:
+                                logger.error(f"Failed to create task from email {email_data.id}: {e}")
+                                # Continue processing - don't fail entire sync
 
                         # Mark as processed in Gmail
                         await self.gmail_service.mark_as_processed(email_data.id)
@@ -219,18 +265,96 @@ class EmailPollingService:
             self.errors_count += 1
             raise
 
+    def _build_email_context(self, email_data, classification) -> str:
+        """Build context string from email for orchestrator.
+
+        Args:
+            email_data: Parsed email data
+            classification: Email classification result
+
+        Returns:
+            Formatted context string
+        """
+        context_parts = []
+
+        # Add subject as title
+        context_parts.append(f"Email: {email_data.subject}")
+
+        # Add sender info
+        if email_data.sender_name:
+            context_parts.append(f"From: {email_data.sender_name} ({email_data.sender_email})")
+        else:
+            context_parts.append(f"From: {email_data.sender_email}")
+
+        # Add suggested action from classification
+        if classification.suggested_title:
+            context_parts.append(f"\nSuggested Task: {classification.suggested_title}")
+
+        # Add key action items
+        if classification.key_action_items:
+            context_parts.append("\nAction Items:")
+            for item in classification.key_action_items:
+                context_parts.append(f"- {item}")
+
+        # Add deadline if detected
+        if classification.detected_deadline:
+            context_parts.append(f"\nDeadline: {classification.detected_deadline}")
+
+        # Add email body (truncated)
+        body = email_data.body_text[:1000] if len(email_data.body_text) > 1000 else email_data.body_text
+        context_parts.append(f"\nEmail Content:\n{body}")
+
+        return "\n".join(context_parts)
+
+    async def _link_email_to_tasks(
+        self,
+        db: AsyncSession,
+        email_message_id: int,
+        created_tasks: list
+    ):
+        """Link email to created tasks.
+
+        Args:
+            db: Database session
+            email_message_id: Email message ID
+            created_tasks: List of created task dicts
+        """
+        from db.models import EmailTaskLink, EmailMessage
+
+        for task in created_tasks:
+            link = EmailTaskLink(
+                email_id=email_message_id,
+                task_id=task["id"],
+                relationship_type="created_from"
+            )
+            db.add(link)
+
+        # Update email with first task_id
+        if created_tasks:
+            from sqlalchemy import update
+            await db.execute(
+                update(EmailMessage)
+                .where(EmailMessage.id == email_message_id)
+                .values(task_id=created_tasks[0]["id"])
+            )
+
+        await db.commit()
+
     async def _store_email(
         self,
         db: AsyncSession,
         email_data,
         classification_result: Dict[str, Any]
-    ):
+    ) -> int:
         """Store email in database.
 
         Args:
             db: Database session
             email_data: Parsed email data
             classification_result: Classification result from agent
+
+        Returns:
+            Email message ID
         """
         # Get or create email account
         from sqlalchemy import select
@@ -282,8 +406,11 @@ class EmailPollingService:
 
         db.add(email_message)
         await db.commit()
+        await db.refresh(email_message)  # Get ID
 
         logger.debug(f"Email {email_data.id} stored in database")
+
+        return email_message.id
 
     def _get_next_sync_in_minutes(self) -> Optional[int]:
         """Calculate minutes until next sync.
