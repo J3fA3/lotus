@@ -16,6 +16,16 @@ from .knowledge_graph_models import (  # noqa: F401
     KnowledgeGraphStats
 )
 
+# Import Phase 4 calendar models
+from .models import (  # noqa: F401
+    GoogleOAuthToken,
+    CalendarEvent,
+    ScheduledBlock,
+    WorkPreferences,
+    TaskTimeLog,
+    MeetingPrep
+)
+
 # Configuration
 DEFAULT_DATABASE_URL = "sqlite:///./tasks.db"
 
