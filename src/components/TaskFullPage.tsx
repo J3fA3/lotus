@@ -16,6 +16,7 @@ import { format } from "date-fns";
 import { toast } from "sonner";
 import { ValueStreamCombobox } from "./ValueStreamCombobox";
 import { RichTextEditor } from "./RichTextEditor";
+import { TaskScheduler } from "./TaskScheduler";
 
 interface TaskFullPageProps {
   task: Task;
@@ -230,6 +231,13 @@ export const TaskFullPage = ({
               />
             </div>
           </div>
+
+          {/* AI Scheduling */}
+          <TaskScheduler
+            taskId={editedTask.id}
+            taskTitle={editedTask.title}
+            onScheduled={() => toast.success("Time block added to calendar")}
+          />
 
           {/* Description */}
           <div className="space-y-4">

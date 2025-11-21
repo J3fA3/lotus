@@ -28,6 +28,7 @@ import { DocumentList } from "./DocumentList";
 import { uploadDocument, listDocuments } from "@/api/tasks";
 import { ValueStreamCombobox } from "./ValueStreamCombobox";
 import { RichTextEditor } from "./RichTextEditor";
+import { TaskScheduler } from "./TaskScheduler";
 
 interface TaskDetailSheetProps {
   task: Task;
@@ -445,6 +446,13 @@ export const TaskDetailSheet = ({
               />
             </div>
           </div>
+
+          {/* AI Scheduling */}
+          <TaskScheduler
+            taskId={editedTask.id}
+            taskTitle={editedTask.title}
+            onScheduled={() => toast.success("Time block added to calendar")}
+          />
 
           {/* Assignee - only show in peek mode since it's in the grid for expanded */}
           {!isExpanded && (
