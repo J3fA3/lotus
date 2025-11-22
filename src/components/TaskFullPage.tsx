@@ -18,6 +18,7 @@ import { toast } from "sonner";
 import { ValueStreamCombobox } from "./ValueStreamCombobox";
 import { RichTextEditor } from "./RichTextEditor";
 import { TaskScheduler } from "./TaskScheduler";
+import { useRegisterShortcut } from "@/contexts/ShortcutContext";
 
 interface TaskFullPageProps {
   task: Task;
@@ -39,6 +40,13 @@ export const TaskFullPage = ({
   });
   const [newComment, setNewComment] = useState("");
   const [newAttachment, setNewAttachment] = useState("");
+  const notesRef = useRef<HTMLDivElement>(null);
+  const titleRef = useRef<HTMLDivElement>(null);
+  const descriptionRef = useRef<HTMLDivElement>(null);
+  const statusRef = useRef<HTMLButtonElement>(null);
+  const assigneeRef = useRef<HTMLInputElement>(null);
+  const commentsRef = useRef<HTMLDivElement>(null);
+  const [currentSectionIndex, setCurrentSectionIndex] = useState(0);
 
   // Track last update timestamp to prevent feedback loops
   const lastExternalUpdateRef = useRef<string>("");
@@ -56,19 +64,62 @@ export const TaskFullPage = ({
     }
   }, [task.updatedAt]);
 
-  // Keyboard shortcuts
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Escape to close
-      if (e.key === "Escape") {
-        onClose();
-        return;
-      }
-    };
+  // Section tabbing - list of focusable sections
+  const sections = [titleRef, descriptionRef, notesRef, commentsRef, statusRef, assigneeRef];
 
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onClose]);
+  const focusSection = useCallback((index: number) => {
+    const sectionRef = sections[index];
+    if (!sectionRef || !sectionRef.current) return;
+
+    // Scroll into view
+    sectionRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+
+    // Focus based on element type
+    setTimeout(() => {
+      const element = sectionRef.current;
+      if (!element) return;
+
+      // For RichTextEditor divs, find the contenteditable element
+      const editable = element.querySelector('[contenteditable="true"]') as HTMLElement;
+      if (editable) {
+        editable.focus();
+      } else if (element instanceof HTMLInputElement || element instanceof HTMLButtonElement) {
+        element.focus();
+      } else {
+        // Try to focus the element itself
+        if (element.tabIndex >= 0) {
+          element.focus();
+        }
+      }
+    }, 300); // Wait for scroll animation
+  }, [sections]);
+
+  // Configurable keyboard shortcuts
+  useRegisterShortcut('close_dialog', () => {
+    onClose();
+  });
+
+  useRegisterShortcut('focus_notes', () => {
+    notesRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    setTimeout(() => {
+      const editable = notesRef.current?.querySelector('[contenteditable="true"]') as HTMLElement;
+      if (editable) {
+        editable.focus();
+      }
+    }, 300);
+  });
+
+  useRegisterShortcut('tab_next_section', () => {
+    const nextIndex = (currentSectionIndex + 1) % sections.length;
+    setCurrentSectionIndex(nextIndex);
+    focusSection(nextIndex);
+  });
+
+  useRegisterShortcut('tab_prev_section', () => {
+    const prevIndex = (currentSectionIndex - 1 + sections.length) % sections.length;
+    setCurrentSectionIndex(prevIndex);
+    focusSection(prevIndex);
+  });
 
   const handleUpdate = useCallback((updates: Partial<Task>) => {
     const updated = {
@@ -154,7 +205,7 @@ export const TaskFullPage = ({
       <div className="max-w-5xl mx-auto px-8 py-12">
         <div className="space-y-12">
           {/* Title */}
-          <div>
+          <div ref={titleRef}>
             <RichTextEditor
               content={editedTask.title}
               onChange={(html) => handleUpdate({ title: html })}
@@ -175,7 +226,7 @@ export const TaskFullPage = ({
                 value={editedTask.status}
                 onValueChange={(value) => handleUpdate({ status: value as Task["status"] })}
               >
-                <SelectTrigger className="h-11 border-border/50 focus:border-primary/50 transition-[border-color] duration-150">
+                <SelectTrigger ref={statusRef} className="h-11 border-border/50 focus:border-primary/50 transition-[border-color] duration-150">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -204,6 +255,7 @@ export const TaskFullPage = ({
                 Assignee
               </Label>
               <Input
+                ref={assigneeRef}
                 value={editedTask.assignee}
                 onChange={(e) => handleUpdate({ assignee: e.target.value })}
                 className="h-11 border-border/50 focus:border-primary/50 transition-[border-color] duration-150"
@@ -257,12 +309,14 @@ export const TaskFullPage = ({
             <Label className="text-sm font-semibold text-foreground">
               Description
             </Label>
-            <RichTextEditor
-              content={editedTask.description || ""}
-              onChange={(html) => handleUpdate({ description: html })}
-              placeholder="Add a detailed description... Type / for commands, * for bullets"
-              variant="minimal"
-            />
+            <div ref={descriptionRef}>
+              <RichTextEditor
+                content={editedTask.description || ""}
+                onChange={(html) => handleUpdate({ description: html })}
+                placeholder="Add a detailed description... Type / for commands, * for bullets"
+                variant="minimal"
+              />
+            </div>
           </div>
 
           {/* Attachments Section - Full Width */}
@@ -358,7 +412,7 @@ export const TaskFullPage = ({
               <div className="flex-shrink-0 w-8 h-8 rounded-full bg-muted flex items-center justify-center mt-1">
                 <User className="h-4 w-4 text-muted-foreground" />
               </div>
-              <div className="flex-1">
+              <div className="flex-1" ref={commentsRef}>
                 <RichTextEditor
                   content={newComment}
                   onChange={(html) => setNewComment(html)}
@@ -383,13 +437,15 @@ export const TaskFullPage = ({
             <Label className="text-sm font-semibold text-foreground">
               Notes
             </Label>
-            <RichTextEditor
-              content={editedTask.notes || ""}
-              onChange={(html) => handleUpdate({ notes: html })}
-              placeholder="Write your notes, thoughts, or documentation here... Type / for commands, * for bullets, create tables and more!"
-              variant="full"
-            />
-            <span className="text-xs text-muted-foreground">Cmd/Ctrl+D to focus notes • Full formatting available: headings, tables, code blocks, and Word Art!</span>
+            <div ref={notesRef}>
+              <RichTextEditor
+                content={editedTask.notes || ""}
+                onChange={(html) => handleUpdate({ notes: html })}
+                placeholder="Write your notes, thoughts, or documentation here... Type / for commands, * for bullets, create tables and more!"
+                variant="full"
+              />
+            </div>
+            <span className="text-xs text-muted-foreground">Cmd/Ctrl+D to focus notes • Alt+Tab to cycle through sections • Full formatting available: headings, tables, code blocks, and Word Art!</span>
           </div>
         </div>
       </div>

@@ -29,6 +29,7 @@ import { uploadDocument, listDocuments } from "@/api/tasks";
 import { ValueStreamCombobox } from "./ValueStreamCombobox";
 import { RichTextEditor } from "./RichTextEditor";
 import { TaskScheduler } from "./TaskScheduler";
+import { useRegisterShortcut } from "@/contexts/ShortcutContext";
 
 interface TaskDetailSheetProps {
   task: Task;
@@ -63,8 +64,14 @@ export const TaskDetailSheet = ({
   const [uploadedDocuments, setUploadedDocuments] = useState<DocumentType[]>([]);
   const [isUploadingDocument, setIsUploadingDocument] = useState(false);
   const [selectedDocumentFile, setSelectedDocumentFile] = useState<File | null>(null);
-  const notesRef = useRef<HTMLTextAreaElement>(null);
+  const notesRef = useRef<HTMLDivElement>(null);
+  const titleRef = useRef<HTMLDivElement>(null);
+  const descriptionRef = useRef<HTMLDivElement>(null);
+  const statusRef = useRef<HTMLButtonElement>(null);
+  const assigneeRef = useRef<HTMLInputElement>(null);
+  const commentsRef = useRef<HTMLDivElement>(null);
   const previousTaskIdRef = useRef<string>(task.id);
+  const [currentSectionIndex, setCurrentSectionIndex] = useState(0);
 
   // Track last update timestamp to prevent feedback loops
   const lastExternalUpdateRef = useRef<string>("");
@@ -107,51 +114,70 @@ export const TaskDetailSheet = ({
     setIsExpanded(isExpandedProp);
   }, [isExpandedProp]);
 
-  // Keyboard shortcuts
-  useEffect(() => {
-    if (!open) return;
+  // Section tabbing - list of focusable sections
+  const sections = [titleRef, descriptionRef, notesRef, commentsRef, statusRef, assigneeRef];
 
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Escape to close
-      if (e.key === "Escape") {
-        onOpenChange(false);
-        return;
-      }
+  const focusSection = useCallback((index: number) => {
+    const sectionRef = sections[index];
+    if (!sectionRef || !sectionRef.current) return;
 
-      // Cmd/Ctrl + E to toggle expand
-      if ((e.metaKey || e.ctrlKey) && e.key === "e") {
-        e.preventDefault();
-        if (onToggleExpanded) {
-          onToggleExpanded();
-        } else {
-          setIsExpanded(!isExpanded);
+    // Scroll into view
+    sectionRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+
+    // Focus based on element type
+    setTimeout(() => {
+      const element = sectionRef.current;
+      if (!element) return;
+
+      // For RichTextEditor divs, find the contenteditable element
+      const editable = element.querySelector('[contenteditable="true"]') as HTMLElement;
+      if (editable) {
+        editable.focus();
+      } else if (element instanceof HTMLInputElement || element instanceof HTMLButtonElement) {
+        element.focus();
+      } else {
+        // Try to focus the element itself
+        if (element.tabIndex >= 0) {
+          element.focus();
         }
-        toast.success(isExpanded ? "Peek mode" : "Expanded view");
-        return;
       }
+    }, 300); // Wait for scroll animation
+  }, [sections]);
 
-      // Cmd/Ctrl + Shift + F for full page
-      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === "F") {
-        e.preventDefault();
-        if (onFullPage) {
-          onFullPage();
-          toast.success("Full page view");
+  // Configurable keyboard shortcuts
+  useRegisterShortcut('close_dialog', () => {
+    if (open) {
+      onOpenChange(false);
+    }
+  });
+
+  useRegisterShortcut('focus_notes', () => {
+    if (open) {
+      notesRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      setTimeout(() => {
+        const editable = notesRef.current?.querySelector('[contenteditable="true"]') as HTMLElement;
+        if (editable) {
+          editable.focus();
         }
-        return;
-      }
+      }, 300);
+    }
+  });
 
-      // Cmd/Ctrl + D to focus document editor
-      if ((e.metaKey || e.ctrlKey) && e.key === "d") {
-        e.preventDefault();
-        notesRef.current?.focus();
-        notesRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-        return;
-      }
-    };
+  useRegisterShortcut('tab_next_section', () => {
+    if (open) {
+      const nextIndex = (currentSectionIndex + 1) % sections.length;
+      setCurrentSectionIndex(nextIndex);
+      focusSection(nextIndex);
+    }
+  });
 
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [open, isExpanded, onOpenChange, onToggleExpanded, onFullPage]);
+  useRegisterShortcut('tab_prev_section', () => {
+    if (open) {
+      const prevIndex = (currentSectionIndex - 1 + sections.length) % sections.length;
+      setCurrentSectionIndex(prevIndex);
+      focusSection(prevIndex);
+    }
+  });
 
   const handleUpdate = useCallback((updates: Partial<Task>) => {
     const updated = {
@@ -362,7 +388,7 @@ export const TaskDetailSheet = ({
             /* Actual Content */
             <div className="space-y-8 animate-in fade-in duration-200">
               {/* Title */}
-              <div>
+              <div ref={titleRef}>
                 <RichTextEditor
                   content={editedTask.title}
                   onChange={(html) => handleUpdate({ title: html })}
@@ -387,7 +413,7 @@ export const TaskDetailSheet = ({
                 value={editedTask.status}
                 onValueChange={(value) => handleUpdate({ status: value as Task["status"] })}
               >
-                <SelectTrigger className="h-10 border-border/50 focus:border-primary/50 transition-[border-color] duration-150 hover:border-primary/30">
+                <SelectTrigger ref={statusRef} className="h-10 border-border/50 focus:border-primary/50 transition-[border-color] duration-150 hover:border-primary/30">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -417,6 +443,7 @@ export const TaskDetailSheet = ({
                   Assignee
                 </Label>
                 <Input
+                  ref={assigneeRef}
                   value={editedTask.assignee}
                   onChange={(e) => handleUpdate({ assignee: e.target.value })}
                   className="h-10 border-border/50 focus:border-primary/50 transition-[border-color] duration-150 hover:border-primary/30"
@@ -489,12 +516,14 @@ export const TaskDetailSheet = ({
             <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
               Description
             </Label>
-            <RichTextEditor
-              content={editedTask.description || ""}
-              onChange={(html) => handleUpdate({ description: html })}
-              placeholder="Add a detailed description... Type / for commands, * for bullets"
-              variant="minimal"
-            />
+            <div ref={descriptionRef}>
+              <RichTextEditor
+                content={editedTask.description || ""}
+                onChange={(html) => handleUpdate({ description: html })}
+                placeholder="Add a detailed description... Type / for commands, * for bullets"
+                variant="minimal"
+              />
+            </div>
           </div>
 
           {/* Attachments & Documents */}
@@ -642,7 +671,7 @@ export const TaskDetailSheet = ({
               <div className="flex-shrink-0 w-7 h-7 rounded-full bg-muted flex items-center justify-center mt-1">
                 <User className="h-3.5 w-3.5 text-muted-foreground" />
               </div>
-              <div className="flex-1">
+              <div className="flex-1" ref={commentsRef}>
                 <RichTextEditor
                   content={newComment}
                   onChange={(html) => setNewComment(html)}
@@ -667,13 +696,15 @@ export const TaskDetailSheet = ({
             <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
               Notes
             </Label>
-            <RichTextEditor
-              content={editedTask.notes || ""}
-              onChange={(html) => handleUpdate({ notes: html })}
-              placeholder="Write your notes, thoughts, or documentation here... Type / for commands, * for bullets, create tables and more!"
-              variant="full"
-            />
-            <span className="text-xs text-muted-foreground">Cmd/Ctrl+D to focus notes • Full formatting available: headings, tables, code blocks, and Word Art!</span>
+            <div ref={notesRef}>
+              <RichTextEditor
+                content={editedTask.notes || ""}
+                onChange={(html) => handleUpdate({ notes: html })}
+                placeholder="Write your notes, thoughts, or documentation here... Type / for commands, * for bullets, create tables and more!"
+                variant="full"
+              />
+            </div>
+            <span className="text-xs text-muted-foreground">Cmd/Ctrl+D to focus notes • Alt+Tab to cycle through sections • Full formatting available: headings, tables, code blocks, and Word Art!</span>
           </div>
             </div>
           )}

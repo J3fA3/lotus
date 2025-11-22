@@ -286,14 +286,6 @@ export const KanbanBoard = () => {
     }
   });
 
-  useRegisterShortcut('toggle_complete', () => {
-    const task = getFocusedTask();
-    if (task) {
-      const newStatus: TaskStatus = task.status === "done" ? "todo" : "done";
-      handleUpdateTask({ ...task, status: newStatus });
-    }
-  });
-
   useRegisterShortcut('move_task', () => {
     const task = getFocusedTask();
     if (task) {
@@ -306,19 +298,42 @@ export const KanbanBoard = () => {
     }
   });
 
-  // View mode shortcuts
-  useRegisterShortcut('toggle_view_mode', () => {
-    if (isDialogOpen && selectedTask) {
-      setIsExpanded(!isExpanded);
-      toast.success(isExpanded ? "Peek mode" : "Expanded view", { duration: TOAST_DURATION.SHORT });
+  // Global shortcuts
+  useRegisterShortcut('focus_search', () => {
+    const searchInput = document.querySelector('input[type="text"][placeholder*="Search"]') as HTMLInputElement;
+    if (searchInput) {
+      searchInput.focus();
+      searchInput.click(); // Trigger expand if needed
     }
   });
 
-  useRegisterShortcut('open_full_page', () => {
-    if (isDialogOpen && selectedTask && !isFullPageOpen) {
-      setIsDialogOpen(false);
-      setIsFullPageOpen(true);
-      toast.success("Full page view", { duration: TOAST_DURATION.SHORT });
+  useRegisterShortcut('toggle_lotus', () => {
+    setIsLotusOpen(!isLotusOpen);
+    toast.success(isLotusOpen ? "Lotus closed" : "Lotus opened", { duration: TOAST_DURATION.SHORT });
+  });
+
+  // View mode shortcuts - cycle through peek → expanded → fullscreen → peek
+  useRegisterShortcut('toggle_view_mode', () => {
+    if (selectedTask) {
+      if (isFullPageOpen) {
+        // Fullscreen → Peek
+        setIsFullPageOpen(false);
+        setIsDialogOpen(true);
+        setIsExpanded(false);
+        toast.success("Peek mode", { duration: TOAST_DURATION.SHORT });
+      } else if (isDialogOpen) {
+        if (!isExpanded) {
+          // Peek → Expanded
+          setIsExpanded(true);
+          toast.success("Expanded view", { duration: TOAST_DURATION.SHORT });
+        } else {
+          // Expanded → Fullscreen
+          setIsDialogOpen(false);
+          setIsFullPageOpen(true);
+          setIsExpanded(false);
+          toast.success("Full screen view", { duration: TOAST_DURATION.SHORT });
+        }
+      }
     }
   });
 
@@ -553,11 +568,41 @@ export const KanbanBoard = () => {
               </span>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              {/* Global Shortcuts */}
+              <div>
+                <h4 className="text-xs font-semibold text-foreground/80 mb-2">Global</h4>
+                <div className="space-y-1.5">
+                  {shortcuts.filter(s => s.category === 'global' && s.enabled).map(shortcut => (
+                    <div key={shortcut.id} className="flex items-center gap-2">
+                      {editingShortcut === shortcut.id ? (
+                        <input
+                          type="text"
+                          readOnly
+                          className="px-2 py-1 bg-primary/10 border-2 border-primary rounded text-[10px] font-mono min-w-[3rem] text-center outline-none text-muted-foreground"
+                          value="Press key..."
+                          onKeyDown={(e) => handleShortcutKeyDown(e, shortcut.id)}
+                          onBlur={() => setEditingShortcut(null)}
+                          autoFocus
+                        />
+                      ) : (
+                        <kbd
+                          className="px-2 py-1 bg-background border border-border rounded text-[10px] font-mono min-w-[3rem] text-center cursor-pointer hover:bg-muted transition-colors"
+                          onClick={() => setEditingShortcut(shortcut.id)}
+                        >
+                          {getShortcutDisplay(shortcut)}
+                        </kbd>
+                      )}
+                      <span className="text-xs text-muted-foreground">{shortcut.description}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
               {/* Board Navigation */}
               <div>
                 <h4 className="text-xs font-semibold text-foreground/80 mb-2">Board Navigation</h4>
                 <div className="space-y-1.5">
-                  {shortcuts.filter(s => s.category === 'board' && s.enabled).slice(0, 8).map(shortcut => (
+                  {shortcuts.filter(s => s.category === 'board' && s.enabled).map(shortcut => (
                     <div key={shortcut.id} className="flex items-center gap-2">
                       {editingShortcut === shortcut.id ? (
                         <input
@@ -583,11 +628,11 @@ export const KanbanBoard = () => {
                 </div>
               </div>
 
-              {/* Task Navigation */}
+              {/* Task Navigation & Actions */}
               <div>
-                <h4 className="text-xs font-semibold text-foreground/80 mb-2">Task Navigation</h4>
+                <h4 className="text-xs font-semibold text-foreground/80 mb-2">Task Navigation & Actions</h4>
                 <div className="space-y-1.5">
-                  {shortcuts.filter(s => s.category === 'task' && s.enabled).slice(0, 8).map(shortcut => (
+                  {shortcuts.filter(s => s.category === 'task' && s.enabled).map(shortcut => (
                     <div key={shortcut.id} className="flex items-center gap-2">
                       {editingShortcut === shortcut.id ? (
                         <input
@@ -613,41 +658,11 @@ export const KanbanBoard = () => {
                 </div>
               </div>
 
-              {/* Quick Actions */}
+              {/* Task Dialog */}
               <div>
-                <h4 className="text-xs font-semibold text-foreground/80 mb-2">Quick Actions</h4>
+                <h4 className="text-xs font-semibold text-foreground/80 mb-2">Task Dialog</h4>
                 <div className="space-y-1.5">
-                  {shortcuts.filter(s => s.category === 'task' && s.enabled && !['archive_task', 'cycle_priority'].includes(s.action)).slice(8, 16).map(shortcut => (
-                    <div key={shortcut.id} className="flex items-center gap-2">
-                      {editingShortcut === shortcut.id ? (
-                        <input
-                          type="text"
-                          readOnly
-                          className="px-2 py-1 bg-primary/10 border-2 border-primary rounded text-[10px] font-mono min-w-[3rem] text-center outline-none text-muted-foreground"
-                          value="Press key..."
-                          onKeyDown={(e) => handleShortcutKeyDown(e, shortcut.id)}
-                          onBlur={() => setEditingShortcut(null)}
-                          autoFocus
-                        />
-                      ) : (
-                        <kbd
-                          className="px-2 py-1 bg-background border border-border rounded text-[10px] font-mono min-w-[3rem] text-center cursor-pointer hover:bg-muted transition-colors"
-                          onClick={() => setEditingShortcut(shortcut.id)}
-                        >
-                          {getShortcutDisplay(shortcut)}
-                        </kbd>
-                      )}
-                      <span className="text-xs text-muted-foreground">{shortcut.description}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* View Modes */}
-              <div>
-                <h4 className="text-xs font-semibold text-foreground/80 mb-2">View Modes</h4>
-                <div className="space-y-1.5">
-                  {shortcuts.filter(s => s.category === 'dialog' && ['toggle_view_mode', 'open_full_page'].includes(s.action) && s.enabled).map(shortcut => (
+                  {shortcuts.filter(s => s.category === 'dialog' && s.enabled).map(shortcut => (
                     <div key={shortcut.id} className="flex items-center gap-2">
                       {editingShortcut === shortcut.id ? (
                         <input
