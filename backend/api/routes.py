@@ -12,8 +12,9 @@ All task queries use eager loading (selectinload) to avoid async relationship is
 Comments and attachments are stored in separate tables with cascade delete.
 """
 import os
+import asyncio
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, text, delete
 from sqlalchemy.orm import selectinload
@@ -83,7 +84,14 @@ knowledge_base = KnowledgeBase()
 @router.get("/health", response_model=HealthResponse)
 async def health_check():
     """Check API, Ollama, and database health"""
-    ollama_connected = await task_extractor.check_connection()
+    # Add timeout to prevent hanging (2 seconds max for health check)
+    try:
+        ollama_connected = await asyncio.wait_for(
+            task_extractor.check_connection(),
+            timeout=2.0
+        )
+    except (asyncio.TimeoutError, Exception):
+        ollama_connected = False
 
     return HealthResponse(
         status="healthy",
@@ -98,14 +106,31 @@ async def health_check():
 @router.get("/tasks", response_model=List[TaskSchema])
 async def get_tasks(db: AsyncSession = Depends(get_db)):
     """Get all tasks"""
-    result = await db.execute(
-        select(Task)
-        .options(selectinload(Task.comments), selectinload(Task.attachments))
-    )
-    tasks = result.scalars().all()
+    try:
+        # Add timeout to prevent indefinite hanging (8 seconds, leaving 2s buffer for frontend timeout)
+        result = await asyncio.wait_for(
+            db.execute(
+                select(Task)
+                .options(selectinload(Task.comments), selectinload(Task.attachments))
+            ),
+            timeout=8.0
+        )
+        tasks = result.scalars().all()
 
-    # Convert to response format with loaded relationships
-    return [_task_to_schema(task, load_relationships=True) for task in tasks]
+        # Convert to response format with loaded relationships
+        return [_task_to_schema(task, load_relationships=True) for task in tasks]
+    except asyncio.TimeoutError:
+        # Log the timeout error
+        import logging
+        logging.error("Database query timed out after 8 seconds")
+        # Return empty list instead of crashing
+        return []
+    except Exception as e:
+        # Log the error for debugging
+        import logging
+        logging.error(f"Error fetching tasks: {str(e)}", exc_info=True)
+        # Return empty list instead of crashing
+        return []
 
 
 @router.post("/tasks", response_model=TaskSchema)
@@ -226,18 +251,63 @@ async def update_task(
 
 
 @router.delete("/tasks/{task_id}")
-async def delete_task(task_id: str, db: AsyncSession = Depends(get_db)):
-    """Delete a task"""
+async def delete_task(
+    task_id: str,
+    user_id: int = Query(default=1, description="User ID"),
+    db: AsyncSession = Depends(get_db)
+):
+    """Delete a task and its associated calendar events"""
+    from db.models import ScheduledBlock
+    from services.calendar_sync import get_calendar_sync_service
+    
     result = await db.execute(select(Task).where(Task.id == task_id))
     task = result.scalar_one_or_none()
 
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
+    # Find all scheduled blocks for this task that have calendar events
+    scheduled_blocks_query = select(ScheduledBlock).where(
+        ScheduledBlock.task_id == task_id,
+        ScheduledBlock.calendar_event_id.isnot(None)
+    )
+    scheduled_blocks_result = await db.execute(scheduled_blocks_query)
+    scheduled_blocks = scheduled_blocks_result.scalars().all()
+
+    # Delete associated calendar events from Google Calendar
+    calendar_service = get_calendar_sync_service()
+    deleted_events = []
+    
+    for block in scheduled_blocks:
+        if not block.calendar_event_id:
+            continue
+            
+        try:
+            await calendar_service.delete_calendar_event(
+                user_id=user_id,
+                db=db,
+                google_event_id=block.calendar_event_id
+            )
+            deleted_events.append(block.calendar_event_id)
+        except Exception as e:
+            # Log warning but continue with task deletion
+            # Event may have been deleted manually in Google Calendar
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(
+                f"Failed to delete calendar event {block.calendar_event_id} for task {task_id}: {e}. "
+                "Continuing with task deletion."
+            )
+
+    # Delete the task (scheduled blocks will be deleted via CASCADE)
     await db.delete(task)
     await db.commit()
 
-    return {"message": "Task deleted successfully"}
+    message = "Task deleted successfully"
+    if deleted_events:
+        message += f" ({len(deleted_events)} calendar event(s) removed)"
+
+    return {"message": message, "deleted_calendar_events": len(deleted_events)}
 
 
 @router.get("/tasks/search/{query}")

@@ -1,0 +1,18 @@
+/* TaskScheduler custom scrollbar styling */
+.task-scheduler-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.task-scheduler-scroll::-webkit-scrollbar-track {
+  background: hsl(var(--muted) / 0.3);
+  border-radius: 3px;
+}
+
+.task-scheduler-scroll::-webkit-scrollbar-thumb {
+  background: hsl(var(--muted-foreground) / 0.3);
+  border-radius: 3px;
+}
+
+.task-scheduler-scroll::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground) / 0.5);
+}

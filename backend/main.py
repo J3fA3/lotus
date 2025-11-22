@@ -2,10 +2,13 @@
 FastAPI backend for AI-powered task management
 """
 import os
+import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
+
+logger = logging.getLogger(__name__)
 
 from db.database import init_db
 from api.routes import router
@@ -32,37 +35,37 @@ load_dotenv()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Manage application startup and shutdown"""
+    """Manage application startup and shutdown."""
     # Startup
-    print("🚀 Initializing database...")
+    logger.info("🚀 Initializing database...")
     await init_db()
-    print("✅ Database initialized")
+    logger.info("✅ Database initialized")
 
     # Initialize work preferences (Phase 4)
-    print("📋 Initializing user preferences...")
+    logger.info("📋 Initializing user preferences...")
     from services.work_preferences import ensure_preferences_exist
     from db.database import AsyncSessionLocal
     async with AsyncSessionLocal() as db:
         await ensure_preferences_exist(db, user_id=1)
-    print("✅ Preferences initialized")
+    logger.info("✅ Preferences initialized")
 
     ollama_model = os.getenv("OLLAMA_MODEL", DEFAULT_OLLAMA_MODEL)
     ollama_url = os.getenv("OLLAMA_BASE_URL", DEFAULT_OLLAMA_URL)
-    print(f"🤖 AI Model: {ollama_model}")
-    print(f"🔗 Ollama URL: {ollama_url}")
+    logger.info(f"🤖 AI Model: {ollama_model}")
+    logger.info(f"🔗 Ollama URL: {ollama_url}")
 
     # Start Knowledge Graph scheduler if decay is enabled
     if kg_config.DECAY_ENABLED:
-        print(f"⏰ Starting Knowledge Graph scheduler...")
-        print(f"   Decay updates every {kg_config.DECAY_UPDATE_INTERVAL_HOURS}h")
-        print(f"   Half-life: {kg_config.DECAY_HALF_LIFE_DAYS} days")
+        logger.info(f"⏰ Starting Knowledge Graph scheduler...")
+        logger.info(f"   Decay updates every {kg_config.DECAY_UPDATE_INTERVAL_HOURS}h")
+        logger.info(f"   Half-life: {kg_config.DECAY_HALF_LIFE_DAYS} days")
         scheduler.start()
-        print("✅ Scheduler started")
+        logger.info("✅ Scheduler started")
     else:
-        print("⚠️  Knowledge Graph decay disabled")
+        logger.warning("⚠️  Knowledge Graph decay disabled")
 
     # Start Calendar scheduler (Phase 4)
-    print("📅 Starting Calendar scheduler...")
+    logger.info("📅 Starting Calendar scheduler...")
     calendar_scheduler = get_calendar_scheduler()
     calendar_scheduler.start()
 
@@ -70,13 +73,13 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     if kg_config.DECAY_ENABLED and scheduler.is_running:
-        print("⏰ Stopping Knowledge Graph scheduler...")
+        logger.info("⏰ Stopping Knowledge Graph scheduler...")
         scheduler.stop()
 
-    print("📅 Stopping Calendar scheduler...")
+    logger.info("📅 Stopping Calendar scheduler...")
     calendar_scheduler.stop()
 
-    print("👋 Shutting down...")
+    logger.info("👋 Shutting down...")
 
 
 # Create FastAPI app
@@ -108,7 +111,7 @@ if kg_config.GRAPHQL_ENABLED:
     graphql_router = create_graphql_router()
     if graphql_router:
         app.include_router(graphql_router, prefix="/api", tags=["GraphQL"])
-        print(f"🔷 GraphQL enabled at /api{kg_config.GRAPHQL_PATH}")
+        logger.info(f"🔷 GraphQL enabled at /api{kg_config.GRAPHQL_PATH}")
 
 
 @app.get("/")
@@ -135,14 +138,14 @@ if __name__ == "__main__":
     port = int(os.getenv("API_PORT", str(DEFAULT_API_PORT)))
     debug = os.getenv("DEBUG", "true").lower() == "true"
 
-    print(f"\n🚀 Starting server on {host}:{port}")
-    print(f"📚 API Docs: http://localhost:{port}/docs")
-    print(f"🏥 Health Check: http://localhost:{port}/api/health")
+    logger.info(f"\n🚀 Starting server on {host}:{port}")
+    logger.info(f"📚 API Docs: http://localhost:{port}/docs")
+    logger.info(f"🏥 Health Check: http://localhost:{port}/api/health")
 
     if kg_config.GRAPHQL_ENABLED:
-        print(f"🔷 GraphQL Playground: http://localhost:{port}/api{kg_config.GRAPHQL_PATH}")
+        logger.info(f"🔷 GraphQL Playground: http://localhost:{port}/api{kg_config.GRAPHQL_PATH}")
 
-    print()
+    logger.info("")
 
     uvicorn.run(
         "main:app",

@@ -125,13 +125,17 @@ class GeminiClient:
                 json_schema = schema.model_json_schema()
 
                 # Generate with structured output
+                # Note: response_mime_type is not supported in current SDK version
+                # We'll ask for JSON in the prompt and parse it
+                enhanced_prompt = f"""{prompt}
+
+IMPORTANT: Return ONLY valid JSON matching the requested schema. Do not include markdown formatting or explanations."""
+                
                 response = self.model.generate_content(
-                    prompt,
+                    enhanced_prompt,
                     generation_config=genai.GenerationConfig(
                         temperature=temperature,
-                        response_mime_type="application/json",
-                        # Note: Gemini 2.0 Flash supports response_schema
-                        # but the Python SDK may need updates for full support
+                        max_output_tokens=2048
                     )
                 )
 

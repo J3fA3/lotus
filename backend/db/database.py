@@ -36,16 +36,27 @@ def get_database_url() -> str:
     # Convert sqlite:/// to sqlite+aiosqlite:/// for async support
     if url.startswith("sqlite:///"):
         url = url.replace("sqlite:///", "sqlite+aiosqlite:///")
+        # Add timeout parameter for SQLite to prevent hanging
+        # Timeout is in seconds (10 seconds)
+        if "?" not in url:
+            url += "?timeout=10.0"
+        elif "timeout" not in url:
+            url += "&timeout=10.0"
     
     return url
 
 # Get database URL
 DATABASE_URL = get_database_url()
 
-# Create async engine
+# Create async engine with connection pool settings
+# These settings help prevent hanging on SQLite connections
 engine = create_async_engine(
     DATABASE_URL,
     echo=os.getenv("DEBUG", "false").lower() == "true",
+    pool_pre_ping=True,  # Verify connections before using
+    pool_recycle=3600,  # Recycle connections after 1 hour
+    # For aiosqlite, timeout is set via URL query parameter
+    # connect_args are handled differently for async SQLite
 )
 
 # Create async session maker
