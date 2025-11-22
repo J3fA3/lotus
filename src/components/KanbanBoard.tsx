@@ -907,7 +907,7 @@ export const KanbanBoard = () => {
 
         {isLoading && (
           <div className="flex items-center justify-center py-12">
-            <LotusLoading size={40} />
+            <LotusLoading variant="large" />
           </div>
         )}
 

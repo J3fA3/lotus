@@ -188,7 +188,7 @@ const AIAssistant: React.FC = () => {
 
           {isProcessing && (
             <div className="flex items-center gap-3 text-muted-foreground">
-              <LotusLoading size={24} />
+              <LotusLoading variant="small" />
               <span className="text-sm">Lotus is processing...</span>
             </div>
           )}
@@ -228,7 +228,7 @@ const AIAssistant: React.FC = () => {
               className="h-[80px] w-[80px] bg-lotus-green-medium hover:bg-[hsl(var(--lotus-green-dark))] transition-zen"
             >
               {isProcessing ? (
-                <LotusLoading size={28} />
+                <LotusLoading variant="small" />
               ) : (
                 <Send className="h-6 w-6" />
               )}

@@ -189,7 +189,7 @@ const LotusDialog: React.FC<LotusDialogProps> = ({ open, onOpenChange, onTasksCr
 
             {isProcessing && (
               <div className="flex items-center gap-3 text-muted-foreground text-sm">
-                <LotusLoading size={24} />
+                <LotusLoading variant="small" />
                 <span>Lotus is processing...</span>
               </div>
             )}
@@ -289,7 +289,7 @@ const LotusDialog: React.FC<LotusDialogProps> = ({ open, onOpenChange, onTasksCr
                 className="h-[60px] w-[60px] bg-lotus-green-medium hover:bg-[hsl(var(--lotus-green-dark))] transition-zen shadow-zen-sm hover:shadow-zen-md"
               >
                 {isProcessing ? (
-                  <LotusLoading size={24} />
+                  <LotusLoading variant="small" />
                 ) : (
                   <Send className="h-5 w-5" />
                 )}
