@@ -210,7 +210,8 @@ User: "Alberto asked about pinning position 3 for pharmacies in Spain"
 
 ### 💻 Development
 - **[Development Guide](./docs/development/DEVELOPMENT_GUIDE.md)** - Architecture & workflow
-- **[Phase 3 Guide](./docs/development/PHASE3_GUIDE.md)** - Latest improvements
+- **[Phase 3 Guide](./docs/development/PHASE3_GUIDE.md)** - Phase 3 improvements
+- **[Phase 4 Guide](./docs/development/PHASE4_GUIDE.md)** - Calendar integration & scheduling
 - **[API Reference](./docs/api/API_REFERENCE.md)** - Complete endpoint docs
 - **[Project Structure](./docs/PROJECT_STRUCTURE.md)** - File organization
 

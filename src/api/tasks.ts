@@ -12,6 +12,34 @@ import {
 // Configuration
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 const DEFAULT_ASSIGNEE = "You";
+const FETCH_TIMEOUT = 10000; // 10 seconds
+
+/**
+ * Fetch with timeout wrapper
+ */
+async function fetchWithTimeout(
+  url: string,
+  options: RequestInit = {},
+  timeout: number = FETCH_TIMEOUT
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    return response;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error(`Request timeout: ${url} took longer than ${timeout}ms`);
+    }
+    throw error;
+  }
+}
 
 /**
  * API response for task inference
@@ -38,7 +66,7 @@ export interface HealthResponse {
  */
 export async function fetchTasks(): Promise<Task[]> {
   try {
-    const response = await fetch(`${API_BASE_URL}/tasks`);
+    const response = await fetchWithTimeout(`${API_BASE_URL}/tasks`);
 
     if (!response.ok) {
       throw new Error(`Failed to fetch tasks: ${response.statusText}`);
@@ -296,12 +324,12 @@ export async function inferTasksFromPDF(
  */
 export async function checkHealth(): Promise<HealthResponse> {
   try {
-    const response = await fetch(`${API_BASE_URL}/health`, {
+    const response = await fetchWithTimeout(`${API_BASE_URL}/health`, {
       method: "GET",
       headers: {
         "Content-Type": "application/json",
       },
-    });
+    }, 5000); // Shorter timeout for health check
 
     if (!response.ok) {
       throw new Error(`Health check failed: ${response.statusText}`);
