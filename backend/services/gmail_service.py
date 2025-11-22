@@ -52,12 +52,17 @@ class GmailService:
         self.credentials_path = os.getenv("GMAIL_CREDENTIALS_PATH", "gmail_credentials.json")
         self.token_path = os.getenv("GMAIL_TOKEN_PATH", "gmail_token.json")
         self.max_results = int(os.getenv("GMAIL_MAX_RESULTS", "50"))
+        # SSL/Network optimization settings
+        self.batch_size = int(os.getenv("GMAIL_BATCH_SIZE", "3"))
+        self.batch_delay = float(os.getenv("GMAIL_BATCH_DELAY_SECONDS", "0.5"))
+        self.fetch_delay = float(os.getenv("GMAIL_FETCH_DELAY_SECONDS", "0.2"))
+        self.sequential_processing = os.getenv("GMAIL_SEQUENTIAL_PROCESSING", "false").lower() == "true"
 
         self.oauth_service = get_oauth_service()
         self.service = None
         self.credentials = None
 
-        logger.info("Gmail service initialized")
+        logger.info(f"Gmail service initialized (batch_size={self.batch_size}, sequential={self.sequential_processing})")
 
     async def authenticate(self, user_id: int = 1, db: Optional[AsyncSession] = None) -> Credentials:
         """Authenticate with Gmail API using OAuth tokens.
@@ -227,21 +232,34 @@ class GmailService:
         self,
         message_refs: List[Dict[str, str]],
         user_id: str,
-        batch_size: int = 10
+        batch_size: Optional[int] = None
     ) -> List[Dict[str, Any]]:
-        """Fetch full message details in parallel batches.
+        """Fetch full message details in parallel batches or sequentially.
 
         Args:
             message_refs: List of message references with 'id'
             user_id: Gmail user ID
-            batch_size: Number of messages to fetch in parallel
+            batch_size: Number of messages to fetch in parallel (uses instance default if None)
 
         Returns:
             List of parsed email dictionaries
         """
         emails = []
+        batch_size = batch_size or self.batch_size
 
-        # Process in batches to avoid overwhelming API
+        # Sequential processing (most reliable, slower)
+        if self.sequential_processing:
+            logger.info(f"Processing {len(message_refs)} messages sequentially")
+            for msg in message_refs:
+                if self.fetch_delay > 0:
+                    await asyncio.sleep(self.fetch_delay)
+                result = await self._fetch_single_message(msg['id'], user_id)
+                if result:
+                    emails.append(result)
+            return emails
+
+        # Parallel batch processing (faster, more SSL connections)
+        logger.info(f"Processing {len(message_refs)} messages in batches of {batch_size}")
         for i in range(0, len(message_refs), batch_size):
             batch = message_refs[i:i + batch_size]
 
@@ -259,6 +277,10 @@ class GmailService:
                     logger.warning(f"Failed to fetch message in batch: {result}")
                 elif result:
                     emails.append(result)
+
+            # Delay between batches to allow SSL connections to stabilize
+            if i + batch_size < len(message_refs) and self.batch_delay > 0:
+                await asyncio.sleep(self.batch_delay)
 
         return emails
 

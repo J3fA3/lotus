@@ -10,7 +10,7 @@ Processes emails in batches with error handling and retries.
 import asyncio
 import logging
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -32,6 +32,7 @@ class EmailPollingService:
         """Initialize email polling service."""
         self.poll_interval_minutes = int(os.getenv("GMAIL_POLL_INTERVAL_MINUTES", "20"))
         self.max_results = int(os.getenv("GMAIL_MAX_RESULTS", "50"))
+        self.initial_sync_days = int(os.getenv("GMAIL_INITIAL_SYNC_DAYS", "7"))  # Days to fetch on first sync
 
         self.gmail_service = None
         self.email_parser = None
@@ -139,7 +140,7 @@ class EmailPollingService:
         Returns:
             Dict with sync results
         """
-        start_time = datetime.utcnow()
+        start_time = datetime.now(timezone.utc)
 
         logger.info("Starting email sync...")
 
@@ -156,8 +157,24 @@ class EmailPollingService:
                 # Authenticate Gmail
                 await self.gmail_service.authenticate(user_id=1, db=db)
 
-                # Fetch unread/unprocessed emails
-                query = "is:unread -label:processed"
+                # Build incremental sync query (only fetch emails after last sync)
+                if self.last_sync_at:
+                    # Handle clock skew: ensure last_sync_at is not in the future
+                    now = datetime.now(timezone.utc)
+                    if self.last_sync_at > now:
+                        logger.warning(f"last_sync_at is in the future ({self.last_sync_at}), resetting to now - 1 hour")
+                        self.last_sync_at = now - timedelta(hours=1)
+                    
+                    # Fetch emails after last sync (1 hour buffer for safety)
+                    after_date = (self.last_sync_at - timedelta(hours=1)).strftime("%Y/%m/%d")
+                    query = f"in:inbox -label:processed after:{after_date}"
+                    logger.info(f"Incremental sync: fetching emails after {after_date}")
+                else:
+                    # First sync: fetch emails from last N days (configurable)
+                    after_date = (datetime.now(timezone.utc) - timedelta(days=self.initial_sync_days)).strftime("%Y/%m/%d")
+                    query = f"in:inbox -label:processed after:{after_date}"
+                    logger.info(f"Initial sync: fetching emails after {after_date} (last {self.initial_sync_days} days)")
+
                 gmail_messages = await self.gmail_service.get_recent_emails(
                     max_results=self.max_results,
                     query=query
@@ -173,6 +190,30 @@ class EmailPollingService:
                     try:
                         # Parse email
                         email_data = self.email_parser.parse_email(gmail_msg)
+
+                        # Validate email has ID
+                        if not email_data.id:
+                            logger.error(f"Email missing ID, skipping: {gmail_msg.get('id', 'unknown')}")
+                            errors.append("Email missing ID")
+                            continue
+
+                        # Database deduplication: skip if already processed
+                        from sqlalchemy import select
+                        result = await db.execute(
+                            select(EmailMessage).where(
+                                EmailMessage.gmail_message_id == email_data.id
+                            )
+                        )
+                        existing = result.scalar_one_or_none()
+
+                        if existing:
+                            logger.info(f"Email {email_data.id} already processed (at {existing.processed_at}), skipping")
+                            # Ensure Gmail label is applied even if it was missed before
+                            try:
+                                await self.gmail_service.mark_as_processed(email_data.id)
+                            except Exception as e:
+                                logger.warning(f"Failed to mark existing email as processed: {e}")
+                            continue
 
                         # Classify email
                         classification_result = await classify_email_content(
@@ -278,11 +319,21 @@ class EmailPollingService:
                         logger.error(f"Failed to process email {gmail_msg.get('id', 'unknown')}: {e}")
                         errors.append(str(e))
 
-                # Update tracking
-                self.last_sync_at = datetime.utcnow()
+                # Update tracking: only update last_sync_at if sync was mostly successful
+                # This prevents skipping emails if sync had too many errors
+                error_rate = len(errors) / len(gmail_messages) if gmail_messages else 0
+                if error_rate < 0.5:  # Less than 50% errors
+                    self.last_sync_at = datetime.now(timezone.utc)
+                    logger.info(f"Sync successful, updated last_sync_at (error rate: {error_rate*100:.1f}%)")
+                else:
+                    logger.warning(
+                        f"Sync had too many errors ({len(errors)}/{len(gmail_messages)}), "
+                        f"not updating last_sync_at to allow retry"
+                    )
+                
                 self.emails_processed += emails_processed
 
-                duration_ms = int((datetime.utcnow() - start_time).total_seconds() * 1000)
+                duration_ms = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
 
                 logger.info(
                     f"Email sync complete: {emails_processed} processed, "
@@ -443,7 +494,7 @@ class EmailPollingService:
             action_phrases=email_data.action_phrases,
             is_meeting_invite=email_data.is_meeting_invite,
             received_at=email_data.received_at,
-            processed_at=datetime.utcnow(),
+            processed_at=datetime.now(timezone.utc),
             classification=classification.action_type if classification else "unprocessed",
             classification_confidence=classification.confidence if classification else 0.0
         )
@@ -466,7 +517,7 @@ class EmailPollingService:
             return None
 
         next_sync = self.last_sync_at + timedelta(minutes=self.poll_interval_minutes)
-        delta = next_sync - datetime.utcnow()
+        delta = next_sync - datetime.now(timezone.utc)
 
         minutes = int(delta.total_seconds() / 60)
         return max(0, minutes)
