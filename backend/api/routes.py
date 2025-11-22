@@ -106,19 +106,20 @@ async def health_check():
 @router.get("/tasks", response_model=List[TaskSchema])
 async def get_tasks(
     db: AsyncSession = Depends(get_db),
-    limit: int = 20,
+    limit: int = 1000,
     offset: int = 0,
 ) -> List[TaskSchema]:
-    """Get tasks with pagination (default limit 20)."""
+    """Get tasks with pagination (default limit 1000)."""
     # Enforce maximum limit to protect the server
-    if limit > 200:
-        limit = 200
+    if limit > 1000:
+        limit = 1000
     try:
         # Add timeout to prevent indefinite hanging (8 seconds, leaving 2s buffer for frontend timeout)
         result = await asyncio.wait_for(
             db.execute(
                 select(Task)
                 .options(selectinload(Task.comments), selectinload(Task.attachments))
+                .order_by(Task.created_at.desc())
                 .limit(limit)
                 .offset(offset)
             ),
