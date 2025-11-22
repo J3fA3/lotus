@@ -392,11 +392,20 @@ class EmailPollingService:
             Email message ID
         """
         # Get or create email account
-        from sqlalchemy import select
+        from sqlalchemy import select, or_, is_
 
-        account_query = select(EmailAccount).where(
-            EmailAccount.email_address == email_data.to or email_data.recipient_to
-        )
+        # Build OR condition for email address matching
+        conditions = []
+        if email_data.to:
+            conditions.append(EmailAccount.email_address == email_data.to)
+        if email_data.recipient_to:
+            conditions.append(EmailAccount.email_address == email_data.recipient_to)
+        
+        if conditions:
+            account_query = select(EmailAccount).where(or_(*conditions))
+        else:
+            # Fallback: no email address to match, use a condition that won't match
+            account_query = select(EmailAccount).where(is_(EmailAccount.email_address, None))
         result = await db.execute(account_query)
         account = result.scalar_one_or_none()
 

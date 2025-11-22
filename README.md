@@ -19,6 +19,23 @@ Your personal AI task manager powered by Gemini 2.0 Flash and local LLMs:
 - **Natural comments** - No more robot emojis, just helpful context
 - **Fast & affordable** - 2-3x faster, $8/mo → $0.18/mo with Gemini
 
+### 📅 **Calendar Integration** - Phase 4
+Intelligent calendar synchronization and smart scheduling:
+- **Google Calendar sync** - Automatic event synchronization
+- **Availability analysis** - Smart scheduling based on your calendar
+- **Meeting preparation** - AI-powered meeting prep from calendar events
+- **Timezone-aware** - Handles all timezones correctly
+- **Smart blocking** - Identifies blocking events automatically
+
+### 📧 **Gmail Integration** - Phase 5
+Email-powered task management:
+- **Gmail OAuth** - Secure Google account connection
+- **Email parsing** - Intelligent email content extraction
+- **Email classification** - Automatically categorizes emails (task, FYI, question, meeting)
+- **Email-to-task** - Creates tasks directly from emails
+- **Email-to-calendar** - Converts meeting invites to calendar events
+- **Thread consolidation** - Groups related emails intelligently
+
 ### 🧠 **Cognitive Nexus** - Multi-Agent AI System
 4-agent LangGraph pipeline for intelligent context processing:
 - **Context Analysis** - Determines complexity and extraction strategy
@@ -212,6 +229,9 @@ User: "Alberto asked about pinning position 3 for pharmacies in Spain"
 - **[Development Guide](./docs/development/DEVELOPMENT_GUIDE.md)** - Architecture & workflow
 - **[Phase 3 Guide](./docs/development/PHASE3_GUIDE.md)** - Phase 3 improvements
 - **[Phase 4 Guide](./docs/development/PHASE4_GUIDE.md)** - Calendar integration & scheduling
+- **[Phase 5 Guide](./docs/PHASE5_GMAIL_SETUP.md)** - Gmail integration & OAuth setup
+- **[Code Quality Refactoring](./docs/development/CODE_QUALITY_REFACTORING.md)** - Production readiness improvements
+- **[Production Readiness](./docs/development/PRODUCTION_READINESS.md)** - Current production status
 - **[API Reference](./docs/api/API_REFERENCE.md)** - Complete endpoint docs
 - **[Project Structure](./docs/PROJECT_STRUCTURE.md)** - File organization
 
