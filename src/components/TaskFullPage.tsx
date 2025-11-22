@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Task, Comment } from "@/types/task";
 import { Input } from "./ui/input";
 import { Textarea } from "./ui/textarea";
@@ -38,14 +38,21 @@ export const TaskFullPage = ({
   const [newComment, setNewComment] = useState("");
   const [newAttachment, setNewAttachment] = useState("");
 
+  // Track last update timestamp to prevent feedback loops
+  const lastExternalUpdateRef = useRef<string>("");
+
   // Update editedTask when the task prop changes
   useEffect(() => {
-    setEditedTask({
-      ...task,
-      comments: task.comments || [],
-      attachments: task.attachments || [],
-    });
-  }, [task]);
+    // Only update if the timestamp actually changed (prevents feedback loop)
+    if (task.updatedAt && task.updatedAt !== lastExternalUpdateRef.current) {
+      lastExternalUpdateRef.current = task.updatedAt;
+      setEditedTask({
+        ...task,
+        comments: task.comments || [],
+        attachments: task.attachments || [],
+      });
+    }
+  }, [task.updatedAt]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -61,15 +68,15 @@ export const TaskFullPage = ({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [onClose]);
 
-  const handleUpdate = (updates: Partial<Task>) => {
-    const updated = { 
-      ...editedTask, 
-      ...updates, 
-      updatedAt: new Date().toISOString() 
+  const handleUpdate = useCallback((updates: Partial<Task>) => {
+    const updated = {
+      ...editedTask,
+      ...updates,
+      updatedAt: new Date().toISOString()
     };
     setEditedTask(updated);
     onUpdate(updated);
-  };
+  }, [editedTask, onUpdate]);
 
   const handleAddComment = () => {
     const trimmedComment = newComment.trim();
@@ -166,7 +173,7 @@ export const TaskFullPage = ({
                 value={editedTask.status}
                 onValueChange={(value) => handleUpdate({ status: value as Task["status"] })}
               >
-                <SelectTrigger className="h-11 border-border/50 focus:border-primary/50 transition-all">
+                <SelectTrigger className="h-11 border-border/50 focus:border-primary/50 transition-[border-color] duration-150">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -197,7 +204,7 @@ export const TaskFullPage = ({
               <Input
                 value={editedTask.assignee}
                 onChange={(e) => handleUpdate({ assignee: e.target.value })}
-                className="h-11 border-border/50 focus:border-primary/50 transition-all"
+                className="h-11 border-border/50 focus:border-primary/50 transition-[border-color] duration-150"
               />
             </div>
           </div>
@@ -213,7 +220,7 @@ export const TaskFullPage = ({
                 type="date"
                 value={editedTask.startDate || ""}
                 onChange={(e) => handleUpdate({ startDate: e.target.value })}
-                className="h-11 border-border/50 focus:border-primary/50 transition-all"
+                className="h-11 border-border/50 focus:border-primary/50 transition-[border-color] duration-150"
               />
             </div>
 
@@ -226,7 +233,7 @@ export const TaskFullPage = ({
                 type="date"
                 value={editedTask.dueDate || ""}
                 onChange={(e) => handleUpdate({ dueDate: e.target.value })}
-                className="h-11 border-border/50 focus:border-primary/50 transition-all"
+                className="h-11 border-border/50 focus:border-primary/50 transition-[border-color] duration-150"
               />
             </div>
           </div>
@@ -255,12 +262,12 @@ export const TaskFullPage = ({
                 value={newAttachment}
                 onChange={(e) => setNewAttachment(e.target.value)}
                 placeholder="Paste attachment URL..."
-                className="h-11 border-border/50 focus:border-primary/50 transition-all"
+                className="h-11 border-border/50 focus:border-primary/50 transition-[border-color] duration-150"
               />
-              <Button 
-                onClick={handleAddAttachment} 
+              <Button
+                onClick={handleAddAttachment}
                 size="sm"
-                className="h-11 px-6 bg-primary hover:bg-primary/90 transition-all"
+                className="h-11 px-6 bg-primary hover:bg-primary/90 transition-colors duration-150"
               >
                 Add
               </Button>
@@ -270,14 +277,14 @@ export const TaskFullPage = ({
                 {editedTask.attachments.map((attachment, index) => (
                   <div
                     key={index}
-                    className="flex items-center justify-between p-3 bg-muted/30 rounded-lg border border-border/20 group hover:border-border/40 transition-all"
+                    className="flex items-center justify-between p-3 bg-muted/30 rounded-lg border border-border/20 group hover:border-border/40 transition-[border-color] duration-150"
                   >
                     <span className="text-sm truncate text-muted-foreground">{attachment}</span>
                     <Button
                       variant="ghost"
                       size="icon"
                       onClick={() => handleRemoveAttachment(index)}
-                      className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-all"
+                      className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity duration-150"
                     >
                       <X className="h-4 w-4" />
                     </Button>

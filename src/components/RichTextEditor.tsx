@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { useEditor, EditorContent, Editor, Extension } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { Table } from '@tiptap/extension-table';
@@ -332,6 +332,10 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
   className = '',
   autoFocus = false,
 }) => {
+  // Track if we're currently updating from user input to prevent feedback loops
+  const isLocalUpdateRef = useRef(false);
+  const previousContentRef = useRef(content);
+
   const extensions = [
     StarterKit.configure({
       codeBlock: false, // We'll use CodeBlockLowlight instead
@@ -427,34 +431,55 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
     },
     onUpdate: ({ editor }) => {
       const html = editor.getHTML();
+      // Mark that this is a local update from user typing
+      isLocalUpdateRef.current = true;
+      previousContentRef.current = html;
       onChange?.(html);
     },
     autofocus: autoFocus,
   });
 
+  // Only sync content when it's an external change (not from user typing)
   useEffect(() => {
-    if (editor && content !== editor.getHTML()) {
-      editor.commands.setContent(content);
+    if (!editor) return;
+
+    // If this is a local update (from user typing), don't sync
+    if (isLocalUpdateRef.current) {
+      isLocalUpdateRef.current = false;
+      return;
+    }
+
+    // Only update if content actually changed from an external source
+    const currentContent = editor.getHTML();
+    if (content !== currentContent && content !== previousContentRef.current) {
+      previousContentRef.current = content;
+      editor.commands.setContent(content, false); // false = don't emit update event
     }
   }, [content, editor]);
 
   const variantClass = variant === 'full' ? 'full-featured' : variant === 'title' ? 'title' : 'minimal';
   const [showTableMenu, setShowTableMenu] = useState(false);
 
-  // Check if we're in a table
+  // Check if we're in a table - optimized to only update when actually changes
   useEffect(() => {
     if (!editor) return;
 
     const updateTableState = () => {
-      setShowTableMenu(editor.isActive('table'));
+      const isInTable = editor.isActive('table');
+      // Only update state if it actually changed
+      setShowTableMenu(prev => {
+        if (prev !== isInTable) {
+          return isInTable;
+        }
+        return prev;
+      });
     };
 
+    // Only listen to selection updates (less frequent than transaction)
     editor.on('selectionUpdate', updateTableState);
-    editor.on('transaction', updateTableState);
 
     return () => {
       editor.off('selectionUpdate', updateTableState);
-      editor.off('transaction', updateTableState);
     };
   }, [editor]);
 
