@@ -56,6 +56,9 @@ from agents.knowledge_base import KnowledgeBase
 from api.context_routes import router as context_router
 from api.knowledge_routes import router as knowledge_router
 
+# Import Phase 6 routers
+from api.kg_lifecycle_routes import router as kg_lifecycle_router
+
 # Import Document-Cognitive Nexus Integration
 from services.document_cognitive_integration import DocumentCognitiveIntegration
 
@@ -67,6 +70,9 @@ router = APIRouter()
 # Include Cognitive Nexus routes
 router.include_router(context_router)
 router.include_router(knowledge_router)
+
+# Include Phase 6 routes
+router.include_router(kg_lifecycle_router)
 
 # Initialize AI components
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
