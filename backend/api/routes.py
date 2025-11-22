@@ -1541,24 +1541,44 @@ def _shortcut_to_dict(shortcut: ShortcutConfig) -> dict:
 
 
 async def seed_default_shortcuts(db: AsyncSession):
-    """Seed database with default shortcuts"""
+    """Seed database with default shortcuts (updates existing or inserts new)"""
     defaults = get_default_shortcuts()
 
     for shortcut_data in defaults:
-        shortcut = ShortcutConfig(
-            id=shortcut_data["id"],
-            category=shortcut_data["category"],
-            action=shortcut_data["action"],
-            key=shortcut_data["key"],
-            modifiers=shortcut_data["modifiers"],
-            enabled=shortcut_data["enabled"],
-            description=shortcut_data["description"],
-            user_id=None,
-            is_default=True,
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow()
+        # Check if shortcut already exists
+        result = await db.execute(
+            select(ShortcutConfig).where(
+                ShortcutConfig.id == shortcut_data["id"],
+                ShortcutConfig.user_id == None
+            )
         )
-        db.add(shortcut)
+        existing = result.scalar_one_or_none()
+
+        if existing:
+            # Update existing shortcut
+            existing.category = shortcut_data["category"]
+            existing.action = shortcut_data["action"]
+            existing.key = shortcut_data["key"]
+            existing.modifiers = shortcut_data["modifiers"]
+            existing.enabled = shortcut_data["enabled"]
+            existing.description = shortcut_data["description"]
+            existing.updated_at = datetime.utcnow()
+        else:
+            # Insert new shortcut
+            shortcut = ShortcutConfig(
+                id=shortcut_data["id"],
+                category=shortcut_data["category"],
+                action=shortcut_data["action"],
+                key=shortcut_data["key"],
+                modifiers=shortcut_data["modifiers"],
+                enabled=shortcut_data["enabled"],
+                description=shortcut_data["description"],
+                user_id=None,
+                is_default=True,
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow()
+            )
+            db.add(shortcut)
 
     await db.commit()
 

@@ -240,8 +240,20 @@ export const KanbanBoard = () => {
 
   useRegisterShortcut('last_task', () => {
     const columnTasks = getColumnTasks(focusedColumn);
-    setFocusedTaskIndex(Math.max(0, columnTasks.length - 1));
+    const lastIndex = Math.max(0, columnTasks.length - 1);
+    setFocusedTaskIndex(lastIndex);
     setNavigationMode(true);
+
+    // Scroll to the last task
+    setTimeout(() => {
+      const lastTask = columnTasks[lastIndex];
+      if (lastTask) {
+        const taskElement = document.querySelector(`[data-task-id="${lastTask.id}"]`);
+        if (taskElement) {
+          taskElement.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+      }
+    }, 50);
   });
 
   // Task actions
@@ -560,9 +572,31 @@ export const KanbanBoard = () => {
               <h3 className="text-sm font-semibold text-foreground uppercase tracking-wider">
                 Keyboard Shortcuts
               </h3>
-              <span className="text-xs text-muted-foreground">
-                Click any shortcut to edit
-              </span>
+              <div className="flex items-center gap-3">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={async () => {
+                    if (confirm("Reset all shortcuts to defaults? This will reload the page.")) {
+                      try {
+                        const { resetShortcuts } = await import("@/api/shortcuts");
+                        await resetShortcuts();
+                        toast.success("Shortcuts reset to defaults");
+                        setTimeout(() => window.location.reload(), 500);
+                      } catch (error) {
+                        toast.error("Failed to reset shortcuts");
+                        console.error(error);
+                      }
+                    }
+                  }}
+                  className="text-xs"
+                >
+                  Reset to Defaults
+                </Button>
+                <span className="text-xs text-muted-foreground">
+                  Click any shortcut to edit
+                </span>
+              </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
               {/* Global Shortcuts */}
