@@ -308,3 +308,38 @@ class QuestionAnswerRequest(BaseModel):
 class QuestionSnoozeRequest(BaseModel):
     """Request to snooze a question"""
     snooze_hours: int = 24
+
+
+class QuestionBatchSchema(BaseModel):
+    """Schema for question batch"""
+    id: str
+    batch_type: str
+    semantic_cluster: Optional[str]
+    question_count: int
+    question_ids: List[int]
+    task_ids: List[str]
+    shown_to_user: bool
+    shown_at: Optional[str]
+    completed: bool
+    completed_at: Optional[str]
+    answered_count: int
+    dismissed_count: int
+    snoozed_count: int
+    created_at: str
+
+    class Config:
+        from_attributes = True
+
+
+class QuestionBatchWithQuestions(BaseModel):
+    """Batch with full question objects"""
+    batch: QuestionBatchSchema
+    questions: List[QuestionSchema]
+
+
+class BatchProcessResponse(BaseModel):
+    """Response from batch processing"""
+    batches_created: int
+    questions_woken: int
+    processed_at: str
+    error: Optional[str] = None

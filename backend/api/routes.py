@@ -46,7 +46,10 @@ from api.schemas import (
     QuestionSchema,
     QuestionListResponse,
     QuestionAnswerRequest,
-    QuestionSnoozeRequest
+    QuestionSnoozeRequest,
+    QuestionBatchSchema,
+    QuestionBatchWithQuestions,
+    BatchProcessResponse
 )
 from db.database import get_db
 from db.models import Task, Comment, Attachment, InferenceHistory, ShortcutConfig, Document, ValueStream
@@ -787,6 +790,236 @@ async def snooze_question(
     except Exception as e:
         print(f"Error snoozing question {question_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to snooze question: {str(e)}")
+
+
+# ============================================================================
+# QUESTION BATCHING ENDPOINTS (Phase 6 Stage 4)
+# ============================================================================
+
+@router.get("/questions/batches/ready", response_model=List[QuestionBatchWithQuestions])
+async def get_ready_batches(
+    limit: int = Query(default=10, ge=1, le=50),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get batches of questions ready to be shown.
+
+    Each batch contains related questions grouped for minimal interruption.
+    """
+    try:
+        from services.question_batching_service import get_question_batching_service
+
+        service = await get_question_batching_service(db)
+        batches = await service.get_ready_batches(limit=limit)
+
+        # Fetch questions for each batch
+        result = []
+        for batch in batches:
+            questions = await service.get_batch_questions(batch.id)
+
+            # Convert to schemas
+            question_schemas = []
+            for q in questions:
+                question_schemas.append(QuestionSchema(
+                    id=q.id,
+                    task_id=q.task_id,
+                    field_name=q.field_name,
+                    question=q.question,
+                    suggested_answer=q.suggested_answer,
+                    importance=q.importance,
+                    confidence=q.confidence,
+                    priority_score=q.priority_score,
+                    status=q.status,
+                    created_at=q.created_at.isoformat(),
+                    ready_at=q.ready_at.isoformat() if q.ready_at else None,
+                    shown_at=q.shown_at.isoformat() if q.shown_at else None,
+                    answered_at=q.answered_at.isoformat() if q.answered_at else None,
+                    answer=q.answer,
+                    answer_source=q.answer_source,
+                    answer_applied=q.answer_applied,
+                    user_feedback=q.user_feedback,
+                    semantic_cluster=q.semantic_cluster
+                ))
+
+            batch_schema = QuestionBatchSchema(
+                id=batch.id,
+                batch_type=batch.batch_type,
+                semantic_cluster=batch.semantic_cluster,
+                question_count=batch.question_count,
+                question_ids=batch.question_ids,
+                task_ids=batch.task_ids,
+                shown_to_user=batch.shown_to_user,
+                shown_at=batch.shown_at.isoformat() if batch.shown_at else None,
+                completed=batch.completed,
+                completed_at=batch.completed_at.isoformat() if batch.completed_at else None,
+                answered_count=batch.answered_count,
+                dismissed_count=batch.dismissed_count,
+                snoozed_count=batch.snoozed_count,
+                created_at=batch.created_at.isoformat()
+            )
+
+            result.append(QuestionBatchWithQuestions(
+                batch=batch_schema,
+                questions=question_schemas
+            ))
+
+        return result
+
+    except Exception as e:
+        print(f"Error fetching ready batches: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch batches: {str(e)}")
+
+
+@router.get("/questions/batches/{batch_id}", response_model=QuestionBatchWithQuestions)
+async def get_batch(
+    batch_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get a specific batch with its questions.
+    """
+    try:
+        from services.question_batching_service import get_question_batching_service
+
+        service = await get_question_batching_service(db)
+        batch = await service.get_batch(batch_id)
+
+        if not batch:
+            raise HTTPException(status_code=404, detail="Batch not found")
+
+        questions = await service.get_batch_questions(batch_id)
+
+        # Convert to schemas
+        question_schemas = []
+        for q in questions:
+            question_schemas.append(QuestionSchema(
+                id=q.id,
+                task_id=q.task_id,
+                field_name=q.field_name,
+                question=q.question,
+                suggested_answer=q.suggested_answer,
+                importance=q.importance,
+                confidence=q.confidence,
+                priority_score=q.priority_score,
+                status=q.status,
+                created_at=q.created_at.isoformat(),
+                ready_at=q.ready_at.isoformat() if q.ready_at else None,
+                shown_at=q.shown_at.isoformat() if q.shown_at else None,
+                answered_at=q.answered_at.isoformat() if q.answered_at else None,
+                answer=q.answer,
+                answer_source=q.answer_source,
+                answer_applied=q.answer_applied,
+                user_feedback=q.user_feedback,
+                semantic_cluster=q.semantic_cluster
+            ))
+
+        batch_schema = QuestionBatchSchema(
+            id=batch.id,
+            batch_type=batch.batch_type,
+            semantic_cluster=batch.semantic_cluster,
+            question_count=batch.question_count,
+            question_ids=batch.question_ids,
+            task_ids=batch.task_ids,
+            shown_to_user=batch.shown_to_user,
+            shown_at=batch.shown_at.isoformat() if batch.shown_at else None,
+            completed=batch.completed,
+            completed_at=batch.completed_at.isoformat() if batch.completed_at else None,
+            answered_count=batch.answered_count,
+            dismissed_count=batch.dismissed_count,
+            snoozed_count=batch.snoozed_count,
+            created_at=batch.created_at.isoformat()
+        )
+
+        return QuestionBatchWithQuestions(
+            batch=batch_schema,
+            questions=question_schemas
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error fetching batch {batch_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch batch: {str(e)}")
+
+
+@router.post("/questions/batches/process", response_model=BatchProcessResponse)
+async def process_batches(
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Process batches (background job endpoint).
+
+    Creates batches from queued questions and wakes snoozed questions.
+    Can be called periodically via cron or manually.
+    """
+    try:
+        from services.question_batching_service import get_question_batching_service
+
+        service = await get_question_batching_service(db)
+        stats = await service.process_batches_background()
+
+        return BatchProcessResponse(**stats)
+
+    except Exception as e:
+        print(f"Error processing batches: {e}")
+        return BatchProcessResponse(
+            batches_created=0,
+            questions_woken=0,
+            processed_at=datetime.utcnow().isoformat(),
+            error=str(e)
+        )
+
+
+@router.post("/questions/batches/{batch_id}/shown")
+async def mark_batch_shown(
+    batch_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Mark batch as shown to user.
+    """
+    try:
+        from services.question_batching_service import get_question_batching_service
+
+        service = await get_question_batching_service(db)
+        success = await service.mark_batch_shown(batch_id)
+
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to mark batch as shown")
+
+        return {"status": "shown", "batch_id": batch_id}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error marking batch {batch_id} as shown: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to mark batch as shown: {str(e)}")
+
+
+@router.post("/questions/batches/{batch_id}/completed")
+async def mark_batch_completed(
+    batch_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Mark batch as completed.
+    """
+    try:
+        from services.question_batching_service import get_question_batching_service
+
+        service = await get_question_batching_service(db)
+        success = await service.mark_batch_completed(batch_id)
+
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to mark batch as completed")
+
+        return {"status": "completed", "batch_id": batch_id}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error marking batch {batch_id} as completed: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to mark batch as completed: {str(e)}")
 
 
 @router.delete("/tasks/{task_id}")
