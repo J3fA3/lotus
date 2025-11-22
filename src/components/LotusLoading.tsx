@@ -45,13 +45,13 @@ export const LotusLoading: React.FC<LotusLoadingProps> = ({
         </defs>
 
         {/* Rotating lotus flower group - centered */}
-        <g className="lotus-flower" transform="translate(60, 60)">
+        <g className="lotus-flower">
 
           {/* Outer petals - 8 large, bold petals */}
           {[0, 45, 90, 135, 180, 225, 270, 315].map((angle, i) => (
-            <g key={`outer-${i}`} transform={`rotate(${angle})`}>
+            <g key={`outer-${i}`} transform={`rotate(${angle} 60 60)`}>
               <path
-                d="M 0,0 Q -5,-10 -6,-22 Q -4,-26 0,-28 Q 4,-26 6,-22 Q 5,-10 0,0 Z"
+                d="M 60,60 Q 55,50 54,38 Q 56,34 60,32 Q 64,34 66,38 Q 65,50 60,60 Z"
                 fill={`url(#lotus-petal-outer-${size})`}
                 stroke="hsl(var(--lotus-green-dark))"
                 strokeWidth="0.8"
@@ -63,9 +63,9 @@ export const LotusLoading: React.FC<LotusLoadingProps> = ({
 
           {/* Inner petals - 5 smaller petals */}
           {[0, 72, 144, 216, 288].map((angle, i) => (
-            <g key={`inner-${i}`} transform={`rotate(${angle})`}>
+            <g key={`inner-${i}`} transform={`rotate(${angle} 60 60)`}>
               <path
-                d="M 0,0 Q -3,-6 -4,-14 Q -2,-16 0,-18 Q 2,-16 4,-14 Q 3,-6 0,0 Z"
+                d="M 60,60 Q 57,54 56,46 Q 58,44 60,42 Q 62,44 64,46 Q 63,54 60,60 Z"
                 fill={`url(#lotus-petal-inner-${size})`}
                 stroke="hsl(var(--lotus-green-medium))"
                 strokeWidth="0.5"
@@ -77,8 +77,8 @@ export const LotusLoading: React.FC<LotusLoadingProps> = ({
 
           {/* Center circle */}
           <circle
-            cx="0"
-            cy="0"
+            cx="60"
+            cy="60"
             r="6"
             fill={`url(#lotus-center-${size})`}
             className="lotus-center-dot"
@@ -86,8 +86,8 @@ export const LotusLoading: React.FC<LotusLoadingProps> = ({
 
           {/* Inner center details */}
           <circle
-            cx="0"
-            cy="0"
+            cx="60"
+            cy="60"
             r="3"
             fill="hsl(var(--lotus-green-dark))"
             opacity="0.6"
@@ -104,7 +104,7 @@ export const LotusLoading: React.FC<LotusLoadingProps> = ({
         /* Main lotus flower rotation - spins in place like floating on water */
         .lotus-flower {
           animation: lotusRotate 4s linear infinite;
-          transform-origin: center center;
+          transform-origin: 60px 60px;
         }
 
         /* Outer petals - subtle pulse */
