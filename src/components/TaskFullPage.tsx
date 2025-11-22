@@ -109,16 +109,10 @@ export const TaskFullPage = ({
     }, 300);
   });
 
-  useRegisterShortcut('tab_next_section', () => {
+  useRegisterShortcut('tab_section', () => {
     const nextIndex = (currentSectionIndex + 1) % sections.length;
     setCurrentSectionIndex(nextIndex);
     focusSection(nextIndex);
-  });
-
-  useRegisterShortcut('tab_prev_section', () => {
-    const prevIndex = (currentSectionIndex - 1 + sections.length) % sections.length;
-    setCurrentSectionIndex(prevIndex);
-    focusSection(prevIndex);
   });
 
   const handleUpdate = useCallback((updates: Partial<Task>) => {
@@ -445,7 +439,7 @@ export const TaskFullPage = ({
                 variant="full"
               />
             </div>
-            <span className="text-xs text-muted-foreground">Cmd/Ctrl+D to focus notes • Alt+Tab to cycle through sections • Full formatting available: headings, tables, code blocks, and Word Art!</span>
+            <span className="text-xs text-muted-foreground">Ctrl+D to focus notes • Ctrl+Tab to cycle through sections • Full formatting available: headings, tables, code blocks, and Word Art!</span>
           </div>
         </div>
       </div>

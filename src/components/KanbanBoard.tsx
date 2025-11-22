@@ -42,6 +42,7 @@ export const KanbanBoard = () => {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isFullPageOpen, setIsFullPageOpen] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
+  const [wasExpandedBeforeFullscreen, setWasExpandedBeforeFullscreen] = useState(false);
   const [draggedTask, setDraggedTask] = useState<Task | null>(null);
   const [quickAddColumn, setQuickAddColumn] = useState<TaskStatus | null>(null);
   const [showShortcuts, setShowShortcuts] = useState(false);
@@ -237,11 +238,6 @@ export const KanbanBoard = () => {
     setNavigationMode(true);
   });
 
-  useRegisterShortcut('first_task', () => {
-    setFocusedTaskIndex(0);
-    setNavigationMode(true);
-  });
-
   useRegisterShortcut('last_task', () => {
     const columnTasks = getColumnTasks(focusedColumn);
     setFocusedTaskIndex(Math.max(0, columnTasks.length - 1));
@@ -312,27 +308,28 @@ export const KanbanBoard = () => {
     toast.success(isLotusOpen ? "Lotus closed" : "Lotus opened", { duration: TOAST_DURATION.SHORT });
   });
 
-  // View mode shortcuts - cycle through peek → expanded → fullscreen → peek
-  useRegisterShortcut('toggle_view_mode', () => {
+  // View mode shortcuts - separate peek/expanded toggle and fullscreen toggle
+  useRegisterShortcut('toggle_peek_expanded', () => {
+    if (isDialogOpen && selectedTask) {
+      setIsExpanded(!isExpanded);
+      toast.success(isExpanded ? "Peek mode" : "Expanded view", { duration: TOAST_DURATION.SHORT });
+    }
+  });
+
+  useRegisterShortcut('toggle_fullscreen', () => {
     if (selectedTask) {
       if (isFullPageOpen) {
-        // Fullscreen → Peek
+        // Exit fullscreen - restore previous view
         setIsFullPageOpen(false);
         setIsDialogOpen(true);
-        setIsExpanded(false);
-        toast.success("Peek mode", { duration: TOAST_DURATION.SHORT });
+        setIsExpanded(wasExpandedBeforeFullscreen);
+        toast.success(wasExpandedBeforeFullscreen ? "Expanded view" : "Peek mode", { duration: TOAST_DURATION.SHORT });
       } else if (isDialogOpen) {
-        if (!isExpanded) {
-          // Peek → Expanded
-          setIsExpanded(true);
-          toast.success("Expanded view", { duration: TOAST_DURATION.SHORT });
-        } else {
-          // Expanded → Fullscreen
-          setIsDialogOpen(false);
-          setIsFullPageOpen(true);
-          setIsExpanded(false);
-          toast.success("Full screen view", { duration: TOAST_DURATION.SHORT });
-        }
+        // Enter fullscreen - remember current view
+        setWasExpandedBeforeFullscreen(isExpanded);
+        setIsDialogOpen(false);
+        setIsFullPageOpen(true);
+        toast.success("Full screen view", { duration: TOAST_DURATION.SHORT });
       }
     }
   });

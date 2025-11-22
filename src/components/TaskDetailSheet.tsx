@@ -163,19 +163,11 @@ export const TaskDetailSheet = ({
     }
   });
 
-  useRegisterShortcut('tab_next_section', () => {
+  useRegisterShortcut('tab_section', () => {
     if (open) {
       const nextIndex = (currentSectionIndex + 1) % sections.length;
       setCurrentSectionIndex(nextIndex);
       focusSection(nextIndex);
-    }
-  });
-
-  useRegisterShortcut('tab_prev_section', () => {
-    if (open) {
-      const prevIndex = (currentSectionIndex - 1 + sections.length) % sections.length;
-      setCurrentSectionIndex(prevIndex);
-      focusSection(prevIndex);
     }
   });
 
@@ -704,7 +696,7 @@ export const TaskDetailSheet = ({
                 variant="full"
               />
             </div>
-            <span className="text-xs text-muted-foreground">Cmd/Ctrl+D to focus notes • Alt+Tab to cycle through sections • Full formatting available: headings, tables, code blocks, and Word Art!</span>
+            <span className="text-xs text-muted-foreground">Ctrl+D to focus notes • Ctrl+Tab to cycle through sections • Full formatting available: headings, tables, code blocks, and Word Art!</span>
           </div>
             </div>
           )}
