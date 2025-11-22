@@ -18,13 +18,16 @@ import json
 # CACHE CONFIGURATION
 # ============================================================================
 
+# Import OS for env var configuration (Phase 5)
+import os
+
 # Cache sizes
 ENTITY_CACHE_SIZE = 500
 RELATIONSHIP_CACHE_SIZE = 500
 TASK_MATCH_CACHE_SIZE = 200
 
-# Cache TTL (time-to-live)
-CACHE_TTL_SECONDS = 300  # 5 minutes
+# Cache TTL (time-to-live) - configurable via env var (Phase 5)
+CACHE_TTL_SECONDS = int(os.getenv("KG_CACHE_TTL_SECONDS", "60"))  # Default 60s (Phase 5)
 
 
 # ============================================================================

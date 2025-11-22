@@ -39,6 +39,9 @@ Start here if you're new to Task Crate:
 
 #### Advanced Topics
 - **[Phase 4 Guide](./development/PHASE4_GUIDE.md)** - Calendar integration & smart scheduling
+- **[Phase 5 Guide](./PHASE5_GMAIL_SETUP.md)** - Gmail integration & OAuth setup
+- **[Code Quality Refactoring](./development/CODE_QUALITY_REFACTORING.md)** - Production readiness improvements
+- **[Production Readiness](./development/PRODUCTION_READINESS.md)** - Current production status
 - **[Performance Optimization](./development/PERFORMANCE.md)** - Caching and speed
 - **[Testing Guide](./development/TESTING.md)** - Test strategy and examples
 - **[Deployment](./development/DEPLOYMENT.md)** - Production deployment guide
@@ -114,6 +117,7 @@ docs/
 - **Knowledge graph explained** → [Knowledge Graph](./architecture/KNOWLEDGE_GRAPH.md)
 - **Phase 3 improvements** → [Lotus Assistant](./guides/LOTUS_ASSISTANT.md)
 - **Phase 4 calendar integration** → [Phase 4 Guide](./development/PHASE4_GUIDE.md)
+- **Phase 5 Gmail integration** → [Phase 5 Guide](./PHASE5_GMAIL_SETUP.md)
 
 #### Troubleshoot
 - **App not working** → [Troubleshooting](./guides/TROUBLESHOOTING.md)
