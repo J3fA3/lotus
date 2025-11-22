@@ -38,6 +38,48 @@ interface TaskSchedulerProps {
 }
 
 /**
+ * Helper: Check if a comment is a cancellation comment
+ */
+function isCancellationComment(comment: Comment): boolean {
+  return (
+    comment.author === "Lotus" &&
+    comment.text.includes("❌") &&
+    (comment.text.includes("cancelled") || comment.text.includes("You cancelled"))
+  );
+}
+
+/**
+ * Helper: Check if a comment is a scheduling comment
+ */
+function isSchedulingComment(comment: Comment): boolean {
+  return comment.author === "Lotus" && comment.text.includes("⏰ Time blocked:");
+}
+
+/**
+ * Helper: Find most recent cancellation comment timestamp
+ */
+function getMostRecentCancellationTime(comments: Comment[]): number | null {
+  const cancellationComments = comments
+    .filter(isCancellationComment)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  
+  return cancellationComments.length > 0
+    ? new Date(cancellationComments[0].createdAt).getTime()
+    : null;
+}
+
+/**
+ * Helper: Find most recent scheduling comment
+ */
+function getMostRecentSchedulingComment(comments: Comment[]): Comment | null {
+  const schedulingComments = comments
+    .filter(isSchedulingComment)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  
+  return schedulingComments.length > 0 ? schedulingComments[0] : null;
+}
+
+/**
  * Parse scheduling comment to extract block information
  * Format: "⏰ Time blocked: Friday, November 28 at 02:30 PM - 03:00 PM (30 minutes) I've added this to your calendar as '🪷 Katie Data Deep Dive'. Quality score: 85/100 (Great time for this task)"
  */
@@ -145,95 +187,87 @@ export const TaskScheduler = ({ taskId, taskTitle, comments = [], onScheduled }:
 
   // Clear optimistic state if comments no longer contain scheduling comments or if cancelled
   useEffect(() => {
-    if (optimisticScheduledBlock) {
-      const hasSchedulingComment = comments?.some(
-        c => c.author === "Lotus" && c.text.includes("⏰ Time blocked:")
-      );
-      const hasCancellation = comments?.some(
-        c => c.author === "Lotus" && c.text.includes("❌ Scheduled block cancelled")
-      );
-      
-      if (!hasSchedulingComment || hasCancellation) {
-        // Comments were cleared, scheduling comment was removed, or task was cancelled
-        setOptimisticScheduledBlock(null);
-      }
+    if (!optimisticScheduledBlock || !comments) return;
+
+    const hasSchedulingComment = comments.some(isSchedulingComment);
+    const hasCancellation = comments.some(isCancellationComment);
+    
+    if (!hasSchedulingComment || hasCancellation) {
+      setOptimisticScheduledBlock(null);
     }
   }, [comments, optimisticScheduledBlock]);
 
   // Check for cancellation comments and update cancelled state
+  // This helps with immediate UI feedback, but scheduledBlock useMemo is the source of truth
   useEffect(() => {
     if (!comments || comments.length === 0) {
       setIsCancelled(false);
       return;
     }
 
-    // Check if there's any cancellation comment
-    const hasCancellation = comments.some(
-      c => c.author === "Lotus" && c.text.includes("❌ Scheduled block cancelled")
-    );
+    const schedulingComment = getMostRecentSchedulingComment(comments);
+    const cancellationTime = getMostRecentCancellationTime(comments);
 
-    if (hasCancellation) {
-      // Find the most recent scheduling comment
-      const schedulingComments = comments
-        .filter(c => c.author === "Lotus" && c.text.includes("⏰ Time blocked:"))
-        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-
-      // Find the most recent cancellation comment
-      const cancellationComments = comments
-        .filter(c => c.author === "Lotus" && c.text.includes("❌ Scheduled block cancelled"))
-        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-
-      if (schedulingComments.length > 0 && cancellationComments.length > 0) {
-        const mostRecentSchedulingTime = new Date(schedulingComments[0].createdAt).getTime();
-        const mostRecentCancellationTime = new Date(cancellationComments[0].createdAt).getTime();
-        
-        // If cancellation is after the most recent scheduling, mark as cancelled
-        if (mostRecentCancellationTime > mostRecentSchedulingTime) {
-          setIsCancelled(true);
-          return;
-        }
-      }
+    if (schedulingComment && cancellationTime) {
+      const schedulingTime = new Date(schedulingComment.createdAt).getTime();
+      setIsCancelled(cancellationTime > schedulingTime);
+    } else {
+      setIsCancelled(false);
     }
-
-    setIsCancelled(false);
   }, [comments]);
 
-  // Parse scheduling comment from task comments - automatically runs when comments change
+  /**
+   * Determine if task has an active scheduled block
+   * 
+   * This is the source of truth for scheduled state. It:
+   * 1. Checks if currently animating out (cancelling)
+   * 2. Finds most recent scheduling comment
+   * 3. Checks if cancellation comment exists after scheduling
+   * 4. Returns null if cancelled, otherwise parses and returns block info
+   * 
+   * This works on fresh mounts because it checks comments directly, not state.
+   */
   const scheduledBlock = useMemo(() => {
-    // Don't show scheduled block if cancelled or animating out
-    if (isCancelled || isAnimatingOut) {
+    // Don't show scheduled block if animating out
+    if (isAnimatingOut) {
       return null;
-    }
-
-    // First check optimistic state (immediately after approval)
-    // But only if there's still a scheduling comment to back it up
-    if (optimisticScheduledBlock) {
-      const hasSchedulingComment = comments?.some(
-        c => c.author === "Lotus" && c.text.includes("⏰ Time blocked:")
-      );
-      if (!hasSchedulingComment) {
-        // No scheduling comment found, clear optimistic state
-        return null;
-      }
-      return optimisticScheduledBlock;
     }
 
     if (!comments || comments.length === 0) {
       return null;
     }
 
-    // Find the most recent scheduling comment (Lotus comments with "⏰ Time blocked:")
-    const schedulingComments = comments
-      .filter(c => c.author === "Lotus" && c.text.includes("⏰ Time blocked:"))
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-
-    if (schedulingComments.length === 0) {
+    // Find the most recent scheduling comment
+    const schedulingComment = getMostRecentSchedulingComment(comments);
+    if (!schedulingComment) {
       return null;
     }
 
-    // Parse the most recent scheduling comment
-    return parseSchedulingComment(schedulingComments[0]);
-  }, [comments, optimisticScheduledBlock, isAnimatingOut, isCancelled]);
+    const schedulingTime = new Date(schedulingComment.createdAt).getTime();
+    const cancellationTime = getMostRecentCancellationTime(comments);
+
+    // CRITICAL: If cancellation is after scheduling, don't show as scheduled
+    // This check works on fresh mounts because it reads comments directly
+    if (cancellationTime && cancellationTime > schedulingTime) {
+      return null;
+    }
+
+    // Check optimistic state (for immediate feedback after approval)
+    if (optimisticScheduledBlock) {
+      // Verify scheduling comment still exists
+      if (!comments.some(isSchedulingComment)) {
+        return null;
+      }
+      // Verify not cancelled
+      if (cancellationTime && cancellationTime > schedulingTime) {
+        return null;
+      }
+      return optimisticScheduledBlock;
+    }
+
+    // Parse and return the scheduling comment
+    return parseSchedulingComment(schedulingComment);
+  }, [comments, optimisticScheduledBlock, isAnimatingOut]);
 
   // Handle approval with optimistic update and smooth animation
   const handleApprove = async (suggestion: TimeBlockSuggestion) => {
@@ -344,38 +378,46 @@ export const TaskScheduler = ({ taskId, taskTitle, comments = [], onScheduled }:
     }
   };
 
+  /**
+   * Handle cancellation of scheduled block
+   * 
+   * Flow:
+   * 1. Immediately set animation state (for smooth UX)
+   * 2. Clear optimistic state (prevent reappearing)
+   * 3. Call API to cancel and delete calendar event
+   * 4. After animation completes, refresh task data
+   */
   const handleCancel = async () => {
     if (!scheduledBlock) return;
     
     setCancelling(true);
-    // Start exit animation immediately for smooth UX
     setIsAnimatingOut(true);
-    // Mark as cancelled immediately to prevent reappearing
     setIsCancelled(true);
-    
-    // Immediately clear optimistic state to prevent reappearing
     setOptimisticScheduledBlock(null);
     
     try {
       await cancelScheduledBlock(taskId);
       
-      // Wait for animation to complete
+      // Wait for animation to complete before clearing animation state
       setTimeout(() => {
         setIsAnimatingOut(false);
         toast.success("Scheduled block cancelled");
         
-        // Call onScheduled to trigger task refresh (which will update comments)
-        // Pass 'cancelled' so parent doesn't show "Time block added" message
+        // Trigger task refresh to get updated comments
         if (onScheduled) {
           onScheduled('cancelled');
         }
       }, 300); // Match animation duration
     } catch (error) {
       console.error("Cancellation error:", error);
-      // Reset animation state on error
+      // Reset state on error
       setIsAnimatingOut(false);
       setIsCancelled(false);
-      toast.error(error instanceof Error ? error.message : "Failed to cancel scheduled block");
+      toast.error(
+        error instanceof Error 
+          ? error.message 
+          : "Failed to cancel scheduled block"
+      );
     } finally {
       setCancelling(false);
     }

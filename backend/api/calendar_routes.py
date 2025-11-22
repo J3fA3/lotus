@@ -856,56 +856,43 @@ async def cancel_scheduled_block(
         # Delete calendar events and mark blocks as cancelled
         calendar_service = get_calendar_sync_service()
         deleted_events = []
-        cancelled_blocks_info = []
+        cancelled_blocks_count = 0
         
-        # Get calendar events before deleting to use their actual times
         from db.models import CalendarEvent
         
         for block in scheduled_blocks:
-            if block.calendar_event_id:
-                try:
-                    # Get calendar event to use its actual times (from Google Calendar)
-                    event_query = select(CalendarEvent).where(
-                        CalendarEvent.google_event_id == block.calendar_event_id
-                    )
-                    event_result = await db.execute(event_query)
-                    calendar_event = event_result.scalar_one_or_none()
-                    
-                    # Use calendar event times if available, otherwise fall back to block times
-                    if calendar_event:
-                        start_time = calendar_event.start_time
-                        end_time = calendar_event.end_time
-                    else:
-                        start_time = block.start_time
-                        end_time = block.end_time
-                    
-                    # Store event info for comment before deleting
-                    cancelled_blocks_info.append({
-                        "start_time": start_time,
-                        "end_time": end_time,
-                        "duration_minutes": block.duration_minutes
-                    })
-                    
-                    await calendar_service.delete_calendar_event(
-                        user_id=user_id,
-                        db=db,
-                        google_event_id=block.calendar_event_id
-                    )
-                    deleted_events.append(block.calendar_event_id)
-                    
-                    # Mark block as cancelled
-                    block.status = 'cancelled'
-                    block.calendar_event_id = None
-                except Exception as e:
-                    logger.warning(f"Failed to delete calendar event {block.calendar_event_id}: {e}")
+            if not block.calendar_event_id:
+                continue
+                
+            try:
+                # Delete calendar event from Google Calendar
+                await calendar_service.delete_calendar_event(
+                    user_id=user_id,
+                    db=db,
+                    google_event_id=block.calendar_event_id
+                )
+                deleted_events.append(block.calendar_event_id)
+                
+                # Mark block as cancelled in database
+                block.status = 'cancelled'
+                block.calendar_event_id = None
+                cancelled_blocks_count += 1
+                
+            except Exception as e:
+                # Log warning but continue - event may already be deleted
+                # (e.g., user deleted it manually in Google Calendar)
+                logger.warning(
+                    f"Failed to delete calendar event {block.calendar_event_id}: {e}. "
+                    "Event may have been deleted manually."
+                )
         
-        # Add cancellation comment from Lotus
-        if cancelled_blocks_info:
-            # Simple cancellation message
-            if len(cancelled_blocks_info) == 1:
-                comment_text = "❌ You cancelled the scheduled task block"
-            else:
-                comment_text = f"❌ You cancelled {len(cancelled_blocks_info)} scheduled task blocks"
+        # Add cancellation comment from Lotus to show chain of events
+        if cancelled_blocks_count > 0:
+            comment_text = (
+                "❌ You cancelled the scheduled task block"
+                if cancelled_blocks_count == 1
+                else f"❌ You cancelled {cancelled_blocks_count} scheduled task blocks"
+            )
             
             comment = Comment(
                 id=str(uuid.uuid4()),

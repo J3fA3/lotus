@@ -277,20 +277,27 @@ async def delete_task(
     # Delete associated calendar events from Google Calendar
     calendar_service = get_calendar_sync_service()
     deleted_events = []
+    
     for block in scheduled_blocks:
-        if block.calendar_event_id:
-            try:
-                await calendar_service.delete_calendar_event(
-                    user_id=user_id,
-                    db=db,
-                    google_event_id=block.calendar_event_id
-                )
-                deleted_events.append(block.calendar_event_id)
-            except Exception as e:
-                # Log error but continue with task deletion
-                import logging
-                logger = logging.getLogger(__name__)
-                logger.warning(f"Failed to delete calendar event {block.calendar_event_id}: {e}")
+        if not block.calendar_event_id:
+            continue
+            
+        try:
+            await calendar_service.delete_calendar_event(
+                user_id=user_id,
+                db=db,
+                google_event_id=block.calendar_event_id
+            )
+            deleted_events.append(block.calendar_event_id)
+        except Exception as e:
+            # Log warning but continue with task deletion
+            # Event may have been deleted manually in Google Calendar
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(
+                f"Failed to delete calendar event {block.calendar_event_id} for task {task_id}: {e}. "
+                "Continuing with task deletion."
+            )
 
     # Delete the task (scheduled blocks will be deleted via CASCADE)
     await db.delete(task)
