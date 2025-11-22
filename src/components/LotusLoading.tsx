@@ -14,44 +14,45 @@ export const LotusLoading: React.FC<LotusLoadingProps> = ({
   size = 32
 }) => {
   return (
-    <div className={`inline-flex items-center justify-center ${className}`}>
+    <div className={`inline-flex items-center justify-center ${className}`} style={{ background: 'transparent' }}>
       <svg
         width={size}
         height={size}
-        viewBox="0 0 100 100"
+        viewBox="0 0 120 120"
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
         className="lotus-loading"
+        style={{ overflow: 'visible', background: 'transparent' }}
       >
         <defs>
           {/* Outer petal gradient - lotus green */}
-          <linearGradient id="lotus-petal-outer" x1="50%" y1="0%" x2="50%" y2="100%">
+          <linearGradient id={`lotus-petal-outer-${size}`} x1="50%" y1="0%" x2="50%" y2="100%">
             <stop offset="0%" style={{ stopColor: 'hsl(var(--lotus-green-light))', stopOpacity: 1 }} />
             <stop offset="100%" style={{ stopColor: 'hsl(var(--lotus-green-medium))', stopOpacity: 1 }} />
           </linearGradient>
 
           {/* Inner petal gradient - lighter green */}
-          <linearGradient id="lotus-petal-inner" x1="50%" y1="0%" x2="50%" y2="100%">
+          <linearGradient id={`lotus-petal-inner-${size}`} x1="50%" y1="0%" x2="50%" y2="100%">
             <stop offset="0%" style={{ stopColor: 'hsl(var(--lotus-green-light))', stopOpacity: 1 }} />
             <stop offset="100%" style={{ stopColor: 'hsl(var(--lotus-green-medium))', stopOpacity: 0.9 }} />
           </linearGradient>
 
           {/* Center gradient - warm accent */}
-          <radialGradient id="lotus-center">
+          <radialGradient id={`lotus-center-${size}`}>
             <stop offset="0%" style={{ stopColor: 'hsl(var(--primary))', stopOpacity: 1 }} />
             <stop offset="100%" style={{ stopColor: 'hsl(var(--lotus-green-dark))', stopOpacity: 1 }} />
           </radialGradient>
         </defs>
 
-        {/* Rotating lotus flower group */}
-        <g className="lotus-flower" transform="translate(50, 50)">
+        {/* Rotating lotus flower group - centered */}
+        <g className="lotus-flower" transform="translate(60, 60)">
 
           {/* Outer petals - 8 large, bold petals */}
           {[0, 45, 90, 135, 180, 225, 270, 315].map((angle, i) => (
             <g key={`outer-${i}`} transform={`rotate(${angle})`}>
               <path
-                d="M 0,0 Q -6,-12 -8,-28 Q -5,-35 0,-38 Q 5,-35 8,-28 Q 6,-12 0,0 Z"
-                fill="url(#lotus-petal-outer)"
+                d="M 0,0 Q -5,-10 -6,-22 Q -4,-26 0,-28 Q 4,-26 6,-22 Q 5,-10 0,0 Z"
+                fill={`url(#lotus-petal-outer-${size})`}
                 stroke="hsl(var(--lotus-green-dark))"
                 strokeWidth="0.8"
                 className={`outer-petal petal-${i}`}
@@ -64,8 +65,8 @@ export const LotusLoading: React.FC<LotusLoadingProps> = ({
           {[0, 72, 144, 216, 288].map((angle, i) => (
             <g key={`inner-${i}`} transform={`rotate(${angle})`}>
               <path
-                d="M 0,0 Q -4,-8 -5,-18 Q -3,-22 0,-24 Q 3,-22 5,-18 Q 4,-8 0,0 Z"
-                fill="url(#lotus-petal-inner)"
+                d="M 0,0 Q -3,-6 -4,-14 Q -2,-16 0,-18 Q 2,-16 4,-14 Q 3,-6 0,0 Z"
+                fill={`url(#lotus-petal-inner-${size})`}
                 stroke="hsl(var(--lotus-green-medium))"
                 strokeWidth="0.5"
                 className={`inner-petal petal-${i}`}
@@ -78,8 +79,8 @@ export const LotusLoading: React.FC<LotusLoadingProps> = ({
           <circle
             cx="0"
             cy="0"
-            r="8"
-            fill="url(#lotus-center)"
+            r="6"
+            fill={`url(#lotus-center-${size})`}
             className="lotus-center-dot"
           />
 
@@ -87,31 +88,24 @@ export const LotusLoading: React.FC<LotusLoadingProps> = ({
           <circle
             cx="0"
             cy="0"
-            r="4"
+            r="3"
             fill="hsl(var(--lotus-green-dark))"
             opacity="0.6"
             className="lotus-center-inner"
           />
         </g>
-
-        {/* Subtle water ripple - optional context */}
-        <circle
-          cx="50"
-          cy="50"
-          r="45"
-          fill="none"
-          stroke="hsl(var(--lotus-green-light))"
-          strokeWidth="1"
-          opacity="0"
-          className="water-ripple"
-        />
       </svg>
 
       <style>{`
+        .lotus-loading {
+          background: transparent !important;
+        }
+
         /* Main lotus flower rotation */
         .lotus-flower {
           animation: lotusRotate 3s cubic-bezier(0.4, 0, 0.2, 1) infinite;
-          transform-origin: center;
+          transform-origin: 0px 0px;
+          transform-box: fill-box;
         }
 
         /* Outer petals - subtle pulse */
