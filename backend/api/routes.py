@@ -174,6 +174,38 @@ async def create_task(
     await db.commit()
     await db.refresh(task, ['attachments', 'comments'])
 
+    # Phase 6 Stage 3: Create initial version
+    try:
+        from services.task_version_service import get_task_version_service
+        from services.pr_comment_generator import get_pr_comment_generator
+
+        version_service = await get_task_version_service(db)
+        pr_generator = get_pr_comment_generator()
+
+        # Create initial version (snapshot)
+        version = await version_service.create_initial_version(
+            task=task,
+            changed_by="user",  # TODO: Get from auth
+            ai_model=None  # Set to AI model if created by AI
+        )
+
+        # Generate creation comment
+        pr_comment = pr_generator.generate_creation_comment(
+            task_data={},
+            change_source="user_create",
+            ai_model=None
+        )
+        version.pr_comment = pr_comment
+        version.pr_comment_generated_at = datetime.utcnow()
+
+        await db.commit()
+
+    except Exception as e:
+        # Log error but don't fail task creation
+        print(f"Initial version creation failed for task {task_id}: {e}")
+        import traceback
+        traceback.print_exc()
+
     return _task_to_schema(task)
 
 
@@ -210,8 +242,20 @@ async def update_task(
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    # Phase 6: Track previous status for outcome tracking
-    previous_status = task.status
+    # Phase 6 Stage 3: Capture old values BEFORE update (for version control)
+    old_values = {
+        "status": task.status,
+        "title": task.title,
+        "description": task.description,
+        "assignee": task.assignee,
+        "priority": getattr(task, "priority", None),
+        "effort": getattr(task, "effort", None),
+        "project": getattr(task, "project", None),
+        "start_date": task.start_date.isoformat() if task.start_date else None,
+        "due_date": task.due_date.isoformat() if task.due_date else None,
+        "value_stream": task.value_stream,
+        "notes": task.notes
+    }
 
     # Update only provided fields
     update_data = task_data.model_dump(exclude_unset=True)
@@ -261,17 +305,88 @@ async def update_task(
 
     task.updated_at = datetime.utcnow()
 
+    # Phase 6 Stage 3: Create version BEFORE final commit (in same transaction)
+    # Capture new values
+    new_values = {
+        "status": task.status,
+        "title": task.title,
+        "description": task.description,
+        "assignee": task.assignee,
+        "priority": getattr(task, "priority", None),
+        "effort": getattr(task, "effort", None),
+        "project": getattr(task, "project", None),
+        "start_date": task.start_date.isoformat() if task.start_date else None,
+        "due_date": task.due_date.isoformat() if task.due_date else None,
+        "value_stream": task.value_stream,
+        "notes": task.notes
+    }
+
+    # Detect which fields actually changed
+    changed_fields = []
+    for field, new_val in new_values.items():
+        old_val = old_values.get(field)
+        if old_val != new_val:
+            changed_fields.append(field)
+
+    # Create version if significant changes
+    if changed_fields:
+        try:
+            from services.task_version_service import get_task_version_service
+            from services.pr_comment_generator import get_pr_comment_generator
+
+            version_service = await get_task_version_service(db)
+            pr_generator = get_pr_comment_generator()
+
+            # Detect if AI suggestions were overridden
+            # TODO: Add ai_suggestions parameter to API when AI enrichment is implemented
+            ai_suggestions = None  # Will be populated from orchestrator enrichment
+            ai_overridden = False
+            overridden_fields = []
+
+            # Create version
+            version = await version_service.create_update_version(
+                task_id=task_id,
+                old_values={k: v for k, v in old_values.items() if k in changed_fields},
+                new_values={k: v for k, v in new_values.items() if k in changed_fields},
+                changed_by=update_data.get("updated_by", "user"),  # TODO: Get from auth
+                change_source="user_edit",
+                ai_model=None,
+                ai_suggestions=ai_suggestions
+            )
+
+            # Generate PR-style comment if version was created
+            if version:
+                change_type = "status_change" if "status" in changed_fields else "field_update"
+                pr_comment = await pr_generator.generate_comment(
+                    changed_fields=changed_fields,
+                    old_values={k: v for k, v in old_values.items() if k in changed_fields},
+                    new_values={k: v for k, v in new_values.items() if k in changed_fields},
+                    change_type=change_type,
+                    change_source="user_edit",
+                    ai_suggestions=ai_suggestions,
+                    ai_overridden=ai_overridden,
+                    overridden_fields=overridden_fields
+                )
+                version.pr_comment = pr_comment
+                version.pr_comment_generated_at = datetime.utcnow()
+
+        except Exception as e:
+            # Log error but don't fail the task update
+            print(f"Version creation failed for task {task_id}: {e}")
+            import traceback
+            traceback.print_exc()
+
     await db.commit()
     await db.refresh(task)
 
     # Phase 6: Record task outcome if status changed to "done"
-    if "status" in update_data and task.status != previous_status:
+    if "status" in changed_fields and task.status == "done":
         try:
             tracker = await get_outcome_tracker(db)
             await tracker.record_outcome_on_status_change(
                 task_id=task_id,
                 new_status=task.status,
-                previous_status=previous_status
+                previous_status=old_values["status"]
             )
             # Commit outcome separately (don't fail task update if outcome tracking fails)
             await db.commit()
