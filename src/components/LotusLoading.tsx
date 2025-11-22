@@ -101,11 +101,10 @@ export const LotusLoading: React.FC<LotusLoadingProps> = ({
           background: transparent !important;
         }
 
-        /* Main lotus flower rotation */
+        /* Main lotus flower rotation - spins in place like floating on water */
         .lotus-flower {
-          animation: lotusRotate 3s cubic-bezier(0.4, 0, 0.2, 1) infinite;
-          transform-origin: 0px 0px;
-          transform-box: fill-box;
+          animation: lotusRotate 4s linear infinite;
+          transform-origin: center center;
         }
 
         /* Outer petals - subtle pulse */
@@ -152,10 +151,10 @@ export const LotusLoading: React.FC<LotusLoadingProps> = ({
         /* Keyframe Animations */
 
         @keyframes lotusRotate {
-          0% {
+          from {
             transform: rotate(0deg);
           }
-          100% {
+          to {
             transform: rotate(360deg);
           }
         }
