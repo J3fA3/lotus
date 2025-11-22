@@ -19,7 +19,7 @@ Routes:
 """
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, List
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -30,6 +30,7 @@ from pydantic import BaseModel
 from db.database import get_db
 from services.google_oauth import get_oauth_service
 from services.calendar_sync import get_calendar_sync_service
+from utils.datetime_utils import now_utc
 
 logger = logging.getLogger(__name__)
 
@@ -206,7 +207,7 @@ async def sync_calendar(
         return {
             "success": True,
             "events_count": len(events),
-            "synced_at": datetime.utcnow().isoformat()
+            "synced_at": now_utc().isoformat()
         }
 
     except Exception as e:
@@ -300,7 +301,7 @@ async def get_todays_events(
     """
     try:
         calendar_service = get_calendar_sync_service()
-        today = datetime.utcnow()
+        today = now_utc()
         events = await calendar_service.get_events_by_date(user_id, db, today)
 
         events_data = [
@@ -335,6 +336,7 @@ async def schedule_tasks(
     user_id: int = Query(default=1, description="User ID"),
     days_ahead: int = Query(default=7, description="Days to schedule ahead"),
     max_suggestions: int = Query(default=10, description="Max suggestions to generate"),
+    task_id: Optional[str] = Query(default=None, description="Optional: Schedule only this specific task"),
     db: AsyncSession = Depends(get_db)
 ):
     """
@@ -347,6 +349,7 @@ async def schedule_tasks(
         user_id: User ID
         days_ahead: Days to look ahead for scheduling
         max_suggestions: Maximum number of suggestions to generate
+        task_id: Optional task ID to schedule only that specific task
 
     Returns:
         {
@@ -372,22 +375,58 @@ async def schedule_tasks(
         from sqlalchemy import select
         from db.models import Task
 
-        # Get active tasks
-        query = select(Task).where(
-            Task.status.in_(['todo', 'doing'])
-        ).order_by(Task.created_at.desc())
+        # Get active tasks (optionally filter by task_id)
+        if task_id:
+            # Schedule only the specific task
+            query = select(Task).where(
+                Task.id == task_id,
+                Task.status.in_(['todo', 'doing'])
+            )
+            logger.info(f"Scheduling specific task: {task_id}")
+        else:
+            # Schedule all active tasks
+            query = select(Task).where(
+                Task.status.in_(['todo', 'doing'])
+            ).order_by(Task.created_at.desc())
+            logger.info("Scheduling all active tasks")
 
         result = await db.execute(query)
         tasks = result.scalars().all()
 
         if not tasks:
+            if task_id:
+                return {
+                    "suggestions": [],
+                    "total": 0,
+                    "message": f"Task '{task_id}' not found or not active (must be 'todo' or 'doing')"
+                }
             return {
                 "suggestions": [],
                 "total": 0,
                 "message": "No active tasks to schedule"
             }
 
+        # Check if user is authorized
+        oauth_service = get_oauth_service()
+        is_authorized = await oauth_service.is_authorized(user_id, db)
+        if not is_authorized:
+            return {
+                "suggestions": [],
+                "total": 0,
+                "message": "Calendar not authorized. Please connect your Google Calendar first."
+            }
+
+        # Check if calendar has been synced (has events in the date range)
+        calendar_service = get_calendar_sync_service()
+        check_events = await calendar_service.get_events(user_id, db, days_ahead=days_ahead)
+        
+        # If no events found, suggest syncing calendar
+        # (But still proceed - maybe calendar is empty, which is fine)
+        if len(check_events) == 0:
+            logger.info(f"No calendar events found for user {user_id}. Calendar may not be synced yet.")
+
         # Generate suggestions
+        logger.info(f"Calling scheduling agent for {len(tasks)} tasks, max_suggestions={max_suggestions}")
         agent = get_scheduling_agent()
         scheduled_blocks = await agent.schedule_tasks(
             tasks=list(tasks),
@@ -396,9 +435,11 @@ async def schedule_tasks(
             days_ahead=days_ahead,
             max_suggestions=max_suggestions
         )
+        logger.info(f"Scheduling agent returned {len(scheduled_blocks)} scheduled blocks")
 
         # Convert to response format
         suggestions = []
+        logger.info(f"Converting {len(scheduled_blocks)} scheduled blocks to response format...")
         for block in scheduled_blocks:
             # Get task for title
             task_query = select(Task).where(Task.id == block.task_id)
@@ -418,14 +459,56 @@ async def schedule_tasks(
                 "status": block.status
             })
 
+        logger.info(f"Converted {len(suggestions)} suggestions for API response")
+        
+        if len(suggestions) == 0:
+            logger.warning("⚠ No suggestions to return - generating diagnostic message")
+            # Provide helpful message about why no suggestions
+            calendar_service = get_calendar_sync_service()
+            events = await calendar_service.get_events(user_id, db, days_ahead=days_ahead)
+            
+            # Get preferences for work hours info
+            from services.work_preferences import get_work_preferences
+            prefs = await get_work_preferences(db, user_id)
+            
+            # Count events per day
+            from collections import defaultdict
+            events_by_day = defaultdict(int)
+            for event in events:
+                if not event.all_day:
+                    day_key = event.start_time.date()
+                    events_by_day[day_key] += 1
+            
+            avg_events_per_day = len(events_by_day) and (len(events) / len(events_by_day)) or 0
+            
+            message = (
+                f"No available time slots found in the next {days_ahead} days. "
+                f"Calendar has {len(events)} events ({avg_events_per_day:.1f} per day on average). "
+                f"Work hours: {prefs.no_meetings_before} to {prefs.no_meetings_after}. "
+                "Your calendar may be completely full. Try adjusting work hours or look further ahead."
+            )
+            
+            return {
+                "suggestions": [],
+                "total": 0,
+                "message": message,
+                "diagnostics": {
+                    "events_count": len(events),
+                    "events_per_day": round(avg_events_per_day, 1),
+                    "work_hours": f"{prefs.no_meetings_before} to {prefs.no_meetings_after}",
+                    "days_ahead": days_ahead
+                }
+            }
+
         return {
             "suggestions": suggestions,
-            "total": len(suggestions)
+            "total": len(suggestions),
+            "message": f"Found {len(suggestions)} scheduling suggestion(s)"
         }
 
     except Exception as e:
-        logger.error(f"Failed to generate scheduling suggestions: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Failed to generate scheduling suggestions: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to generate scheduling suggestions: {str(e)}")
 
 
 @router.post("/calendar/approve-block")
@@ -519,7 +602,7 @@ async def approve_time_block(
                 id=str(uuid.uuid4()),
                 task_id=task.id,
                 text=comment_text,
-                author="AI Assistant"
+                author="Lotus"
             )
             db.add(comment)
 
@@ -543,6 +626,295 @@ async def approve_time_block(
         raise
     except Exception as e:
         logger.error(f"Failed to approve time block: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/calendar/task-scheduled")
+async def check_task_scheduled(
+    task_id: str = Query(..., description="Task ID to check"),
+    user_id: int = Query(default=1, description="User ID"),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Check if a task has an approved scheduled block.
+
+    Checks both ScheduledBlock table and CalendarEvent table to find
+    if a task is scheduled. Returns the scheduled block information if found.
+
+    Args:
+        task_id: Task ID to check
+        user_id: User ID
+
+    Returns:
+        {
+            "scheduled": true/false,
+            "block": {
+                "id": 1,
+                "start_time": "2025-11-19T14:00:00Z",
+                "end_time": "2025-11-19T16:00:00Z",
+                "duration_minutes": 120,
+                "calendar_event_id": "abc123",
+                "quality_score": 90
+            } or null
+        }
+    """
+    try:
+        from sqlalchemy import select, or_, and_
+        from db.models import ScheduledBlock, Task, CalendarEvent
+        from services.work_preferences import get_work_preferences
+        from utils.datetime_utils import now_utc
+
+        # First, get the task to get its title
+        task_query = select(Task).where(Task.id == task_id)
+        task_result = await db.execute(task_query)
+        task = task_result.scalar_one_or_none()
+
+        if not task:
+            logger.warning(f"Task {task_id} not found")
+            return {
+                "scheduled": False,
+                "block": None
+            }
+
+        # Method 1: Check ScheduledBlock table (primary method)
+        block_query = select(ScheduledBlock).where(
+            ScheduledBlock.task_id == task_id,
+            ScheduledBlock.user_id == user_id,
+            ScheduledBlock.status == 'approved'
+        ).order_by(ScheduledBlock.created_at.desc())
+
+        block_result = await db.execute(block_query)
+        block = block_result.scalar_one_or_none()
+
+        if block:
+            logger.info(f"Found approved ScheduledBlock {block.id} for task {task_id}")
+            return {
+                "scheduled": True,
+                "block": {
+                    "id": block.id,
+                    "start_time": block.start_time.isoformat(),
+                    "end_time": block.end_time.isoformat(),
+                    "duration_minutes": block.duration_minutes,
+                    "calendar_event_id": block.calendar_event_id,
+                    "quality_score": block.quality_score,
+                    "confidence_score": block.confidence_score
+                }
+            }
+
+        # Method 2: Check CalendarEvent table for matching events
+        # Get user preferences to know the task event prefix
+        try:
+            preferences = await get_work_preferences(db, user_id)
+            task_prefix = preferences.task_event_prefix or "🪷 "
+        except Exception as e:
+            logger.warning(f"Could not get work preferences: {e}, using default prefix")
+            task_prefix = "🪷 "
+
+        # Build expected event title variations
+        expected_title_with_prefix = f"{task_prefix}{task.title}"
+        expected_title_no_prefix = task.title
+
+        # Check for calendar events that match:
+        # 1. Event title matches expected title (with or without prefix)
+        # 2. Event description contains "Task: [task title]"
+        # 3. Event has this task_id in related_task_ids
+        # 4. Event is in the future (not past)
+        now = now_utc()
+        
+        # Get all future events for this user to check multiple criteria
+        all_events_query = select(CalendarEvent).where(
+            and_(
+                CalendarEvent.user_id == user_id,
+                CalendarEvent.end_time >= now  # Only future events
+            )
+        ).order_by(CalendarEvent.start_time.asc())
+        
+        all_events_result = await db.execute(all_events_query)
+        all_events = all_events_result.scalars().all()
+        
+        logger.info(f"Checking {len(all_events)} future calendar events for task {task_id} ('{task.title}')")
+        
+        # Check each event for matches
+        for event in all_events:
+            # Method 1: Check title (with or without prefix)
+            if event.title == expected_title_with_prefix or event.title == expected_title_no_prefix:
+                calendar_event = event
+                logger.info(f"Found calendar event {event.id} by title match: '{event.title}'")
+                break
+            
+            # Method 2: Check description for "Task: [task title]" pattern
+            if event.description:
+                # Look for patterns like "Task: Katie Data Deep Dive" or "Task: {task.title}"
+                description_lower = event.description.lower()
+                task_title_lower = task.title.lower()
+                
+                # Check for "Task: [title]" pattern
+                if f"task: {task_title_lower}" in description_lower:
+                    calendar_event = event
+                    logger.info(f"Found calendar event {event.id} by description match: contains 'Task: {task.title}'")
+                    break
+                
+                # Also check if description contains the task title directly
+                if task_title_lower in description_lower and len(task_title_lower) > 5:
+                    # Additional check: make sure it's not just a partial match
+                    # Look for the task title as a standalone word/phrase
+                    import re
+                    pattern = rf'\b{re.escape(task_title_lower)}\b'
+                    if re.search(pattern, description_lower):
+                        calendar_event = event
+                        logger.info(f"Found calendar event {event.id} by description pattern match: '{task.title}'")
+                        break
+            
+            # Method 3: Check related_task_ids
+            if event.related_task_ids and task_id in event.related_task_ids:
+                calendar_event = event
+                logger.info(f"Found calendar event {event.id} with task {task_id} in related_task_ids")
+                break
+
+        if calendar_event:
+            logger.info(f"Found matching CalendarEvent {calendar_event.id} for task {task_id}")
+            # Calculate duration
+            duration = int((calendar_event.end_time - calendar_event.start_time).total_seconds() / 60)
+            
+            return {
+                "scheduled": True,
+                "block": {
+                    "id": calendar_event.id,  # Use calendar event ID
+                    "start_time": calendar_event.start_time.isoformat(),
+                    "end_time": calendar_event.end_time.isoformat(),
+                    "duration_minutes": duration,
+                    "calendar_event_id": calendar_event.google_event_id,
+                    "quality_score": None,  # Not available from calendar event
+                    "confidence_score": None  # Not available from calendar event
+                }
+            }
+
+        logger.debug(f"No scheduled block or calendar event found for task {task_id}")
+        return {
+            "scheduled": False,
+            "block": None
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to check task scheduled status: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/calendar/cancel-block/{task_id}")
+async def cancel_scheduled_block(
+    task_id: str,
+    user_id: int = Query(default=1, description="User ID"),
+    db: AsyncSession = Depends(get_db)
+):
+    """Cancel a scheduled block for a task (delete calendar event but keep task).
+    
+    This removes the calendar event from Google Calendar and marks the scheduled
+    block as cancelled, but does not delete the task itself. Adds a cancellation
+    comment from Lotus to show the chain of events.
+    
+    Args:
+        task_id: Task ID
+        user_id: User ID
+        
+    Returns:
+        {
+            "success": true,
+            "message": "Scheduled block cancelled and calendar event removed",
+            "deleted_calendar_events": 1
+        }
+    """
+    try:
+        from sqlalchemy import select
+        from db.models import ScheduledBlock, Task, Comment
+        import uuid
+        from datetime import datetime, timezone
+        
+        # Get the task to add comment to
+        task_query = select(Task).where(Task.id == task_id)
+        task_result = await db.execute(task_query)
+        task = task_result.scalar_one_or_none()
+        
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
+        
+        # Find all approved scheduled blocks for this task
+        scheduled_blocks_query = select(ScheduledBlock).where(
+            ScheduledBlock.task_id == task_id,
+            ScheduledBlock.user_id == user_id,
+            ScheduledBlock.status == 'approved',
+            ScheduledBlock.calendar_event_id.isnot(None)
+        )
+        scheduled_blocks_result = await db.execute(scheduled_blocks_query)
+        scheduled_blocks = scheduled_blocks_result.scalars().all()
+        
+        if not scheduled_blocks:
+            raise HTTPException(
+                status_code=404,
+                detail="No scheduled blocks found for this task"
+            )
+        
+        # Delete calendar events and mark blocks as cancelled
+        calendar_service = get_calendar_sync_service()
+        deleted_events = []
+        cancelled_blocks_count = 0
+        
+        from db.models import CalendarEvent
+        
+        for block in scheduled_blocks:
+            if not block.calendar_event_id:
+                continue
+                
+            try:
+                # Delete calendar event from Google Calendar
+                await calendar_service.delete_calendar_event(
+                    user_id=user_id,
+                    db=db,
+                    google_event_id=block.calendar_event_id
+                )
+                deleted_events.append(block.calendar_event_id)
+                
+                # Mark block as cancelled in database
+                block.status = 'cancelled'
+                block.calendar_event_id = None
+                cancelled_blocks_count += 1
+                
+            except Exception as e:
+                # Log warning but continue - event may already be deleted
+                # (e.g., user deleted it manually in Google Calendar)
+                logger.warning(
+                    f"Failed to delete calendar event {block.calendar_event_id}: {e}. "
+                    "Event may have been deleted manually."
+                )
+        
+        # Add cancellation comment from Lotus to show chain of events
+        if cancelled_blocks_count > 0:
+            comment_text = (
+                "❌ You cancelled the scheduled task block"
+                if cancelled_blocks_count == 1
+                else f"❌ You cancelled {cancelled_blocks_count} scheduled task blocks"
+            )
+            
+            comment = Comment(
+                id=str(uuid.uuid4()),
+                task_id=task.id,
+                text=comment_text,
+                author="Lotus"
+            )
+            db.add(comment)
+            logger.info(f"Added cancellation comment to task {task_id}")
+        
+        await db.commit()
+        
+        return {
+            "success": True,
+            "message": "Scheduled block cancelled and calendar event removed",
+            "deleted_calendar_events": len(deleted_events)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to cancel scheduled block: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

@@ -1140,7 +1140,7 @@ async def execute_actions(state: OrchestratorState) -> Dict:
                             id=str(uuid.uuid4()),
                             task_id=task_dict["id"],
                             text=comment,
-                            author="AI Assistant",
+                            author="Lotus",
                             created_at=datetime.now()
                         )
                         db.add(comment_model)

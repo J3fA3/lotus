@@ -8,12 +8,10 @@ Uses structured output for reliable parsing.
 """
 
 import logging
-import json
-from typing import TypedDict, Annotated, Sequence, Dict, Any, Optional
+from typing import TypedDict, Dict, Any, Optional
 from datetime import datetime
 
 from langgraph.graph import StateGraph, END
-from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 
 from services.gemini_client import get_gemini_client
 from config.email_prompts import (
@@ -49,7 +47,6 @@ class EmailClassificationState(TypedDict):
     user_profile: Optional[dict]
 
     # Processing
-    messages: Annotated[Sequence[BaseMessage], "messages"]
     classification_raw: Optional[str]
 
     # Output
@@ -93,33 +90,16 @@ async def classify_email(state: EmailClassificationState) -> EmailClassification
         # Get Gemini client
         gemini = get_gemini_client()
 
-        # Call Gemini with system prompt and email prompt
-        messages = [
-            SystemMessage(content=EMAIL_CLASSIFICATION_SYSTEM_PROMPT),
-            HumanMessage(content=prompt)
-        ]
+        # Add system prompt to the user prompt
+        full_prompt = f"{EMAIL_CLASSIFICATION_SYSTEM_PROMPT}\n\n{prompt}"
 
-        # Request structured JSON output
-        response = await gemini.ainvoke(
-            messages,
+        # Call Gemini with structured output
+        classification = await gemini.generate_structured(
+            prompt=full_prompt,
+            schema=EmailClassification,
             temperature=0.3,  # Lower temperature for consistent classification
-            response_format={"type": "json_object"}
+            fallback_to_qwen=True
         )
-
-        # Parse response
-        response_text = response.content if hasattr(response, 'content') else str(response)
-
-        # Clean up response text (remove markdown code blocks if present)
-        if "```json" in response_text:
-            response_text = response_text.split("```json")[1].split("```")[0].strip()
-        elif "```" in response_text:
-            response_text = response_text.split("```")[1].split("```")[0].strip()
-
-        # Parse JSON
-        classification_dict = json.loads(response_text)
-
-        # Create Pydantic model
-        classification = EmailClassification(**classification_dict)
 
         # Calculate processing time
         processing_time = int((datetime.utcnow() - start_time).total_seconds() * 1000)
@@ -133,8 +113,7 @@ async def classify_email(state: EmailClassificationState) -> EmailClassification
 
         return {
             **state,
-            "messages": messages + [response],
-            "classification_raw": response_text,
+            "classification_raw": classification.model_dump_json(),
             "classification": classification,
             "confidence": classification.confidence,
             "processing_time_ms": processing_time,
@@ -342,7 +321,6 @@ async def classify_email_content(
         "is_meeting_invite": is_meeting_invite,
         "thread_context": thread_context,
         "user_profile": user_profile,
-        "messages": [],
         "classification_raw": None,
         "classification": None,
         "confidence": 0.0,

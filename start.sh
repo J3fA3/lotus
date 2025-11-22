@@ -20,7 +20,7 @@ echo ""
 
 # Start backend in background
 echo "🐍 Starting backend server..."
-cd /workspaces/task-crate/backend
+cd "$(dirname "$0")/backend"
 python main.py > /tmp/backend.log 2>&1 &
 BACKEND_PID=$!
 echo "   Backend PID: $BACKEND_PID"
@@ -30,7 +30,7 @@ sleep 3
 
 # Start frontend in background
 echo "⚛️  Starting frontend server..."
-cd /workspaces/task-crate
+cd "$(dirname "$0")"
 npm run dev > /tmp/frontend.log 2>&1 &
 FRONTEND_PID=$!
 echo "   Frontend PID: $FRONTEND_PID"

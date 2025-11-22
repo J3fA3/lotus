@@ -21,7 +21,7 @@ Usage:
 
 import os
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
 from googleapiclient.discovery import build
@@ -30,6 +30,8 @@ from sqlalchemy import select, and_
 
 from db.models import CalendarEvent
 from services.google_oauth import get_oauth_service
+from utils.datetime_utils import now_utc, normalize_datetime
+from utils.event_utils import is_blocking_event
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +74,7 @@ class CalendarSyncService:
             service = build('calendar', 'v3', credentials=credentials)
 
             # Define time range
-            now = datetime.utcnow()
+            now = now_utc()
             end_date = now + timedelta(days=days)
 
             # Fetch events
@@ -148,12 +150,13 @@ class CalendarSyncService:
             attendees_data = event_data.get('attendees', [])
             attendees = [a.get('email') for a in attendees_data if a.get('email')]
 
-            # Determine if it's a meeting (multiple attendees)
-            is_meeting = len(attendees) > 1
-
             # Get organizer
             organizer_data = event_data.get('organizer', {})
             organizer = organizer_data.get('email')
+            
+            # Determine if it's a meeting (will be refined after creating CalendarEvent)
+            # For now, use simple heuristic: multiple attendees = meeting
+            is_meeting = len(attendees) > 1
 
             # Check if event already exists
             query = select(CalendarEvent).where(
@@ -173,8 +176,10 @@ class CalendarSyncService:
                 existing_event.attendees = attendees
                 existing_event.organizer = organizer
                 existing_event.is_meeting = is_meeting
-                existing_event.last_synced = datetime.utcnow()
-                existing_event.updated_at = datetime.utcnow()
+                # Refine is_meeting using blocking logic after updating all fields
+                existing_event.is_meeting = is_blocking_event(existing_event)
+                existing_event.last_synced = now_utc()
+                existing_event.updated_at = now_utc()
 
                 return existing_event
             else:
@@ -193,6 +198,8 @@ class CalendarSyncService:
                     organizer=organizer,
                     is_meeting=is_meeting
                 )
+                # Refine is_meeting using blocking logic (more accurate)
+                new_event.is_meeting = is_blocking_event(new_event)
                 db.add(new_event)
 
                 return new_event
@@ -221,8 +228,12 @@ class CalendarSyncService:
         Returns:
             List of CalendarEvent objects
         """
-        start = start_date or datetime.utcnow()
+        start = start_date or now_utc()
         end = end_date or (start + timedelta(days=days_ahead))
+        
+        # Ensure timezone-aware
+        start = normalize_datetime(start)
+        end = normalize_datetime(end)
 
         query = select(CalendarEvent).where(
             and_(

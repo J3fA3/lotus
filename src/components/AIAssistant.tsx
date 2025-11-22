@@ -28,18 +28,27 @@ const AIAssistant: React.FC = () => {
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [isTaskDetailOpen, setIsTaskDetailOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const previousMessageCountRef = useRef(0);
 
   const { sendMessage, approveProposals, rejectProposals, approveTask, rejectTask } = useChat();
   const messages = useChatMessages();
   const isProcessing = useIsProcessing();
   const pendingProposals = usePendingProposals();
 
-  // Auto-scroll to bottom on new messages
+  // Auto-scroll to bottom on new messages - optimized to not interfere with typing
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollIntoView({ behavior: "smooth" });
+    // Only scroll when messages actually increase (new message added)
+    if (messages.length > previousMessageCountRef.current && scrollRef.current) {
+      // Use requestAnimationFrame to avoid layout thrashing during typing
+      requestAnimationFrame(() => {
+        if (scrollRef.current) {
+          // Use instant scroll instead of smooth to avoid animation conflicts
+          scrollRef.current.scrollIntoView({ behavior: "instant" });
+        }
+      });
     }
-  }, [messages]);
+    previousMessageCountRef.current = messages.length;
+  }, [messages.length]);
 
   const handleSendMessage = async () => {
     if (!inputValue.trim() || isProcessing) return;

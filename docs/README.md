@@ -44,7 +44,8 @@ Integrate with the system:
 ### 💻 Development Documentation
 Contribute to the project:
 - **[Development Guide](./development/DEVELOPMENT_GUIDE.md)** - Setup & workflow
-- **[Phase 3 Guide](./development/PHASE3_GUIDE.md)** - Latest improvements
+- **[Phase 3 Guide](./development/PHASE3_GUIDE.md)** - Phase 3 improvements
+- **[Phase 4 Guide](./development/PHASE4_GUIDE.md)** - Calendar integration & scheduling
 - **[Project Structure](./PROJECT_STRUCTURE.md)** - File organization
 
 ---

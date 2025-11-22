@@ -22,11 +22,13 @@ Usage:
 """
 
 import logging
-from datetime import datetime, timedelta, time
+from datetime import datetime, timedelta, time, timezone
 from typing import List, Optional
 from dataclasses import dataclass
 
 from db.models import CalendarEvent, WorkPreferences
+from utils.datetime_utils import normalize_datetime
+from utils.event_utils import is_blocking_event, filter_blocking_events
 
 logger = logging.getLogger(__name__)
 
@@ -68,18 +70,84 @@ class AvailabilityAnalyzer:
         Returns:
             Sorted list of free blocks (best quality first)
         """
+        logger.info(f"Finding free blocks: {len(calendar_events)} events, {start_date} to {end_date}, min {min_duration}min")
+        logger.info(f"Work hours: {preferences.no_meetings_before} to {preferences.no_meetings_after}")
+        
+        # Reset debug counter
+        self._overlap_debug_count = 0
+        
+        # Ensure timezone-aware datetimes
+        if start_date.tzinfo is None:
+            start_date = start_date.replace(tzinfo=timezone.utc)
+        if end_date.tzinfo is None:
+            end_date = end_date.replace(tzinfo=timezone.utc)
+        
+        logger.info(f"Date range (timezone-aware): {start_date} to {end_date}")
+        
         # Generate potential work time slots (workday hours)
         potential_blocks = self._generate_workday_blocks(
             start_date,
             end_date,
             preferences
         )
+        
+        logger.info(f"Generated {len(potential_blocks)} potential workday blocks")
 
         # Remove busy times (meetings)
         free_blocks = []
+        overlapping_count = 0
+        
+        # Filter events to date range and separate blocking vs non-blocking
+        # CRITICAL: Ensure all event times are timezone-aware before comparison
+        events_in_range = []
+        for e in calendar_events:
+            event_start = e.start_time
+            event_end = e.end_time
+            
+            # Ensure timezone-aware
+            if event_start.tzinfo is None:
+                event_start = event_start.replace(tzinfo=timezone.utc)
+            if event_end.tzinfo is None:
+                event_end = event_end.replace(tzinfo=timezone.utc)
+            
+            # Now safe to compare
+            if event_start < end_date and event_end > start_date:
+                events_in_range.append(e)
+        
+        # Separate blocking events (actual meetings) from non-blocking (working hours blocks)
+        blocking_events = filter_blocking_events(events_in_range)
+        non_blocking_events = [e for e in events_in_range if not is_blocking_event(e)]
+        
+        logger.info(
+            f"Events in date range: {len(events_in_range)}/{len(calendar_events)} "
+            f"({len(blocking_events)} blocking meetings, {len(non_blocking_events)} working hours blocks)"
+        )
+        
+        if blocking_events:
+            sample_meetings = blocking_events[:5]
+            logger.info(f"Sample blocking meetings (first 5):")
+            for event in sample_meetings:
+                attendees_count = len(event.attendees or [])
+                logger.info(
+                    f"  - '{event.title}': {event.start_time} to {event.end_time} "
+                    f"({attendees_count} attendees, is_meeting={event.is_meeting})"
+                )
+        
+        if non_blocking_events:
+            sample_blocks = non_blocking_events[:5]
+            logger.info(f"Sample non-blocking events (working hours blocks, first 5):")
+            for event in sample_blocks:
+                logger.info(f"  - '{event.title}': {event.start_time} to {event.end_time} (ignored for scheduling)")
+        
+        # Use only blocking events (actual meetings) for overlap checking
+        calendar_events = blocking_events
+        
         for block in potential_blocks:
-            # Check if block overlaps with any event
-            if not self._overlaps_with_events(block, calendar_events):
+            # Check if block overlaps with any blocking event
+            # CRITICAL: Double-check overlap to ensure we're not missing anything
+            overlaps = self._overlaps_with_events(block, calendar_events)
+            
+            if not overlaps:
                 # Score block quality
                 quality_score = self._score_block_quality(block, preferences)
 
@@ -91,11 +159,42 @@ class AvailabilityAnalyzer:
                         quality_score=quality_score,
                         time_of_day=self._get_time_of_day(block['start'])
                     ))
+            else:
+                overlapping_count += 1
+                # Log first few overlaps for debugging
+                if overlapping_count <= 3:
+                    logger.debug(
+                        f"Block {block['start']} to {block['end']} overlaps with blocking event"
+                    )
+        
+        # Log diagnostic info
+        if len(potential_blocks) > 0:
+            logger.info(f"Block filtering: {overlapping_count}/{len(potential_blocks)} blocks overlap with events, {len(free_blocks)} free blocks remain")
+            if len(free_blocks) == 0 and len(potential_blocks) > 0:
+                # Log sample of potential blocks to see what we're generating
+                logger.info(f"Sample potential blocks (first 3):")
+                for block in potential_blocks[:3]:
+                    logger.info(f"  - {block['start']} to {block['end']} ({block['duration_minutes']}min, tz={block['start'].tzinfo})")
 
+        # Merge adjacent blocks to create larger blocks (better for deep work)
+        if free_blocks:
+            free_blocks = self.merge_adjacent_blocks(free_blocks, max_gap_minutes=0)
+            logger.info(f"After merging adjacent blocks: {len(free_blocks)} free blocks")
+        
         # Sort by quality score (best first)
         free_blocks.sort(key=lambda b: b.quality_score, reverse=True)
 
-        logger.info(f"Found {len(free_blocks)} free blocks (min {min_duration}min)")
+        logger.info(f"Found {len(free_blocks)} free blocks (min {min_duration}min) after filtering and merging")
+        if len(free_blocks) == 0 and len(calendar_events) > 0:
+            logger.warning(
+                f"No free blocks found despite {len(potential_blocks)} potential blocks. "
+                f"Calendar may be completely full. "
+                f"Work hours: {preferences.no_meetings_before}-{preferences.no_meetings_after}, "
+                f"Events in range: {len(events_in_range)}"
+            )
+        elif len(free_blocks) == 0:
+            logger.warning(f"No free blocks found. Check work hours configuration (start: {preferences.no_meetings_before}, end: {preferences.no_meetings_after})")
+        
         return free_blocks
 
     def _generate_workday_blocks(
@@ -107,12 +206,12 @@ class AvailabilityAnalyzer:
         """Generate potential work time blocks for each day.
 
         Args:
-            start_date: Start date
-            end_date: End date
+            start_date: Start date (timezone-aware)
+            end_date: End date (timezone-aware)
             preferences: Work preferences
 
         Returns:
-            List of time block dictionaries
+            List of time block dictionaries with timezone-aware datetimes
         """
         blocks = []
 
@@ -120,15 +219,37 @@ class AvailabilityAnalyzer:
         work_start_hour = int(preferences.no_meetings_before.split(':')[0])
         work_end_hour = int(preferences.no_meetings_after.split(':')[0]) if preferences.no_meetings_after else 18
 
+        # Get timezone from start_date, or default to UTC
+        tz = start_date.tzinfo or timezone.utc
+
         current_date = start_date.date()
         end = end_date.date()
+        # CRITICAL: Ensure now is timezone-aware with same timezone as start_date
+        now = datetime.now(tz) if tz else datetime.now(timezone.utc)
+        if now.tzinfo is None:
+            now = now.replace(tzinfo=timezone.utc)
 
         while current_date <= end:
             # Skip weekends (Saturday=5, Sunday=6)
             if current_date.weekday() < 5:  # Monday=0, Friday=4
-                # Create blocks for this workday
-                day_start = datetime.combine(current_date, time(work_start_hour, 0))
-                day_end = datetime.combine(current_date, time(work_end_hour, 0))
+                # Create blocks for this workday (timezone-aware)
+                day_start = datetime.combine(current_date, time(work_start_hour, 0), tz)
+                day_end = datetime.combine(current_date, time(work_end_hour, 0), tz)
+                
+                # If this is today, start from current time (not beginning of day)
+                # CRITICAL: Both must be timezone-aware for comparison
+                if current_date == now.date():
+                    # Ensure both are in same timezone for max() comparison
+                    if day_start.tzinfo != now.tzinfo:
+                        if day_start.tzinfo is None:
+                            day_start = day_start.replace(tzinfo=now.tzinfo)
+                        elif now.tzinfo is None:
+                            now = now.replace(tzinfo=day_start.tzinfo)
+                    day_start = max(day_start, now)
+                    # Round up to next 30-minute mark for cleaner blocks
+                    if day_start.minute % 30 != 0:
+                        minutes_to_add = 30 - (day_start.minute % 30)
+                        day_start = day_start + timedelta(minutes=minutes_to_add)
 
                 # Split into 30-minute blocks for finer granularity
                 current_time = day_start
@@ -153,25 +274,52 @@ class AvailabilityAnalyzer:
         block: dict,
         events: List[CalendarEvent]
     ) -> bool:
-        """Check if time block overlaps with any calendar event.
+        """Check if time block overlaps with any blocking calendar event.
 
         Args:
-            block: Time block dictionary
+            block: Time block dictionary with timezone-aware datetimes
             events: List of calendar events
 
         Returns:
-            True if block overlaps with any event
+            True if block overlaps with any blocking event
         """
         block_start = block['start']
         block_end = block['end']
 
+        # Ensure block times are timezone-aware
+        if block_start.tzinfo is None:
+            block_start = block_start.replace(tzinfo=timezone.utc)
+        if block_end.tzinfo is None:
+            block_end = block_end.replace(tzinfo=timezone.utc)
+
         for event in events:
-            # Skip all-day events
-            if event.all_day:
+            # Skip non-blocking events (working hours blocks, personal blocks, etc.)
+            if not is_blocking_event(event):
                 continue
 
-            # Check for overlap
-            if (block_start < event.end_time and block_end > event.start_time):
+            # Ensure event times are timezone-aware for comparison
+            event_start = normalize_datetime(event.start_time)
+            event_end = normalize_datetime(event.end_time)
+
+            # Check for overlap (blocks overlap if they share any time)
+            # Two time ranges overlap if: start1 < end2 AND start2 < end1
+            overlaps = (block_start < event_end and block_end > event_start)
+            
+            if overlaps:
+                # Log first few overlaps for debugging
+                if hasattr(self, '_overlap_debug_count'):
+                    self._overlap_debug_count += 1
+                else:
+                    self._overlap_debug_count = 1
+                
+                if self._overlap_debug_count <= 3:
+                    logger.debug(
+                        f"Block overlaps with meeting: "
+                        f"block [{block_start} - {block_end}] vs "
+                        f"meeting '{event.title}' [{event_start} - {event_end}] "
+                        f"(attendees: {len(event.attendees or [])})"
+                    )
+                
                 return True
 
         return False
