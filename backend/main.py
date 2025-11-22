@@ -69,6 +69,17 @@ async def lifespan(app: FastAPI):
     calendar_scheduler = get_calendar_scheduler()
     calendar_scheduler.start()
 
+    # Start Email Polling Service (Phase 5)
+    logger.info("📧 Starting Email Polling Service...")
+    from services.email_polling_service import get_email_polling_service
+    email_polling_service = get_email_polling_service()
+    try:
+        await email_polling_service.start()
+        logger.info(f"✅ Email polling started (every {email_polling_service.poll_interval_minutes} minutes)")
+    except Exception as e:
+        logger.error(f"⚠️  Failed to start email polling: {e}")
+        logger.warning("   Email polling disabled - check OAuth configuration")
+
     yield
 
     # Shutdown
@@ -78,6 +89,14 @@ async def lifespan(app: FastAPI):
 
     logger.info("📅 Stopping Calendar scheduler...")
     calendar_scheduler.stop()
+
+    # Stop Email Polling Service (Phase 5)
+    logger.info("📧 Stopping Email Polling Service...")
+    try:
+        await email_polling_service.stop()
+        logger.info("✅ Email polling stopped")
+    except Exception as e:
+        logger.error(f"Failed to stop email polling: {e}")
 
     logger.info("👋 Shutting down...")
 

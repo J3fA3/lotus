@@ -19,7 +19,7 @@ from services.email_parser import get_email_parser
 from agents.email_classification import classify_email_content
 from agents.orchestrator import process_assistant_message  # Phase 5: Orchestrator integration
 from services.email_calendar_intelligence import get_email_calendar_intelligence  # Phase 5: Calendar integration
-from db.database import get_async_session
+from db.database import AsyncSessionLocal
 from db.models import EmailAccount, EmailMessage
 
 logger = logging.getLogger(__name__)
@@ -152,7 +152,7 @@ class EmailPollingService:
                 self.email_parser = get_email_parser()
 
             # Get database session
-            async with get_async_session() as db:
+            async with AsyncSessionLocal() as db:
                 # Authenticate Gmail
                 await self.gmail_service.authenticate(user_id=1, db=db)
 
