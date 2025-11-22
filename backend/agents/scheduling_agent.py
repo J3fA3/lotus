@@ -25,9 +25,6 @@ Usage:
 """
 
 import logging
-import json
-import re
-import traceback
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any, Optional
@@ -43,6 +40,8 @@ from services.availability_analyzer import get_availability_analyzer, FreeBlock
 from services.calendar_sync import get_calendar_sync_service
 from services.work_preferences import get_work_preferences
 from services.user_profile import get_user_profile
+from utils.datetime_utils import now_utc, normalize_datetime, parse_iso_datetime
+from utils.json_utils import parse_json_response, extract_json_array
 
 logger = logging.getLogger(__name__)
 
@@ -146,7 +145,7 @@ class SchedulingAgent:
             logger.info(f"Found {len(calendar_events)} calendar events for user {user_id}")
 
             # 3. Find free time blocks
-            start_date = datetime.now(timezone.utc)
+            start_date = now_utc()
             end_date = start_date + timedelta(days=days_ahead)
 
             free_blocks = self.availability.find_free_blocks(
@@ -290,16 +289,16 @@ class SchedulingAgent:
             List of urgent tasks
         """
         urgent = []
-        now = datetime.now(timezone.utc)
+        now = now_utc()
 
         for task in tasks:
             # Check 1: Task has due date within 48 hours
             if task.due_date:
                 try:
                     if isinstance(task.due_date, str):
-                        due = self._parse_iso_datetime(task.due_date)
+                        due = parse_iso_datetime(task.due_date)
                     else:
-                        due = self._normalize_datetime(task.due_date)
+                        due = normalize_datetime(task.due_date)
 
                     hours_until_due = (due - now).total_seconds() / 3600
                     if 0 < hours_until_due <= 48:
@@ -313,7 +312,7 @@ class SchedulingAgent:
             for event in calendar_events:
                 if task.id in (event.related_task_ids or []):
                     # Ensure event.start_time is timezone-aware
-                    event_start = self._normalize_datetime(event.start_time)
+                    event_start = normalize_datetime(event.start_time)
                     
                     hours_until_meeting = (event_start - now).total_seconds() / 3600
                     if 0 < hours_until_meeting <= 24:
@@ -453,8 +452,8 @@ class SchedulingAgent:
                     try:
                         
                         # Parse and validate times
-                        start_time = self._parse_iso_datetime(item.start_time)
-                        end_time = self._parse_iso_datetime(item.end_time)
+                        start_time = parse_iso_datetime(item.start_time)
+                        end_time = parse_iso_datetime(item.end_time)
                         
                         # Reject weekend scheduling
                         if not self._validate_weekday(start_time):
@@ -676,18 +675,8 @@ class SchedulingAgent:
             List of SchedulingSuggestion objects
         """
         try:
-            # Remove markdown code blocks if present
-            text = response_text.strip()
-            if text.startswith("```json"):
-                text = text[7:]
-            if text.startswith("```"):
-                text = text[3:]
-            if text.endswith("```"):
-                text = text[:-3]
-            text = text.strip()
-
-            # Parse JSON - handle both old format (array) and new format (object with suggestions)
-            response_data = json.loads(text)
+            # Parse JSON using shared utility
+            response_data = parse_json_response(response_text)
             
             # Handle new structured format
             if isinstance(response_data, dict) and 'suggestions' in response_data:
@@ -715,8 +704,8 @@ class SchedulingAgent:
                         continue
 
                     # Parse and validate times
-                    start_time = self._parse_iso_datetime(item['start_time'])
-                    end_time = self._parse_iso_datetime(item['end_time'])
+                    start_time = parse_iso_datetime(item['start_time'])
+                    end_time = parse_iso_datetime(item['end_time'])
                     
                     # Reject weekend scheduling
                     if not self._validate_weekday(start_time):
@@ -755,75 +744,9 @@ class SchedulingAgent:
 
             return suggestions
 
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse Gemini response as JSON: {e}")
-            logger.error(f"Raw response (first 500 chars): {response_text[:500]}")
-            logger.error(f"Full response length: {len(response_text)} chars")
-            
-            # Try to extract JSON array from response if it's embedded in text
-            json_match = re.search(r'\[[\s\S]*?\]', response_text)
-            if json_match:
-                try:
-                    extracted_json = json_match.group(0)
-                    suggestions_data = json.loads(extracted_json)
-                    logger.info("Successfully extracted JSON array from response text")
-                    
-                    if not isinstance(suggestions_data, list):
-                        raise ValueError("Response must be a JSON array")
-                    
-                    # Continue with normal parsing...
-                    # Handle both old format (array) and new format (object with suggestions)
-                    if isinstance(suggestions_data, dict) and 'suggestions' in suggestions_data:
-                        suggestions_data = suggestions_data['suggestions']
-                    
-                    task_dict = {t.id: t for t in tasks}
-                    suggestions = []
-                    for item in suggestions_data:
-                        try:
-                            task_id = item.get('task_id')
-                            if not task_id or task_id not in task_dict:
-                                continue
-                            # Parse and validate times
-                            start_time = self._parse_iso_datetime(item['start_time'])
-                            end_time = self._parse_iso_datetime(item['end_time'])
-                            
-                            # Reject weekend scheduling
-                            if not self._validate_weekday(start_time):
-                                logger.warning(f"Rejecting weekend suggestion: {start_time.strftime('%A')}")
-                                continue
-                            
-                            # Use estimated_duration_minutes if provided
-                            if 'estimated_duration_minutes' in item:
-                                duration = item['estimated_duration_minutes']
-                                end_time = start_time + timedelta(minutes=duration)
-                            else:
-                                duration = int((end_time - start_time).total_seconds() / 60)
-                            
-                            # Get task and calculate metrics
-                            task = task_dict[task_id]
-                            urgency = self._determine_urgency(task)
-                            quality_score = self._find_block_quality(start_time, end_time, free_blocks)
-                            reasoning = self._generate_reasoning(start_time, end_time, duration, urgency, quality_score)
-                            
-                            suggestion = SchedulingSuggestion(
-                                task_id=task_id,
-                                task_title=task.title,
-                                start_time=start_time,
-                                end_time=end_time,
-                                duration_minutes=duration,
-                                confidence_score=min(100, max(0, item.get('confidence', 70))),
-                                reasoning=reasoning,
-                                quality_score=quality_score,
-                                urgency_level=urgency
-                            )
-                            suggestions.append(suggestion)
-                        except (KeyError, ValueError) as parse_error:
-                            logger.warning(f"Failed to parse suggestion item: {parse_error}")
-                            continue
-                    return suggestions
-                except Exception as extract_error:
-                    logger.error(f"Failed to extract JSON from response: {extract_error}")
-            
+        except ValueError as e:
+            # parse_json_response already handles extraction and logging
+            logger.error(f"Failed to parse Gemini response: {e}")
             raise ValueError(f"Invalid JSON response from Gemini: {e}")
 
     def _find_block_quality(
@@ -850,19 +773,6 @@ class SchedulingAgent:
         # Not in any free block (shouldn't happen, but handle gracefully)
         return 50  # Default medium quality
 
-    def _normalize_datetime(self, dt: datetime) -> datetime:
-        """Ensure datetime is timezone-aware (UTC).
-        
-        Args:
-            dt: Datetime (may be naive or timezone-aware)
-            
-        Returns:
-            Timezone-aware datetime in UTC
-        """
-        if dt.tzinfo is None:
-            return dt.replace(tzinfo=timezone.utc)
-        return dt
-    
     def _generate_reasoning(
         self,
         start_time: datetime,
@@ -904,18 +814,6 @@ class SchedulingAgent:
             f"{time_of_day.capitalize()} slot with quality score {quality_score}/100."
         )
     
-    def _parse_iso_datetime(self, time_str: str) -> datetime:
-        """Parse ISO datetime string and ensure timezone-aware.
-        
-        Args:
-            time_str: ISO datetime string (may have 'Z' suffix)
-            
-        Returns:
-            Timezone-aware datetime in UTC
-        """
-        dt = datetime.fromisoformat(time_str.replace('Z', '+00:00'))
-        return self._normalize_datetime(dt)
-    
     def _validate_weekday(self, dt: datetime) -> bool:
         """Check if datetime is on a weekday (Monday-Friday).
         
@@ -940,12 +838,12 @@ class SchedulingAgent:
             return "low"
 
         try:
-            now = datetime.now(timezone.utc)
+            now = now_utc()
             
             if isinstance(task.due_date, str):
-                due = self._parse_iso_datetime(task.due_date)
+                due = parse_iso_datetime(task.due_date)
             else:
-                due = self._normalize_datetime(task.due_date)
+                due = normalize_datetime(task.due_date)
 
             hours_until = (due - now).total_seconds() / 3600
 
@@ -996,11 +894,11 @@ class SchedulingAgent:
             
             if isinstance(task.due_date, str):
                 try:
-                    return self._parse_iso_datetime(task.due_date)
+                    return parse_iso_datetime(task.due_date)
                 except:
                     return datetime.max.replace(tzinfo=timezone.utc)
             else:
-                return self._normalize_datetime(task.due_date)
+                return normalize_datetime(task.due_date)
         
         sorted_tasks = sorted(
             tasks,
@@ -1151,7 +1049,7 @@ class SchedulingAgent:
                     
                     # Boost score for urgent tasks (sooner is better)
                     if urgency in ["critical", "high"]:
-                        days_away = (block.start_time.date() - datetime.now(timezone.utc).date()).days
+                        days_away = (block.start_time.date() - now_utc().date()).days
                         if days_away <= 2:
                             score += 15
                     

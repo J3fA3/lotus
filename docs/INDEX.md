@@ -32,11 +32,13 @@ Start here if you're new to Task Crate:
 - **[Contributing](../CONTRIBUTING.md)** - Contribution guidelines
 
 #### Technical Documentation
-- **[Architecture Overview](./ARCHITECTURE.md)** - System design and data flow
+- **[Architecture Overview](./architecture/SYSTEM_OVERVIEW.md)** - System design and data flow
 - **[API Reference](./api/API_REFERENCE.md)** - Complete endpoint documentation
+- **[Phase 4 Guide](./development/PHASE4_GUIDE.md)** - Calendar integration & scheduling
 - **[Database Schema](./development/DATABASE_SCHEMA.md)** - Models and migrations
 
 #### Advanced Topics
+- **[Phase 4 Guide](./development/PHASE4_GUIDE.md)** - Calendar integration & smart scheduling
 - **[Performance Optimization](./development/PERFORMANCE.md)** - Caching and speed
 - **[Testing Guide](./development/TESTING.md)** - Test strategy and examples
 - **[Deployment](./development/DEPLOYMENT.md)** - Production deployment guide
@@ -111,6 +113,7 @@ docs/
 - **How the AI works** → [Cognitive Nexus](./architecture/COGNITIVE_NEXUS.md)
 - **Knowledge graph explained** → [Knowledge Graph](./architecture/KNOWLEDGE_GRAPH.md)
 - **Phase 3 improvements** → [Lotus Assistant](./guides/LOTUS_ASSISTANT.md)
+- **Phase 4 calendar integration** → [Phase 4 Guide](./development/PHASE4_GUIDE.md)
 
 #### Troubleshoot
 - **App not working** → [Troubleshooting](./guides/TROUBLESHOOTING.md)

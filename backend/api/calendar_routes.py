@@ -19,7 +19,7 @@ Routes:
 """
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, List
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -30,6 +30,7 @@ from pydantic import BaseModel
 from db.database import get_db
 from services.google_oauth import get_oauth_service
 from services.calendar_sync import get_calendar_sync_service
+from utils.datetime_utils import now_utc
 
 logger = logging.getLogger(__name__)
 
@@ -206,7 +207,7 @@ async def sync_calendar(
         return {
             "success": True,
             "events_count": len(events),
-            "synced_at": datetime.utcnow().isoformat()
+            "synced_at": now_utc().isoformat()
         }
 
     except Exception as e:
@@ -298,11 +299,10 @@ async def get_todays_events(
             "date": "2025-11-18"
         }
     """
-    try:
-        calendar_service = get_calendar_sync_service()
-        from datetime import timezone
-        today = datetime.now(timezone.utc)
-        events = await calendar_service.get_events_by_date(user_id, db, today)
+        try:
+            calendar_service = get_calendar_sync_service()
+            today = now_utc()
+            events = await calendar_service.get_events_by_date(user_id, db, today)
 
         events_data = [
             {
@@ -662,7 +662,7 @@ async def check_task_scheduled(
         from sqlalchemy import select, or_, and_
         from db.models import ScheduledBlock, Task, CalendarEvent
         from services.work_preferences import get_work_preferences
-        from datetime import datetime, timezone
+        from utils.datetime_utils import now_utc
 
         # First, get the task to get its title
         task_query = select(Task).where(Task.id == task_id)
@@ -719,7 +719,7 @@ async def check_task_scheduled(
         # 2. Event description contains "Task: [task title]"
         # 3. Event has this task_id in related_task_ids
         # 4. Event is in the future (not past)
-        now = datetime.now(timezone.utc)
+        now = now_utc()
         
         # Get all future events for this user to check multiple criteria
         all_events_query = select(CalendarEvent).where(

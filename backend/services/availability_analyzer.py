@@ -27,6 +27,8 @@ from typing import List, Optional
 from dataclasses import dataclass
 
 from db.models import CalendarEvent, WorkPreferences
+from utils.datetime_utils import normalize_datetime
+from utils.event_utils import is_blocking_event, filter_blocking_events
 
 logger = logging.getLogger(__name__)
 
@@ -113,8 +115,8 @@ class AvailabilityAnalyzer:
                 events_in_range.append(e)
         
         # Separate blocking events (actual meetings) from non-blocking (working hours blocks)
-        blocking_events = [e for e in events_in_range if self._is_blocking_event(e)]
-        non_blocking_events = [e for e in events_in_range if not self._is_blocking_event(e)]
+        blocking_events = filter_blocking_events(events_in_range)
+        non_blocking_events = [e for e in events_in_range if not is_blocking_event(e)]
         
         logger.info(
             f"Events in date range: {len(events_in_range)}/{len(calendar_events)} "
@@ -267,119 +269,6 @@ class AvailabilityAnalyzer:
 
         return blocks
 
-    def _is_blocking_event(self, event: CalendarEvent) -> bool:
-        """Determine if an event should block task scheduling.
-        
-        Blocks scheduling if:
-        - It's an actual meeting (is_meeting=True OR has multiple attendees)
-        - It's an "out of office" / "away" / "unavailable" event
-        - It's an all-day event that indicates unavailability
-        - It's any regular event (not a working hours block)
-        
-        Does NOT block if:
-        - It's a Lotus-created task block (🪷 prefix)
-        - It's a personal working hours block ("Working", "Available", etc.)
-        
-        Args:
-            event: Calendar event to check
-            
-        Returns:
-            True if event should block scheduling
-        """
-        title = event.title or ""
-        title_lower = title.lower()
-        attendees = event.attendees or []
-        has_multiple_attendees = len(attendees) > 1
-        
-        # Skip Lotus-created task blocks (can be scheduled over)
-        if title.startswith("🪷"):
-            return False
-        
-        # CRITICAL: All-day events that indicate unavailability SHOULD block
-        # "Out of office", "Away", "Vacation", etc. are all-day and should block
-        if event.all_day:
-            # Check for unavailability keywords in all-day events
-            unavailability_keywords = [
-                "out of office", "out of the office", "oof", "away", 
-                "vacation", "holiday", "sick", "leave", "pto", 
-                "unavailable", "off", "not available"
-            ]
-            if any(keyword in title_lower for keyword in unavailability_keywords):
-                logger.debug(f"Blocking all-day unavailability event: '{title}'")
-                return True
-            # Other all-day events (like "Working Hours") are usually availability markers
-            # But be conservative - if we're not sure, don't block
-            return False
-        
-        # If it's marked as a meeting OR has multiple attendees, it blocks
-        if event.is_meeting or has_multiple_attendees:
-            return True
-        
-        # CRITICAL: Events with organizer but no/hidden attendees are likely meetings
-        # Google Calendar hides guest lists for privacy - these should still block
-        if event.organizer and len(attendees) <= 1:
-            # If there's an organizer (not the user) and no visible attendees, it's likely a meeting
-            # with hidden guest list - block it
-            logger.debug(f"Blocking event with organizer (likely hidden guest list): '{title}'")
-            return True
-        
-        # Check for unavailability keywords (even for timed events)
-        unavailability_keywords = [
-            "out of office", "out of the office", "oof", "away", 
-            "vacation", "holiday", "sick", "leave", "pto", 
-            "unavailable", "off", "not available", "do not schedule",
-            "guest list", "hidden", "private"
-        ]
-        if any(keyword in title_lower for keyword in unavailability_keywords):
-            logger.debug(f"Blocking unavailability event: '{title}'")
-            return True
-        
-        # Check description for unavailability keywords (some events have it in description)
-        description = (event.description or "").lower()
-        if any(keyword in description for keyword in unavailability_keywords):
-            logger.debug(f"Blocking event (unavailability in description): '{title}'")
-            return True
-        
-        # Check for common working hours block patterns (these DON'T block)
-        working_block_keywords = [
-            "working", "work", "available", "office hours", 
-            "focus time", "deep work", "block", "busy"
-        ]
-        
-        # If title suggests it's a working hours block and has no/one attendee, don't block
-        if any(keyword in title_lower for keyword in working_block_keywords):
-            if len(attendees) <= 1:
-                logger.debug(f"Skipping working hours block: '{title}' (no real attendees)")
-                return False
-        
-        # Calculate duration for long events
-        # CRITICAL: Ensure both times are timezone-aware before calculating duration
-        event_start = event.start_time
-        event_end = event.end_time
-        if event_start.tzinfo is None:
-            event_start = event_start.replace(tzinfo=timezone.utc)
-        if event_end.tzinfo is None:
-            event_end = event_end.replace(tzinfo=timezone.utc)
-        
-        duration_hours = (event_end - event_start).total_seconds() / 3600
-        
-        # Long events (4+ hours) with no attendees might be working blocks
-        # But be conservative - if it's not clearly a working block, block it
-        if duration_hours >= 4 and len(attendees) <= 1:
-            # Only skip if it matches working block patterns
-            if any(keyword in title_lower for keyword in working_block_keywords):
-                logger.debug(f"Skipping long working block: '{title}' ({duration_hours:.1f}h, no attendees)")
-                return False
-        
-        # DEFAULT: Block everything else (conservative approach)
-        # Regular events (even without attendees) should block unless they're clearly working hours blocks
-        # This catches:
-        # - Events with hidden guest lists (no attendees but still meetings)
-        # - Regular calendar events that aren't working hours blocks
-        # - Any event we're not sure about (better safe than sorry)
-        logger.debug(f"Blocking event (default conservative): '{title}' (not a working hours block, duration={duration_hours:.1f}h, attendees={len(attendees)})")
-        return True
-
     def _overlaps_with_events(
         self,
         block: dict,
@@ -405,17 +294,12 @@ class AvailabilityAnalyzer:
 
         for event in events:
             # Skip non-blocking events (working hours blocks, personal blocks, etc.)
-            if not self._is_blocking_event(event):
+            if not is_blocking_event(event):
                 continue
 
             # Ensure event times are timezone-aware for comparison
-            event_start = event.start_time
-            event_end = event.end_time
-            
-            if event_start.tzinfo is None:
-                event_start = event_start.replace(tzinfo=timezone.utc)
-            if event_end.tzinfo is None:
-                event_end = event_end.replace(tzinfo=timezone.utc)
+            event_start = normalize_datetime(event.start_time)
+            event_end = normalize_datetime(event.end_time)
 
             # Check for overlap (blocks overlap if they share any time)
             # Two time ranges overlap if: start1 < end2 AND start2 < end1

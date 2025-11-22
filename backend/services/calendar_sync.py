@@ -21,7 +21,7 @@ Usage:
 
 import os
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
 from googleapiclient.discovery import build
@@ -30,6 +30,8 @@ from sqlalchemy import select, and_
 
 from db.models import CalendarEvent
 from services.google_oauth import get_oauth_service
+from utils.datetime_utils import now_utc, normalize_datetime
+from utils.event_utils import is_blocking_event
 
 logger = logging.getLogger(__name__)
 
@@ -71,9 +73,8 @@ class CalendarSyncService:
             # Build Calendar API client
             service = build('calendar', 'v3', credentials=credentials)
 
-            from datetime import timezone
             # Define time range
-            now = datetime.now(timezone.utc)
+            now = now_utc()
             end_date = now + timedelta(days=days)
 
             # Fetch events
@@ -149,51 +150,13 @@ class CalendarSyncService:
             attendees_data = event_data.get('attendees', [])
             attendees = [a.get('email') for a in attendees_data if a.get('email')]
 
-            # Determine if it's a meeting (multiple attendees)
-            # Also check if it's a working hours block that shouldn't block scheduling
-            title = event_data.get('summary', 'Untitled')
-            title_lower = title.lower()
-            
-            # Get organizer (important for detecting meetings with hidden guest lists)
-            organizer_data = event_data.get('organizer', {})
-            organizer = organizer_data.get('email')
-            
-            # Check for working hours block patterns
-            working_block_keywords = [
-                "working", "work", "available", "office hours", 
-                "focus time", "deep work", "block", "busy"
-            ]
-            is_working_block = any(keyword in title_lower for keyword in working_block_keywords)
-            
-            # Calculate duration
-            duration_hours = (end_time - start_time).total_seconds() / 3600 if not all_day else 0
-            
-            # It's a meeting if:
-            # 1. Has multiple attendees (actual meeting with people), OR
-            # 2. Has an organizer (not the user) - likely a meeting with hidden guest list
-            # It's NOT a meeting if:
-            # - It's a working hours block with no/one attendee
-            # - It's a long event (4+ hours) with no/one attendee (likely availability marker)
-            
-            has_multiple_attendees = len(attendees) > 1
-            is_long_personal_block = duration_hours >= 4 and len(attendees) <= 1
-            has_organizer = organizer is not None
-            
-            # CRITICAL: If event has organizer but no/hidden attendees, it's likely a meeting
-            # Google Calendar hides guest lists for privacy - treat as meeting
-            if has_organizer and len(attendees) <= 1 and not is_working_block:
-                is_meeting = True  # Likely meeting with hidden guest list
-                logger.debug(f"Event '{title}' has organizer but no visible attendees - treating as meeting")
-            elif is_working_block and len(attendees) <= 1:
-                is_meeting = False  # Working hours block, don't block scheduling
-            elif is_long_personal_block:
-                is_meeting = False  # Long personal block, likely availability marker
-            else:
-                is_meeting = has_multiple_attendees  # Only block if actual meeting with people
-
             # Get organizer
             organizer_data = event_data.get('organizer', {})
             organizer = organizer_data.get('email')
+            
+            # Determine if it's a meeting (will be refined after creating CalendarEvent)
+            # For now, use simple heuristic: multiple attendees = meeting
+            is_meeting = len(attendees) > 1
 
             # Check if event already exists
             query = select(CalendarEvent).where(
@@ -213,9 +176,10 @@ class CalendarSyncService:
                 existing_event.attendees = attendees
                 existing_event.organizer = organizer
                 existing_event.is_meeting = is_meeting
-                from datetime import timezone
-                existing_event.last_synced = datetime.now(timezone.utc)
-                existing_event.updated_at = datetime.now(timezone.utc)
+                # Refine is_meeting using blocking logic after updating all fields
+                existing_event.is_meeting = is_blocking_event(existing_event)
+                existing_event.last_synced = now_utc()
+                existing_event.updated_at = now_utc()
 
                 return existing_event
             else:
@@ -234,6 +198,8 @@ class CalendarSyncService:
                     organizer=organizer,
                     is_meeting=is_meeting
                 )
+                # Refine is_meeting using blocking logic (more accurate)
+                new_event.is_meeting = is_blocking_event(new_event)
                 db.add(new_event)
 
                 return new_event
@@ -262,15 +228,12 @@ class CalendarSyncService:
         Returns:
             List of CalendarEvent objects
         """
-        from datetime import timezone
-        start = start_date or datetime.now(timezone.utc)
+        start = start_date or now_utc()
         end = end_date or (start + timedelta(days=days_ahead))
         
         # Ensure timezone-aware
-        if start.tzinfo is None:
-            start = start.replace(tzinfo=timezone.utc)
-        if end.tzinfo is None:
-            end = end.replace(tzinfo=timezone.utc)
+        start = normalize_datetime(start)
+        end = normalize_datetime(end)
 
         query = select(CalendarEvent).where(
             and_(

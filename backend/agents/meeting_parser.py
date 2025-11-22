@@ -23,7 +23,6 @@ Usage:
 """
 
 import logging
-import json
 from typing import List, Optional, Dict, Any
 from dataclasses import dataclass
 
@@ -33,6 +32,8 @@ from sqlalchemy import select
 from db.models import CalendarEvent, Task
 from services.user_profile import UserProfile
 from agents.enrichment_engine import get_gemini_client
+from utils.json_utils import parse_json_response
+from utils.datetime_utils import now_utc
 
 logger = logging.getLogger(__name__)
 
@@ -211,34 +212,20 @@ JSON response:"""
         Returns:
             Parsed dictionary
         """
+        default = {
+            "related_projects": [],
+            "importance_score": 50,
+            "prep_needed": False,
+            "prep_checklist": [],
+            "reasoning": "Failed to parse response"
+        }
+        
         try:
-            # Remove markdown code blocks if present
-            text = response_text.strip()
-            if text.startswith("```json"):
-                text = text[7:]
-            if text.startswith("```"):
-                text = text[3:]
-            if text.endswith("```"):
-                text = text[:-3]
-
-            text = text.strip()
-
-            # Parse JSON
-            result = json.loads(text)
-            return result
-
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse Gemini response as JSON: {e}")
+            return parse_json_response(response_text, default=default)
+        except ValueError as e:
+            logger.error(f"Failed to parse Gemini response: {e}")
             logger.debug(f"Raw response: {response_text}")
-
-            # Return default values
-            return {
-                "related_projects": [],
-                "importance_score": 50,
-                "prep_needed": False,
-                "prep_checklist": [],
-                "reasoning": "Failed to parse response"
-            }
+            return default
 
     async def _get_recent_tasks(
         self,
@@ -322,11 +309,11 @@ JSON response:"""
         Returns:
             List of parsed meetings
         """
-        from datetime import datetime, timedelta
-
-        from datetime import timezone
+        from datetime import timedelta
+        from utils.datetime_utils import now_utc
+        
         # Get upcoming calendar events
-        start_time = datetime.now(timezone.utc)
+        start_time = now_utc()
         end_time = start_time + timedelta(days=days_ahead)
 
         query = select(CalendarEvent).where(
