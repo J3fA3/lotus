@@ -4,8 +4,9 @@ import { TaskCard } from "./TaskCard";
 import { TaskDetailSheet } from "./TaskDetailSheet";
 import { TaskFullPage } from "./TaskFullPage";
 import { QuickAddTask } from "./QuickAddTask";
-import { TaskSearchBar } from "./TaskSearchBar";
+import { TaskSearchBar, TaskSearchBarRef } from "./TaskSearchBar";
 import LotusDialog from "./LotusDialog";
+import { DeleteTaskDialog } from "./DeleteTaskDialog";
 import { Button } from "./ui/button";
 import { Plus, Keyboard } from "lucide-react";
 import { LotusIcon } from "./LotusIcon";
@@ -36,6 +37,20 @@ const TOAST_DURATION = {
   LONG: 5000,
 } as const;
 
+// Helper function to get today's date in YYYY-MM-DD format
+const getTodayDateString = (): string => {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, '0');
+  const day = String(today.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+// Helper function to auto-set start date when moving from todo to doing
+const shouldAutoSetStartDate = (oldStatus: TaskStatus, newStatus: TaskStatus, currentStartDate?: string): boolean => {
+  return oldStatus === "todo" && newStatus === "doing" && !currentStartDate;
+};
+
 export const KanbanBoard = () => {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
@@ -43,6 +58,7 @@ export const KanbanBoard = () => {
   const [isFullPageOpen, setIsFullPageOpen] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [wasExpandedBeforeFullscreen, setWasExpandedBeforeFullscreen] = useState(false);
+  const [isTransitioning, setIsTransitioning] = useState(false);
   const [draggedTask, setDraggedTask] = useState<Task | null>(null);
   const [quickAddColumn, setQuickAddColumn] = useState<TaskStatus | null>(null);
   const [showShortcuts, setShowShortcuts] = useState(false);
@@ -55,11 +71,19 @@ export const KanbanBoard = () => {
   const [focusedColumn, setFocusedColumn] = useState<number>(0); // 0 = todo, 1 = doing, 2 = done
   const [focusedTaskIndex, setFocusedTaskIndex] = useState<number>(0);
   const [navigationMode, setNavigationMode] = useState(false); // Track if we're in keyboard navigation mode
+  const [taskToDelete, setTaskToDelete] = useState<Task | null>(null);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  
+  // Track newly created tasks for animation
+  const [newlyCreatedTaskIds, setNewlyCreatedTaskIds] = useState<Set<string>>(new Set());
+  // Track which column just had a task added (for column highlight animation)
+  const [highlightedColumn, setHighlightedColumn] = useState<TaskStatus | null>(null);
 
   // Search state
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<Set<string>>(new Set()); // Set of task IDs matching search
   const [isSearching, setIsSearching] = useState(false);
+  const searchBarRef = useRef<TaskSearchBarRef>(null);
 
   const { shortcuts, getShortcutByAction, updateShortcut } = useShortcuts();
 
@@ -164,6 +188,13 @@ export const KanbanBoard = () => {
   const getColumnTasks = useCallback((columnIndex: number) => {
     const status = COLUMNS[columnIndex].id;
     let columnTasks = tasks.filter((t) => t.status === status);
+
+    // Sort by created_at descending (newest first) so new tasks appear at top
+    columnTasks.sort((a, b) => {
+      const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return dateB - dateA; // Newest first
+    });
 
     // Filter by search results if search is active
     if (searchQuery.trim()) {
@@ -273,9 +304,8 @@ export const KanbanBoard = () => {
   useRegisterShortcut('delete_task', () => {
     const task = getFocusedTask();
     if (task) {
-      if (confirm(`Delete task "${task.title}"?`)) {
-        handleDeleteTask(task.id);
-      }
+      setTaskToDelete(task);
+      setIsDeleteDialogOpen(true);
     }
   });
 
@@ -301,17 +331,39 @@ export const KanbanBoard = () => {
       const statusOrder: TaskStatus[] = ["todo", "doing", "done"];
       const currentIndex = statusOrder.indexOf(task.status);
       const nextStatus = statusOrder[(currentIndex + 1) % statusOrder.length];
-      handleUpdateTask({ ...task, status: nextStatus });
+      
+      // Auto-set start date when moving from todo to doing
+      const updatedTask = { ...task, status: nextStatus };
+      if (shouldAutoSetStartDate(task.status, nextStatus, task.startDate)) {
+        updatedTask.startDate = getTodayDateString();
+      }
+      
+      // Update the task
+      handleUpdateTask(updatedTask);
+      
+      // Update focused task state to track the moved task's new position
+      const newColumnIndex = COLUMNS.findIndex(col => col.id === nextStatus);
+      if (newColumnIndex !== -1) {
+        // Use setTimeout to ensure tasks state is updated first
+        setTimeout(() => {
+          const newColumnTasks = getColumnTasks(newColumnIndex);
+          const newTaskIndex = newColumnTasks.findIndex(t => t.id === task.id);
+          if (newTaskIndex !== -1) {
+            setFocusedColumn(newColumnIndex);
+            setFocusedTaskIndex(newTaskIndex);
+            setNavigationMode(true);
+          }
+        }, 0);
+      }
+      
       toast.success(`Moved to ${COLUMNS.find(c => c.id === nextStatus)?.title}`, { duration: TOAST_DURATION.SHORT });
     }
   });
 
   // Global shortcuts
   useRegisterShortcut('focus_search', () => {
-    const searchInput = document.querySelector('input[type="text"][placeholder*="Search"]') as HTMLInputElement;
-    if (searchInput) {
-      searchInput.focus();
-      searchInput.click(); // Trigger expand if needed
+    if (searchBarRef.current) {
+      searchBarRef.current.focus();
     }
   });
 
@@ -329,19 +381,29 @@ export const KanbanBoard = () => {
   });
 
   useRegisterShortcut('toggle_fullscreen', () => {
-    if (selectedTask) {
+    if (selectedTask && !isTransitioning) {
       if (isFullPageOpen) {
-        // Exit fullscreen - restore previous view
+        // Exit fullscreen - restore previous view with smooth transition
+        setIsTransitioning(true);
         setIsFullPageOpen(false);
-        setIsDialogOpen(true);
-        setIsExpanded(wasExpandedBeforeFullscreen);
-        toast.success(wasExpandedBeforeFullscreen ? "Expanded view" : "Peek mode", { duration: TOAST_DURATION.SHORT });
+        // Small delay for smooth handoff
+        setTimeout(() => {
+          setIsDialogOpen(true);
+          setIsExpanded(wasExpandedBeforeFullscreen);
+          setIsTransitioning(false);
+          toast.success(wasExpandedBeforeFullscreen ? "Expanded view" : "Peek mode", { duration: TOAST_DURATION.SHORT });
+        }, 100);
       } else if (isDialogOpen) {
-        // Enter fullscreen - remember current view
+        // Enter fullscreen - remember current view with smooth transition
+        setIsTransitioning(true);
         setWasExpandedBeforeFullscreen(isExpanded);
         setIsDialogOpen(false);
-        setIsFullPageOpen(true);
-        toast.success("Full screen view", { duration: TOAST_DURATION.SHORT });
+        // Small delay for smooth handoff
+        setTimeout(() => {
+          setIsFullPageOpen(true);
+          setIsTransitioning(false);
+          toast.success("Full screen view", { duration: TOAST_DURATION.SHORT });
+        }, 200);
       }
     }
   });
@@ -385,8 +447,46 @@ export const KanbanBoard = () => {
         status,
         assignee: "You",
       });
+      
+      // Find the column index for the new task
+      const columnIndex = COLUMNS.findIndex(col => col.id === status);
+      
+      // New task will be at index 0 (top of the column) since we sort by newest first
+      const newTaskIndex = 0;
+      
+      // Mark task as newly created for animation
+      setNewlyCreatedTaskIds((prev) => new Set([...prev, newTask.id]));
+      
+      // Highlight the column to make it obvious where the task was created
+      setHighlightedColumn(status);
+      
+      // Add task to state (will appear at top due to sorting)
       setTasks((prev) => [...prev, newTask]);
       setQuickAddColumn(null);
+      
+      // Set focus and navigation state immediately
+      setFocusedColumn(columnIndex);
+      setFocusedTaskIndex(newTaskIndex);
+      setNavigationMode(true);
+      
+      // Delay opening the detail sheet to let the card animation play first
+      // This creates a smooth, coordinated animation sequence
+      // The card slides in over 500ms, so we start opening the sheet at 200ms for overlap
+      setTimeout(() => {
+        setSelectedTask(newTask);
+        setIsDialogOpen(true);
+      }, 200); // Coordinated delay - card animation starts, then sheet slides in
+      
+      // Remove the "newly created" flag after animation completes
+      setTimeout(() => {
+        setNewlyCreatedTaskIds((prev) => {
+          const next = new Set(prev);
+          next.delete(newTask.id);
+          return next;
+        });
+        setHighlightedColumn(null); // Remove column highlight
+      }, 1200); // Remove after all animations complete (card + sheet + column highlight)
+      
       toast.success("Task added", { duration: TOAST_DURATION.SHORT });
     } catch (err) {
       console.error("Failed to create task:", err);
@@ -402,9 +502,59 @@ export const KanbanBoard = () => {
 
   const handleUpdateTask = useCallback(async (updatedTask: Task) => {
     try {
-      await tasksApi.updateTask(updatedTask.id, updatedTask);
-      setTasks((prev) => prev.map((t) => (t.id === updatedTask.id ? updatedTask : t)));
-      setSelectedTask(updatedTask);
+      // Get original task using functional update to avoid stale closure
+      let originalTask: Task | undefined;
+      setTasks((prev) => {
+        originalTask = prev.find(t => t.id === updatedTask.id);
+        return prev; // Don't modify, just read
+      });
+      
+      const statusChanged = originalTask && originalTask.status !== updatedTask.status;
+      
+      // Build update data - only include fields that should be sent to API
+      // Don't send id, createdAt, updatedAt, etc. as those are managed by the backend
+      const updateData: Partial<Task> = {
+        status: updatedTask.status,
+        title: updatedTask.title,
+        assignee: updatedTask.assignee,
+        description: updatedTask.description,
+        notes: updatedTask.notes,
+        valueStream: updatedTask.valueStream,
+        startDate: updatedTask.startDate,
+        dueDate: updatedTask.dueDate,
+        comments: updatedTask.comments,
+        attachments: updatedTask.attachments,
+      };
+      
+      // Auto-set start date when moving from todo to doing
+      if (originalTask && shouldAutoSetStartDate(originalTask.status, updatedTask.status, originalTask.startDate)) {
+        updateData.startDate = getTodayDateString();
+        updatedTask = { ...updatedTask, startDate: updateData.startDate };
+      }
+      
+      const response = await tasksApi.updateTask(updatedTask.id, updateData);
+      setTasks((prev) => prev.map((t) => (t.id === updatedTask.id ? response : t)));
+      setSelectedTask(response);
+      
+      // If status changed, update focused task state to track the moved task's new position
+      if (statusChanged) {
+        const newColumnIndex = COLUMNS.findIndex(col => col.id === updatedTask.status);
+        if (newColumnIndex !== -1) {
+          // Use setTimeout to ensure tasks state is updated first
+          setTimeout(() => {
+            setTasks((prev) => {
+              const newColumnTasks = prev.filter(t => t.status === updatedTask.status);
+              const newTaskIndex = newColumnTasks.findIndex(t => t.id === updatedTask.id);
+              if (newTaskIndex !== -1) {
+                setFocusedColumn(newColumnIndex);
+                setFocusedTaskIndex(newTaskIndex);
+                setNavigationMode(true);
+              }
+              return prev; // Don't modify, just read
+            });
+          }, 0);
+        }
+      }
     } catch (err) {
       console.error("Failed to update task:", err);
       toast.error("Failed to update task", {
@@ -431,12 +581,16 @@ export const KanbanBoard = () => {
       setTasks((prev) => prev.filter((t) => t.id !== taskId));
       setIsDialogOpen(false);
       setSelectedTask(null);
+      setIsDeleteDialogOpen(false);
+      setTaskToDelete(null);
       toast.success("Task deleted", { duration: TOAST_DURATION.SHORT });
     } catch (err) {
       console.error("Failed to delete task:", err);
       toast.error("Failed to delete task", {
         description: err instanceof Error ? err.message : "Unknown error",
       });
+      // Re-throw error so DeleteTaskDialog can keep dialog open on error
+      throw err;
     }
   }, []);
 
@@ -454,10 +608,34 @@ export const KanbanBoard = () => {
       return;
     }
 
-    const updatedTask = { ...draggedTask, status, updatedAt: new Date().toISOString() };
+    // Auto-set start date when moving from todo to doing
+    const updateData: Partial<Task> = { status };
+    if (shouldAutoSetStartDate(draggedTask.status, status, draggedTask.startDate)) {
+      updateData.startDate = getTodayDateString();
+    }
+    
     try {
-      await tasksApi.updateTask(draggedTask.id, { status });
+      const updatedTask = await tasksApi.updateTask(draggedTask.id, updateData);
       setTasks((prev) => prev.map((t) => (t.id === draggedTask.id ? updatedTask : t)));
+      
+      // Update focused task state to track the moved task's new position
+      const newColumnIndex = COLUMNS.findIndex(col => col.id === status);
+      if (newColumnIndex !== -1) {
+        // Use setTimeout to ensure tasks state is updated first
+        setTimeout(() => {
+          setTasks((prev) => {
+            const newColumnTasks = prev.filter(t => t.status === status);
+            const newTaskIndex = newColumnTasks.findIndex(t => t.id === draggedTask.id);
+            if (newTaskIndex !== -1) {
+              setFocusedColumn(newColumnIndex);
+              setFocusedTaskIndex(newTaskIndex);
+              setNavigationMode(true);
+            }
+            return prev; // Don't modify, just read
+          });
+        }, 0);
+      }
+      
       toast.success("Task moved", { duration: TOAST_DURATION.SHORT });
     } catch (err) {
       console.error("Failed to update task:", err);
@@ -543,7 +721,7 @@ export const KanbanBoard = () => {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <TaskSearchBar onSearch={handleSearch} isSearching={isSearching} />
+            <TaskSearchBar ref={searchBarRef} onSearch={handleSearch} isSearching={isSearching} />
             <Button
               variant="default"
               size="sm"
@@ -750,7 +928,16 @@ export const KanbanBoard = () => {
             return (
             <div
               key={column.id}
-              className="flex flex-col bg-column-bg rounded-2xl p-3 min-h-[70vh] transition-all duration-300"
+              className={`flex flex-col bg-column-bg rounded-2xl p-3 min-h-[70vh] transition-all duration-500 ${
+                highlightedColumn === column.id 
+                  ? 'ring-2 ring-primary/60 ring-offset-2 shadow-lg shadow-primary/20 bg-primary/5' 
+                  : ''
+              }`}
+              style={{
+                ...(highlightedColumn === column.id ? {
+                  animation: 'columnPulse 1.2s ease-in-out',
+                } : {}),
+              }}
               onDragOver={handleDragOver}
               onDrop={() => handleDrop(column.id)}
             >
@@ -784,17 +971,43 @@ export const KanbanBoard = () => {
                     const isFocused = navigationMode &&
                                      columnIndex === focusedColumn &&
                                      taskIndex === focusedTaskIndex;
+                    const isNewlyCreated = newlyCreatedTaskIds.has(task.id);
+                    // If a new task was added to this column and this isn't the new task, animate shift down
+                    // Only shift tasks that come after the new task (new task is at index 0, so shift index > 0)
+                    const shouldShiftDown = highlightedColumn === column.id && !isNewlyCreated && taskIndex > 0;
 
                     return (
                       <div
                         key={task.id}
-                        className={`transition-all duration-200 ${isFocused ? 'ring-2 ring-primary ring-offset-2 rounded-lg' : ''}`}
+                        data-task-id={task.id}
+                        className={`transition-all duration-200 ${
+                          isFocused ? 'ring-2 ring-primary ring-offset-2 rounded-lg' : ''
+                        }`}
+                        style={{
+                          ...(shouldShiftDown ? {
+                            animation: 'task-shift-down 0.5s cubic-bezier(0.16, 1, 0.3, 1)',
+                          } : {}),
+                        }}
                       >
-                        <TaskCard
-                          task={task}
-                          onClick={() => handleTaskClick(task, columnIndex, taskIndex)}
-                          onDragStart={() => handleDragStart(task)}
-                        />
+                        <div
+                          className={`relative ${
+                            isNewlyCreated 
+                              ? 'ring-2 ring-primary/40 ring-offset-1 rounded-lg shadow-lg shadow-primary/10' 
+                              : ''
+                          }`}
+                          style={{
+                            ...(isNewlyCreated ? {
+                              animation: 'task-slide-in 0.5s cubic-bezier(0.16, 1, 0.3, 1), task-pulse 1.5s ease-in-out 2',
+                              transformOrigin: 'top center',
+                            } : {}),
+                          }}
+                        >
+                          <TaskCard
+                            task={task}
+                            onClick={() => handleTaskClick(task, columnIndex, taskIndex)}
+                            onDragStart={() => handleDragStart(task)}
+                          />
+                        </div>
                       </div>
                     );
                   })}
@@ -823,8 +1036,24 @@ export const KanbanBoard = () => {
           isExpanded={isExpanded}
           onToggleExpanded={() => setIsExpanded(!isExpanded)}
           onFullPage={() => {
+            setIsTransitioning(true);
+            setWasExpandedBeforeFullscreen(isExpanded);
             setIsDialogOpen(false);
-            setIsFullPageOpen(true);
+            // Smooth handoff: sheet exits, then full page enters
+            setTimeout(() => {
+              setIsFullPageOpen(true);
+              setIsTransitioning(false);
+            }, 200);
+          }}
+          onFullyClose={() => {
+            // Fully close: clear selection and close all views with smooth animation
+            setIsTransitioning(true);
+            setIsDialogOpen(false);
+            setTimeout(() => {
+              setSelectedTask(null);
+              setIsExpanded(false);
+              setIsTransitioning(false);
+            }, 300);
           }}
         />
       )}
@@ -834,7 +1063,37 @@ export const KanbanBoard = () => {
           task={selectedTask}
           onUpdate={handleUpdateTask}
           onDelete={handleDeleteTask}
-          onClose={() => setIsFullPageOpen(false)}
+          onClose={() => {
+            setIsTransitioning(true);
+            setIsFullPageOpen(false);
+            // Smooth handoff: full page exits, then sheet enters
+            setTimeout(() => {
+              setIsDialogOpen(true);
+              setIsExpanded(wasExpandedBeforeFullscreen);
+              setIsTransitioning(false);
+            }, 100);
+          }}
+          onFullyClose={() => {
+            // Fully close: clear selection and close all views with smooth animation
+            setIsTransitioning(true);
+            setIsFullPageOpen(false);
+            setTimeout(() => {
+              setSelectedTask(null);
+              setIsExpanded(false);
+              setIsTransitioning(false);
+            }, 300);
+          }}
+        />
+      )}
+
+      {taskToDelete && (
+        <DeleteTaskDialog
+          open={isDeleteDialogOpen}
+          onOpenChange={setIsDeleteDialogOpen}
+          taskTitle={taskToDelete.title}
+          onConfirm={async () => {
+            await handleDeleteTask(taskToDelete.id);
+          }}
         />
       )}
     </div>

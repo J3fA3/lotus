@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useImperativeHandle, forwardRef } from "react";
 import { Search, X, Loader2 } from "lucide-react";
 import { Input } from "./ui/input";
 import { cn } from "@/lib/utils";
@@ -9,7 +9,12 @@ interface TaskSearchBarProps {
   className?: string;
 }
 
-export const TaskSearchBar = ({ onSearch, isSearching = false, className }: TaskSearchBarProps) => {
+export interface TaskSearchBarRef {
+  focus: () => void;
+}
+
+export const TaskSearchBar = forwardRef<TaskSearchBarRef, TaskSearchBarProps>(
+  ({ onSearch, isSearching = false, className }, ref) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -78,6 +83,22 @@ export const TaskSearchBar = ({ onSearch, isSearching = false, className }: Task
     }
   };
 
+  // Expose focus method to parent components
+  useImperativeHandle(ref, () => ({
+    focus: () => {
+      if (!isExpanded) {
+        setIsExpanded(true);
+      }
+      // Focus will happen automatically via the useEffect that watches isExpanded
+      // But we'll also ensure it focuses after a brief delay to handle the DOM update
+      setTimeout(() => {
+        if (inputRef.current) {
+          inputRef.current.focus();
+        }
+      }, 0);
+    },
+  }));
+
   return (
     <div ref={containerRef} className={cn("relative", className)}>
       {!isExpanded ? (
@@ -118,4 +139,6 @@ export const TaskSearchBar = ({ onSearch, isSearching = false, className }: Task
       )}
     </div>
   );
-};
+});
+
+TaskSearchBar.displayName = "TaskSearchBar";

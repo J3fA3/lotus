@@ -60,9 +60,43 @@ function normalizeKey(key: string): string {
 }
 
 /**
+ * Check if a dialog or modal is currently open
+ * Only checks for blocking dialogs (AlertDialog) that should prevent shortcuts
+ */
+function isDialogOpen(): boolean {
+  // Only check for AlertDialog - these are blocking dialogs that should prevent shortcuts
+  // Regular dialogs (like Sheet) should not block shortcuts
+  const alertDialog = document.querySelector('[role="alertdialog"]');
+  
+  if (!alertDialog) {
+    return false;
+  }
+  
+  const element = alertDialog as HTMLElement;
+  const style = window.getComputedStyle(element);
+  const dataState = element.getAttribute('data-state');
+  const ariaHidden = element.getAttribute('aria-hidden');
+  
+  // Dialog is open if:
+  // - data-state is 'open' AND
+  // - display is not 'none' AND visibility is not 'hidden'
+  const isOpen = dataState === 'open' && 
+                 style.display !== 'none' && 
+                 style.visibility !== 'hidden' &&
+                 ariaHidden !== 'true';
+  
+  return isOpen;
+}
+
+/**
  * Check if we should ignore keyboard events (e.g., when typing in inputs)
  */
 export function shouldIgnoreEvent(event: KeyboardEvent): boolean {
+  // If a dialog is open, ignore all shortcuts except Escape
+  if (isDialogOpen() && event.key !== 'Escape') {
+    return true;
+  }
+
   const target = event.target as HTMLElement;
   const tagName = target.tagName.toLowerCase();
   const isEditable = target.isContentEditable;

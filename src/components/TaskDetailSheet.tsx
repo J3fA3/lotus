@@ -30,6 +30,21 @@ import { ValueStreamCombobox } from "./ValueStreamCombobox";
 import { RichTextEditor } from "./RichTextEditor";
 import { TaskScheduler } from "./TaskScheduler";
 import { useRegisterShortcut } from "@/contexts/ShortcutContext";
+import { DeleteTaskDialog } from "./DeleteTaskDialog";
+
+// Helper function to get today's date in YYYY-MM-DD format
+const getTodayDateString = (): string => {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, '0');
+  const day = String(today.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+// Helper function to auto-set start date when moving from todo to doing
+const shouldAutoSetStartDate = (oldStatus: Task["status"], newStatus: Task["status"], currentStartDate?: string): boolean => {
+  return oldStatus === "todo" && newStatus === "doing" && !currentStartDate;
+};
 
 interface TaskDetailSheetProps {
   task: Task;
@@ -40,6 +55,7 @@ interface TaskDetailSheetProps {
   isExpanded?: boolean;
   onToggleExpanded?: () => void;
   onFullPage?: () => void;
+  onFullyClose?: () => void;
 }
 
 export const TaskDetailSheet = ({
@@ -51,6 +67,7 @@ export const TaskDetailSheet = ({
   isExpanded: isExpandedProp = false,
   onToggleExpanded,
   onFullPage,
+  onFullyClose,
 }: TaskDetailSheetProps) => {
   const [editedTask, setEditedTask] = useState<Task>({
     ...task,
@@ -61,6 +78,7 @@ export const TaskDetailSheet = ({
   const [newAttachment, setNewAttachment] = useState("");
   const [isExpanded, setIsExpanded] = useState(isExpandedProp);
   const [isTransitioning, setIsTransitioning] = useState(false);
+  const [isExiting, setIsExiting] = useState(false);
   const [uploadedDocuments, setUploadedDocuments] = useState<DocumentType[]>([]);
   const [isUploadingDocument, setIsUploadingDocument] = useState(false);
   const [selectedDocumentFile, setSelectedDocumentFile] = useState<File | null>(null);
@@ -70,8 +88,13 @@ export const TaskDetailSheet = ({
   const statusRef = useRef<HTMLButtonElement>(null);
   const assigneeRef = useRef<HTMLInputElement>(null);
   const commentsRef = useRef<HTMLDivElement>(null);
+  const startDateRef = useRef<HTMLInputElement>(null);
+  const dueDateRef = useRef<HTMLInputElement>(null);
+  const valueStreamRef = useRef<HTMLDivElement>(null);
+  const scheduleRef = useRef<HTMLDivElement>(null);
   const previousTaskIdRef = useRef<string>(task.id);
   const [currentSectionIndex, setCurrentSectionIndex] = useState(0);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 
   // Track last update timestamp to prevent feedback loops
   const lastExternalUpdateRef = useRef<string>("");
@@ -114,8 +137,17 @@ export const TaskDetailSheet = ({
     setIsExpanded(isExpandedProp);
   }, [isExpandedProp]);
 
-  // Section tabbing - list of focusable sections
-  const sections = [titleRef, descriptionRef, notesRef, commentsRef, statusRef, assigneeRef];
+  // Section tabbing - list of focusable sections in order
+  const sections = [
+    titleRef,        // RichTextEditor
+    statusRef,       // SelectTrigger
+    valueStreamRef,  // ValueStreamCombobox button
+    startDateRef,    // Input date
+    dueDateRef,      // Input date
+    scheduleRef,     // TaskScheduler button
+    descriptionRef,  // RichTextEditor
+    notesRef,       // RichTextEditor
+  ];
 
   const focusSection = useCallback((index: number) => {
     const sectionRef = sections[index];
@@ -133,13 +165,50 @@ export const TaskDetailSheet = ({
       const editable = element.querySelector('[contenteditable="true"]') as HTMLElement;
       if (editable) {
         editable.focus();
-      } else if (element instanceof HTMLInputElement || element instanceof HTMLButtonElement) {
+        return;
+      }
+
+      // For Input elements (date inputs)
+      if (element instanceof HTMLInputElement) {
         element.focus();
-      } else {
-        // Try to focus the element itself
-        if (element.tabIndex >= 0) {
-          element.focus();
+        return;
+      }
+
+      // For Button elements (SelectTrigger)
+      if (element instanceof HTMLButtonElement) {
+        element.focus();
+        return;
+      }
+
+      // For ValueStreamCombobox: find the button trigger
+      if (index === 2) { // valueStreamRef is at index 2
+        const button = element.querySelector('button[role="combobox"]') as HTMLButtonElement;
+        if (button) {
+          button.focus();
+          return;
         }
+      }
+
+      // For TaskScheduler: find the "Find the best time" button
+      if (index === 5) { // scheduleRef is at index 5
+        // Try to find button with text containing "Find" or "best time"
+        const buttons = element.querySelectorAll('button');
+        for (const btn of buttons) {
+          if (btn.textContent?.includes('Find') || btn.textContent?.includes('best time')) {
+            btn.focus();
+            return;
+          }
+        }
+        // Fallback: focus first button if found
+        if (buttons.length > 0) {
+          buttons[0].focus();
+          return;
+        }
+      }
+
+      // Try to focus the element itself
+      if (element.tabIndex >= 0) {
+        element.focus();
       }
     }, 300); // Wait for scroll animation
   }, [sections]);
@@ -147,7 +216,15 @@ export const TaskDetailSheet = ({
   // Configurable keyboard shortcuts
   useRegisterShortcut('close_dialog', () => {
     if (open) {
-      onOpenChange(false);
+      if (onFullyClose) {
+        // Fully close with smooth animation
+        setIsExiting(true);
+        setTimeout(() => {
+          onFullyClose();
+        }, 300);
+      } else {
+        onOpenChange(false);
+      }
     }
   });
 
@@ -171,10 +248,22 @@ export const TaskDetailSheet = ({
     }
   });
 
+  useRegisterShortcut('delete_task', () => {
+    if (open) {
+      setIsDeleteDialogOpen(true);
+    }
+  });
+
   const handleUpdate = useCallback((updates: Partial<Task>) => {
+    // Auto-set start date when moving from todo to doing
+    const finalUpdates = { ...updates };
+    if (updates.status && shouldAutoSetStartDate(editedTask.status, updates.status, editedTask.startDate)) {
+      finalUpdates.startDate = getTodayDateString();
+    }
+    
     const updated = {
       ...editedTask,
-      ...updates,
+      ...finalUpdates,
       updatedAt: new Date().toISOString()
     };
     setEditedTask(updated);
@@ -255,10 +344,15 @@ export const TaskDetailSheet = ({
     <Sheet open={open} onOpenChange={onOpenChange} modal={false}>
       <SheetContent
         side="right"
-        className={`p-0 border-l border-border/30 transition-[width,max-width] duration-300 ease-out task-sheet-scroll overflow-y-auto shadow-2xl ${
+        className={`p-0 border-l border-border/30 transition-[width,max-width,opacity,transform] duration-[400ms] ease-butter task-sheet-scroll overflow-y-auto shadow-2xl will-change-[width,max-width,opacity,transform] ${
           isExpanded ? "w-full sm:max-w-[900px]" : "w-full sm:max-w-[600px]"
-        }`}
+        } ${isExiting ? "opacity-0 scale-[0.98]" : "opacity-100 scale-100"}`}
         onOpenAutoFocus={(e) => e.preventDefault()}
+        style={{
+          transform: isExiting ? "scale(0.98) translateZ(0)" : "scale(1) translateZ(0)",
+          backfaceVisibility: "hidden",
+          WebkitBackfaceVisibility: "hidden",
+        }}
       >
         {/* Sticky Header */}
         <SheetHeader className="sticky top-0 z-10 bg-background/95 backdrop-blur-sm px-8 py-6 border-b border-border/30">
@@ -292,7 +386,10 @@ export const TaskDetailSheet = ({
                   variant="ghost"
                   size="icon"
                   onClick={() => {
-                    onFullPage();
+                    setIsExiting(true);
+                    setTimeout(() => {
+                      onFullPage();
+                    }, 200); // Smooth exit before full page opens
                     toast.success("Full page view");
                   }}
                   className="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-lg transition-all duration-200 hover:scale-105 active:scale-95"
@@ -309,7 +406,7 @@ export const TaskDetailSheet = ({
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => onDelete(task.id)}
+              onClick={() => setIsDeleteDialogOpen(true)}
               className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg transition-all duration-200 hover:scale-105 active:scale-95"
               title="Delete task"
             >
@@ -386,15 +483,13 @@ export const TaskDetailSheet = ({
                   onChange={(html) => handleUpdate({ title: html })}
                   placeholder="Task title - Type / for Word Art styles!"
                   variant="title"
-                  className={`transition-[font-size] duration-200 ease-out ${
-                    isExpanded ? "text-4xl" : "text-3xl"
-                  }`}
+                  className="text-3xl transition-all duration-[400ms] ease-butter"
                   autoFocus={false}
                 />
               </div>
 
           {/* Properties Grid */}
-          <div className={`grid gap-6 transition-[grid-template-columns] duration-200 ease-out ${
+          <div className={`grid gap-6 transition-[grid-template-columns] duration-[400ms] ease-butter will-change-[grid-template-columns] ${
             isExpanded ? "grid-cols-3" : "grid-cols-2"
           }`}>
             <div className="space-y-3">
@@ -416,7 +511,7 @@ export const TaskDetailSheet = ({
               </Select>
             </div>
 
-            <div className="space-y-3">
+            <div className="space-y-3" ref={valueStreamRef}>
               <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                 Value Stream
               </Label>
@@ -429,7 +524,7 @@ export const TaskDetailSheet = ({
             </div>
 
             {isExpanded && (
-              <div className="space-y-3 animate-in fade-in slide-in-from-right-3 duration-200">
+              <div className="space-y-3 animate-in fade-in slide-in-from-right-3 duration-[400ms] ease-butter">
                 <Label className="flex items-center gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
                   <User className="h-3.5 w-3.5 opacity-60" />
                   Assignee
@@ -452,6 +547,7 @@ export const TaskDetailSheet = ({
                 Start Date
               </Label>
               <Input
+                ref={startDateRef}
                 type="date"
                 value={editedTask.startDate || ""}
                 onChange={(e) => handleUpdate({ startDate: e.target.value })}
@@ -465,6 +561,7 @@ export const TaskDetailSheet = ({
                 Due Date
               </Label>
               <Input
+                ref={dueDateRef}
                 type="date"
                 value={editedTask.dueDate || ""}
                 onChange={(e) => handleUpdate({ dueDate: e.target.value })}
@@ -474,19 +571,21 @@ export const TaskDetailSheet = ({
           </div>
 
           {/* Schedule */}
-          <TaskScheduler
-            taskId={editedTask.id}
-            taskTitle={editedTask.title}
-            comments={editedTask.comments}
-            onScheduled={(action) => {
-              // Only show toast for approvals, not cancellations (cancellation already shows its own toast)
-              if (action === 'approved') {
-                toast.success("Time block added to calendar");
-              }
-              // Refresh task to get updated comments
-              // The parent component should handle this via onUpdate
-            }}
-          />
+          <div ref={scheduleRef}>
+            <TaskScheduler
+              taskId={editedTask.id}
+              taskTitle={editedTask.title}
+              comments={editedTask.comments}
+              onScheduled={(action) => {
+                // Only show toast for approvals, not cancellations (cancellation already shows its own toast)
+                if (action === 'approved') {
+                  toast.success("Time block added to calendar");
+                }
+                // Refresh task to get updated comments
+                // The parent component should handle this via onUpdate
+              }}
+            />
+          </div>
 
           {/* Assignee - only show in peek mode since it's in the grid for expanded */}
           {!isExpanded && (
@@ -702,6 +801,20 @@ export const TaskDetailSheet = ({
           )}
         </div>
       </SheetContent>
+
+      <DeleteTaskDialog
+        open={isDeleteDialogOpen}
+        onOpenChange={setIsDeleteDialogOpen}
+        taskTitle={editedTask.title}
+        onConfirm={async () => {
+          try {
+            await onDelete(task.id);
+          } catch (error) {
+            // Re-throw so DeleteTaskDialog can handle it (keep dialog open on error)
+            throw error;
+          }
+        }}
+      />
     </Sheet>
   );
 };
