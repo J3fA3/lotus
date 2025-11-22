@@ -152,7 +152,7 @@ export async function deleteTask(taskId: string): Promise<void> {
   }
 
   try {
-    const response = await fetch(`${API_BASE_URL}/tasks/${taskId}`, {
+    const response = await fetchWithTimeout(`${API_BASE_URL}/tasks/${taskId}`, {
       method: "DELETE",
     });
 
@@ -160,8 +160,17 @@ export async function deleteTask(taskId: string): Promise<void> {
       const error = await response.json().catch(() => ({ detail: response.statusText }));
       throw new Error(error.detail || "Failed to delete task");
     }
+    
+    // Read response body to ensure connection is complete
+    await response.json().catch(() => {
+      // If response has no body, that's fine - just ensure the request completed
+    });
   } catch (error) {
     if (error instanceof Error) {
+      // Handle timeout specifically
+      if (error.name === 'AbortError' || error.message.includes('aborted')) {
+        throw new Error("Request timed out. Please try again.");
+      }
       throw error;
     }
     throw new Error("Unknown error occurred while deleting task");

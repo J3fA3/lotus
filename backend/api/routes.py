@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, text, delete
 from sqlalchemy.orm import selectinload
 import uuid
-from datetime import datetime
+from datetime import datetime, date
 
 from api.schemas import (
     TaskSchema,
@@ -182,7 +182,13 @@ async def create_task(
 
     db.add(task)
     await db.commit()
-    await db.refresh(task, ['attachments', 'comments'])
+    # Reload task with relationships using selectinload instead of refresh
+    result = await db.execute(
+        select(Task)
+        .where(Task.id == task_id)
+        .options(selectinload(Task.comments), selectinload(Task.attachments))
+    )
+    task = result.scalar_one_or_none()
 
     # Phase 6 Stage 3: Create initial version
     try:
@@ -216,7 +222,7 @@ async def create_task(
         import traceback
         traceback.print_exc()
 
-    return _task_to_schema(task)
+    return _task_to_schema(task, load_relationships=True)
 
 
 @router.get("/tasks/{task_id}", response_model=TaskSchema)
@@ -242,169 +248,203 @@ async def update_task(
     db: AsyncSession = Depends(get_db)
 ):
     """Update a task with provided fields"""
-    result = await db.execute(
-        select(Task)
-        .where(Task.id == task_id)
-        .options(selectinload(Task.comments), selectinload(Task.attachments))
-    )
-    task = result.scalar_one_or_none()
+    import logging
+    logger = logging.getLogger(__name__)
 
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
+    try:
+        result = await db.execute(
+            select(Task)
+            .where(Task.id == task_id)
+            .options(selectinload(Task.comments), selectinload(Task.attachments))
+        )
+        task = result.scalar_one_or_none()
 
-    # Phase 6 Stage 3: Capture old values BEFORE update (for version control)
-    old_values = {
-        "status": task.status,
-        "title": task.title,
-        "description": task.description,
-        "assignee": task.assignee,
-        "priority": getattr(task, "priority", None),
-        "effort": getattr(task, "effort", None),
-        "project": getattr(task, "project", None),
-        "start_date": task.start_date.isoformat() if task.start_date else None,
-        "due_date": task.due_date.isoformat() if task.due_date else None,
-        "value_stream": task.value_stream,
-        "notes": task.notes
-    }
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
 
-    # Update only provided fields
-    update_data = task_data.model_dump(exclude_unset=True)
-    field_mapping = {
-        "title": "title",
-        "status": "status",
-        "assignee": "assignee",
-        "startDate": "start_date",
-        "dueDate": "due_date",
-        "valueStream": "value_stream",
-        "description": "description",
-        "notes": "notes"
-    }
+        # Phase 6 Stage 3: Capture old values BEFORE update (for version control)
+        old_values = {
+            "status": task.status,
+            "title": task.title,
+            "description": task.description,
+            "assignee": task.assignee,
+            "priority": getattr(task, "priority", None),
+            "effort": getattr(task, "effort", None),
+            "project": getattr(task, "project", None),
+            "start_date": task.start_date.isoformat() if task.start_date else None,
+            "due_date": task.due_date.isoformat() if task.due_date else None,
+            "value_stream": task.value_stream,
+            "notes": task.notes
+        }
 
-    for api_field, db_field in field_mapping.items():
-        if api_field in update_data:
-            setattr(task, db_field, update_data[api_field])
+        # Store original status before updates for automatic start date logic
+        original_status = task.status
 
-    # Handle comments - full replacement strategy
-    # Delete all existing comments and recreate from request
-    # This ensures frontend state is source of truth
-    if "comments" in update_data and update_data["comments"] is not None:
-        # Delete existing comments (cascade handled by DB)
-        await db.execute(delete(Comment).where(Comment.task_id == task_id))
-        # Recreate all comments from request
-        for comment_data in update_data["comments"]:
-            comment = Comment(
-                id=comment_data.get("id", str(uuid.uuid4())),
-                task_id=task_id,
-                text=comment_data["text"],
-                author=comment_data["author"],
-                created_at=datetime.fromisoformat(comment_data["createdAt"].replace("Z", "+00:00")) if "createdAt" in comment_data else datetime.utcnow()
-            )
-            db.add(comment)
+        # Update only provided fields
+        update_data = task_data.model_dump(exclude_unset=True)
+        field_mapping = {
+            "title": "title",
+            "status": "status",
+            "assignee": "assignee",
+            "startDate": "start_date",
+            "dueDate": "due_date",
+            "valueStream": "value_stream",
+            "description": "description",
+            "notes": "notes"
+        }
 
-    # Handle attachments - replace all
-    if "attachments" in update_data and update_data["attachments"] is not None:
-        # Delete existing attachments
-        await db.execute(delete(Attachment).where(Attachment.task_id == task_id))
-        # Add new attachments
-        for attachment_url in update_data["attachments"]:
-            attachment = Attachment(
-                task_id=task_id,
-                url=attachment_url
-            )
-            db.add(attachment)
+        for api_field, db_field in field_mapping.items():
+            if api_field in update_data:
+                setattr(task, db_field, update_data[api_field])
 
-    task.updated_at = datetime.utcnow()
+        # Auto-set start date when moving from todo to doing (safety check)
+        # This ensures start date is set even if frontend doesn't send it
+        if "status" in update_data:
+            new_status = update_data["status"]
+            if original_status == "todo" and new_status == "doing" and not task.start_date:
+                task.start_date = date.today().isoformat()
+                logger.info(f"Auto-set start date for task {task_id} when moving from todo to doing")
 
-    # Phase 6 Stage 3: Create version BEFORE final commit (in same transaction)
-    # Capture new values
-    new_values = {
-        "status": task.status,
-        "title": task.title,
-        "description": task.description,
-        "assignee": task.assignee,
-        "priority": getattr(task, "priority", None),
-        "effort": getattr(task, "effort", None),
-        "project": getattr(task, "project", None),
-        "start_date": task.start_date.isoformat() if task.start_date else None,
-        "due_date": task.due_date.isoformat() if task.due_date else None,
-        "value_stream": task.value_stream,
-        "notes": task.notes
-    }
+        # Handle comments - full replacement strategy
+        # Delete all existing comments and recreate from request
+        # This ensures frontend state is source of truth
+        if "comments" in update_data and update_data["comments"] is not None:
+            # Delete existing comments (cascade handled by DB)
+            await db.execute(delete(Comment).where(Comment.task_id == task_id))
+            # Recreate all comments from request
+            for comment_data in update_data["comments"]:
+                comment = Comment(
+                    id=comment_data.get("id", str(uuid.uuid4())),
+                    task_id=task_id,
+                    text=comment_data["text"],
+                    author=comment_data["author"],
+                    created_at=datetime.fromisoformat(comment_data["createdAt"].replace("Z", "+00:00")) if "createdAt" in comment_data else datetime.utcnow()
+                )
+                db.add(comment)
 
-    # Detect which fields actually changed
-    changed_fields = []
-    for field, new_val in new_values.items():
-        old_val = old_values.get(field)
-        if old_val != new_val:
-            changed_fields.append(field)
+        # Handle attachments - replace all
+        if "attachments" in update_data and update_data["attachments"] is not None:
+            # Delete existing attachments
+            await db.execute(delete(Attachment).where(Attachment.task_id == task_id))
+            # Add new attachments
+            for attachment_url in update_data["attachments"]:
+                attachment = Attachment(
+                    task_id=task_id,
+                    url=attachment_url
+                )
+                db.add(attachment)
 
-    # Create version if significant changes
-    if changed_fields:
-        try:
-            from services.task_version_service import get_task_version_service
-            from services.pr_comment_generator import get_pr_comment_generator
+        # Phase 6 Stage 3: Create version BEFORE final commit (in same transaction)
+        # Capture new values
+        new_values = {
+            "status": task.status,
+            "title": task.title,
+            "description": task.description,
+            "assignee": task.assignee,
+            "priority": getattr(task, "priority", None),
+            "effort": getattr(task, "effort", None),
+            "project": getattr(task, "project", None),
+            "start_date": task.start_date.isoformat() if task.start_date else None,
+            "due_date": task.due_date.isoformat() if task.due_date else None,
+            "value_stream": task.value_stream,
+            "notes": task.notes
+        }
 
-            version_service = await get_task_version_service(db)
-            pr_generator = get_pr_comment_generator()
+        # Detect which fields actually changed
+        changed_fields = []
+        for field, new_val in new_values.items():
+            old_val = old_values.get(field)
+            if old_val != new_val:
+                changed_fields.append(field)
 
-            # Detect if AI suggestions were overridden
-            # TODO: Add ai_suggestions parameter to API when AI enrichment is implemented
-            ai_suggestions = None  # Will be populated from orchestrator enrichment
-            ai_overridden = False
-            overridden_fields = []
+        # Create version if significant changes
+        if changed_fields:
+            try:
+                from services.task_version_service import get_task_version_service
+                from services.pr_comment_generator import get_pr_comment_generator
 
-            # Create version
-            version = await version_service.create_update_version(
-                task_id=task_id,
-                old_values={k: v for k, v in old_values.items() if k in changed_fields},
-                new_values={k: v for k, v in new_values.items() if k in changed_fields},
-                changed_by=update_data.get("updated_by", "user"),  # TODO: Get from auth
-                change_source="user_edit",
-                ai_model=None,
-                ai_suggestions=ai_suggestions
-            )
+                version_service = await get_task_version_service(db)
+                pr_generator = get_pr_comment_generator()
 
-            # Generate PR-style comment if version was created
-            if version:
-                change_type = "status_change" if "status" in changed_fields else "field_update"
-                pr_comment = await pr_generator.generate_comment(
-                    changed_fields=changed_fields,
+                # Detect if AI suggestions were overridden
+                # TODO: Add ai_suggestions parameter to API when AI enrichment is implemented
+                ai_suggestions = None  # Will be populated from orchestrator enrichment
+                ai_overridden = False
+                overridden_fields = []
+
+                # Create version
+                version = await version_service.create_update_version(
+                    task_id=task_id,
                     old_values={k: v for k, v in old_values.items() if k in changed_fields},
                     new_values={k: v for k, v in new_values.items() if k in changed_fields},
-                    change_type=change_type,
+                    changed_by=update_data.get("updated_by", "user"),  # TODO: Get from auth
                     change_source="user_edit",
-                    ai_suggestions=ai_suggestions,
-                    ai_overridden=ai_overridden,
-                    overridden_fields=overridden_fields
+                    ai_model=None,
+                    ai_suggestions=ai_suggestions
                 )
-                version.pr_comment = pr_comment
-                version.pr_comment_generated_at = datetime.utcnow()
 
-        except Exception as e:
-            # Log error but don't fail the task update
-            print(f"Version creation failed for task {task_id}: {e}")
-            import traceback
-            traceback.print_exc()
+                # Generate PR-style comment if version was created
+                if version:
+                    change_type = "status_change" if "status" in changed_fields else "field_update"
+                    pr_comment = await pr_generator.generate_comment(
+                        changed_fields=changed_fields,
+                        old_values={k: v for k, v in old_values.items() if k in changed_fields},
+                        new_values={k: v for k, v in new_values.items() if k in changed_fields},
+                        change_type=change_type,
+                        change_source="user_edit",
+                        ai_suggestions=ai_suggestions,
+                        ai_overridden=ai_overridden,
+                        overridden_fields=overridden_fields
+                    )
+                    version.pr_comment = pr_comment
+                    version.pr_comment_generated_at = datetime.utcnow()
 
-    await db.commit()
-    await db.refresh(task)
+            except Exception as e:
+                # Log error but don't fail the task update
+                logger.error(f"Version creation failed for task {task_id}: {e}", exc_info=True)
 
-    # Phase 6: Record task outcome if status changed to "done"
-    if "status" in changed_fields and task.status == "done":
-        try:
-            tracker = await get_outcome_tracker(db)
-            await tracker.record_outcome_on_status_change(
-                task_id=task_id,
-                new_status=task.status,
-                previous_status=old_values["status"]
-            )
-            # Commit outcome separately (don't fail task update if outcome tracking fails)
-            await db.commit()
-        except Exception as e:
-            # Log error but don't fail the task update
-            print(f"Outcome tracking failed for task {task_id}: {e}")
+        task.updated_at = datetime.utcnow()
 
-    return _task_to_schema(task)
+        await db.commit()
+
+        # Reload task with relationships using selectinload instead of refresh
+        result = await db.execute(
+            select(Task)
+            .where(Task.id == task_id)
+            .options(selectinload(Task.comments), selectinload(Task.attachments))
+        )
+        task = result.scalar_one_or_none()
+
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found after update")
+
+        # Phase 6: Record task outcome if status changed to "done"
+        if "status" in changed_fields and task.status == "done":
+            try:
+                tracker = await get_outcome_tracker(db)
+                await tracker.record_outcome_on_status_change(
+                    task_id=task_id,
+                    new_status=task.status,
+                    previous_status=old_values["status"]
+                )
+                # Commit outcome separately (don't fail task update if outcome tracking fails)
+                await db.commit()
+            except Exception as e:
+                # Log error but don't fail the task update
+                logger.error(f"Outcome tracking failed for task {task_id}: {e}", exc_info=True)
+
+        return _task_to_schema(task, load_relationships=True)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error updating task {task_id}: {e}", exc_info=True)
+        await db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"An unexpected error occurred while updating the task: {str(e)}"
+        )
+
 
 
 # ============================================================================
@@ -1031,55 +1071,150 @@ async def delete_task(
     """Delete a task and its associated calendar events"""
     from db.models import ScheduledBlock
     from services.calendar_sync import get_calendar_sync_service
+    from sqlalchemy import delete as sql_delete
+    import logging
     
-    result = await db.execute(select(Task).where(Task.id == task_id))
-    task = result.scalar_one_or_none()
-
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
-
-    # Find all scheduled blocks for this task that have calendar events
-    scheduled_blocks_query = select(ScheduledBlock).where(
-        ScheduledBlock.task_id == task_id,
-        ScheduledBlock.calendar_event_id.isnot(None)
-    )
-    scheduled_blocks_result = await db.execute(scheduled_blocks_query)
-    scheduled_blocks = scheduled_blocks_result.scalars().all()
-
-    # Delete associated calendar events from Google Calendar
-    calendar_service = get_calendar_sync_service()
-    deleted_events = []
+    logger = logging.getLogger(__name__)
     
-    for block in scheduled_blocks:
-        if not block.calendar_event_id:
-            continue
+    try:
+        # Verify task exists first
+        task_result = await db.execute(select(Task).where(Task.id == task_id))
+        task = task_result.scalar_one_or_none()
+
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
+
+        # Find all scheduled blocks for this task
+        # Use a direct query that returns tuples for reliable data extraction
+        scheduled_blocks_query = select(
+            ScheduledBlock.id,
+            ScheduledBlock.calendar_event_id
+        ).where(ScheduledBlock.task_id == task_id)
+        
+        scheduled_blocks_result = await db.execute(scheduled_blocks_query)
+        scheduled_blocks_rows = scheduled_blocks_result.fetchall()
+        
+        # Extract IDs safely - handle both Row and tuple formats
+        calendar_event_ids = []
+        scheduled_block_ids = []
+        
+        for row in scheduled_blocks_rows:
+            # Handle both Row objects and tuples
+            if hasattr(row, 'id'):
+                block_id = row.id
+                event_id = getattr(row, 'calendar_event_id', None)
+            else:
+                # Tuple format: (id, calendar_event_id)
+                block_id = row[0]
+                event_id = row[1] if len(row) > 1 else None
             
+            scheduled_block_ids.append(block_id)
+            if event_id:
+                calendar_event_ids.append(event_id)
+
+        logger.info(f"Found {len(scheduled_block_ids)} scheduled blocks for task {task_id}")
+
+        # Delete associated calendar events from Google Calendar (if any)
+        deleted_events = []
+        if calendar_event_ids:
+            try:
+                calendar_service = get_calendar_sync_service()
+                
+                for event_id in calendar_event_ids:
+                    try:
+                        await calendar_service.delete_calendar_event(
+                            user_id=user_id,
+                            db=db,
+                            google_event_id=event_id
+                        )
+                        deleted_events.append(event_id)
+                        logger.info(f"Deleted calendar event {event_id} for task {task_id}")
+                    except Exception as e:
+                        # Log warning but continue with task deletion
+                        # Event may have been deleted manually in Google Calendar
+                        logger.warning(
+                            f"Failed to delete calendar event {event_id} for task {task_id}: {e}. "
+                            "Continuing with task deletion."
+                        )
+            except Exception as e:
+                # Log warning if calendar service fails to initialize, but continue with task deletion
+                logger.warning(
+                    f"Failed to initialize calendar service for task {task_id}: {e}. "
+                    "Continuing with task deletion."
+                )
+
+        # Delete all scheduled blocks using raw SQL BEFORE deleting the task
+        # This prevents SQLAlchemy from trying to nullify task_id (which violates NOT NULL constraint)
+        # Using raw SQL bypasses SQLAlchemy's relationship handling entirely
+        if scheduled_block_ids:
+            try:
+                # Use raw SQL with proper parameter binding
+                # Build the SQL with named parameters for each ID
+                params_dict = {}
+                placeholders = []
+                for i, block_id in enumerate(scheduled_block_ids):
+                    param_name = f"id_{i}"
+                    placeholders.append(f":{param_name}")
+                    params_dict[param_name] = block_id
+                
+                delete_sql = text(f"DELETE FROM scheduled_blocks WHERE id IN ({','.join(placeholders)})")
+                result = await db.execute(delete_sql, params_dict)
+                deleted_count = result.rowcount
+                logger.info(f"Deleted {deleted_count} scheduled blocks for task {task_id}")
+                # Flush to ensure scheduled blocks are deleted before task deletion
+                await db.flush()
+            except Exception as e:
+                await db.rollback()
+                logger.error(f"Failed to delete scheduled blocks for task {task_id}: {e}", exc_info=True)
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Failed to delete scheduled blocks: {str(e)}"
+                )
+
+        # Delete the task using raw SQL to avoid SQLAlchemy relationship issues
+        # This ensures we don't trigger any relationship updates
         try:
-            await calendar_service.delete_calendar_event(
-                user_id=user_id,
-                db=db,
-                google_event_id=block.calendar_event_id
-            )
-            deleted_events.append(block.calendar_event_id)
+            delete_task_sql = text("DELETE FROM tasks WHERE id = :task_id")
+            result = await db.execute(delete_task_sql, {"task_id": task_id})
+            deleted_count = result.rowcount
+            
+            if deleted_count == 0:
+                # Task was already deleted or doesn't exist
+                logger.warning(f"Task {task_id} was not found for deletion (may have been already deleted)")
+                raise HTTPException(status_code=404, detail="Task not found")
+            
+            # Commit both scheduled blocks and task deletion together
+            await db.commit()
+            logger.info(f"Successfully deleted task {task_id}")
+        except HTTPException:
+            await db.rollback()
+            raise
         except Exception as e:
-            # Log warning but continue with task deletion
-            # Event may have been deleted manually in Google Calendar
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.warning(
-                f"Failed to delete calendar event {block.calendar_event_id} for task {task_id}: {e}. "
-                "Continuing with task deletion."
+            await db.rollback()
+            logger.error(f"Failed to delete task {task_id} from database: {e}", exc_info=True)
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to delete task: {str(e)}"
             )
 
-    # Delete the task (scheduled blocks will be deleted via CASCADE)
-    await db.delete(task)
-    await db.commit()
+        message = "Task deleted successfully"
+        if deleted_events:
+            message += f" ({len(deleted_events)} calendar event(s) removed)"
 
-    message = "Task deleted successfully"
-    if deleted_events:
-        message += f" ({len(deleted_events)} calendar event(s) removed)"
-
-    return {"message": message, "deleted_calendar_events": len(deleted_events)}
+        return {"message": message, "deleted_calendar_events": len(deleted_events)}
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error deleting task {task_id}: {e}", exc_info=True)
+        try:
+            await db.rollback()
+        except Exception:
+            pass  # Ignore rollback errors if session is already closed
+        raise HTTPException(
+            status_code=500,
+            detail=f"An unexpected error occurred while deleting the task: {str(e)}"
+        )
 
 
 @router.get("/tasks/search/{query}")
@@ -2243,11 +2378,11 @@ def _task_to_schema(task: Task, load_relationships: bool = False) -> TaskSchema:
         title=task.title,
         status=task.status,
         assignee=task.assignee,
-        startDate=task.start_date,
-        dueDate=task.due_date,
-        valueStream=task.value_stream,
-        description=task.description,
-        notes=task.notes,
+        startDate=task.start_date if task.start_date else None,
+        dueDate=task.due_date if task.due_date else None,
+        valueStream=task.value_stream if task.value_stream else None,
+        description=task.description if task.description else None,
+        notes=task.notes if task.notes else None,
         attachments=attachments,
         comments=comments,
         createdAt=created_at.isoformat(),
@@ -2308,24 +2443,44 @@ def _shortcut_to_dict(shortcut: ShortcutConfig) -> dict:
 
 
 async def seed_default_shortcuts(db: AsyncSession):
-    """Seed database with default shortcuts"""
+    """Seed database with default shortcuts (updates existing or inserts new)"""
     defaults = get_default_shortcuts()
 
     for shortcut_data in defaults:
-        shortcut = ShortcutConfig(
-            id=shortcut_data["id"],
-            category=shortcut_data["category"],
-            action=shortcut_data["action"],
-            key=shortcut_data["key"],
-            modifiers=shortcut_data["modifiers"],
-            enabled=shortcut_data["enabled"],
-            description=shortcut_data["description"],
-            user_id=None,
-            is_default=True,
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow()
+        # Check if shortcut already exists
+        result = await db.execute(
+            select(ShortcutConfig).where(
+                ShortcutConfig.id == shortcut_data["id"],
+                ShortcutConfig.user_id == None
+            )
         )
-        db.add(shortcut)
+        existing = result.scalar_one_or_none()
+
+        if existing:
+            # Update existing shortcut
+            existing.category = shortcut_data["category"]
+            existing.action = shortcut_data["action"]
+            existing.key = shortcut_data["key"]
+            existing.modifiers = shortcut_data["modifiers"]
+            existing.enabled = shortcut_data["enabled"]
+            existing.description = shortcut_data["description"]
+            existing.updated_at = datetime.utcnow()
+        else:
+            # Insert new shortcut
+            shortcut = ShortcutConfig(
+                id=shortcut_data["id"],
+                category=shortcut_data["category"],
+                action=shortcut_data["action"],
+                key=shortcut_data["key"],
+                modifiers=shortcut_data["modifiers"],
+                enabled=shortcut_data["enabled"],
+                description=shortcut_data["description"],
+                user_id=None,
+                is_default=True,
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow()
+            )
+            db.add(shortcut)
 
     await db.commit()
 

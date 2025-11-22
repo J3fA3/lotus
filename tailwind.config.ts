@@ -68,6 +68,10 @@ export default {
       transitionProperty: {
         smooth: "var(--transition-smooth)",
       },
+      transitionTimingFunction: {
+        "butter": "cubic-bezier(0.4, 0, 0.2, 1)",
+        "feng-shui": "cubic-bezier(0.16, 1, 0.3, 1)",
+      },
       letterSpacing: {
         tight: '-0.011em',
       },
@@ -93,10 +97,101 @@ export default {
             height: "0",
           },
         },
+        "view-morph-in": {
+          from: {
+            opacity: "0",
+            transform: "scale(0.98)",
+          },
+          to: {
+            opacity: "1",
+            transform: "scale(1)",
+          },
+        },
+        "view-morph-out": {
+          from: {
+            opacity: "1",
+            transform: "scale(1)",
+          },
+          to: {
+            opacity: "0",
+            transform: "scale(0.98)",
+          },
+        },
+        "view-expand": {
+          from: {
+            width: "var(--from-width)",
+            maxWidth: "var(--from-max-width)",
+          },
+          to: {
+            width: "var(--to-width)",
+            maxWidth: "var(--to-max-width)",
+          },
+        },
+        "view-contract": {
+          from: {
+            width: "var(--from-width)",
+            maxWidth: "var(--from-max-width)",
+          },
+          to: {
+            width: "var(--to-width)",
+            maxWidth: "var(--to-max-width)",
+          },
+        },
+        "task-slide-in": {
+          "0%": {
+            opacity: "0",
+            transform: "translateY(-12px) scale(0.96)",
+          },
+          "100%": {
+            opacity: "1",
+            transform: "translateY(0) scale(1)",
+          },
+        },
+        "task-pulse": {
+          "0%, 100%": {
+            opacity: "1",
+          },
+          "50%": {
+            opacity: "0.85",
+          },
+        },
+        "task-shift-down": {
+          "0%": {
+            transform: "translateY(0)",
+          },
+          "30%": {
+            transform: "translateY(12px)",
+          },
+          "100%": {
+            transform: "translateY(0)",
+          },
+        },
+        "column-pulse": {
+          "0%": {
+            transform: "scale(1)",
+            opacity: "1",
+          },
+          "50%": {
+            transform: "scale(1.005)",
+            opacity: "0.95",
+          },
+          "100%": {
+            transform: "scale(1)",
+            opacity: "1",
+          },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
+        "view-morph-in": "view-morph-in 0.4s cubic-bezier(0.16, 1, 0.3, 1)",
+        "view-morph-out": "view-morph-out 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+        "view-expand": "view-expand 0.4s cubic-bezier(0.4, 0, 0.2, 1)",
+        "view-contract": "view-contract 0.4s cubic-bezier(0.4, 0, 0.2, 1)",
+        "task-slide-in": "task-slide-in 0.5s cubic-bezier(0.16, 1, 0.3, 1)",
+        "task-pulse": "task-pulse 1.5s ease-in-out",
+        "task-shift-down": "task-shift-down 0.5s cubic-bezier(0.16, 1, 0.3, 1)",
+        "column-pulse": "column-pulse 1.2s ease-in-out",
       },
     },
   },

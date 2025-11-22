@@ -18,12 +18,15 @@ import { toast } from "sonner";
 import { ValueStreamCombobox } from "./ValueStreamCombobox";
 import { RichTextEditor } from "./RichTextEditor";
 import { TaskScheduler } from "./TaskScheduler";
+import { useRegisterShortcut } from "@/contexts/ShortcutContext";
+import { DeleteTaskDialog } from "./DeleteTaskDialog";
 
 interface TaskFullPageProps {
   task: Task;
   onUpdate: (task: Task) => void;
   onDelete: (taskId: string) => void;
   onClose: () => void;
+  onFullyClose?: () => void;
 }
 
 export const TaskFullPage = ({
@@ -31,6 +34,7 @@ export const TaskFullPage = ({
   onUpdate,
   onDelete,
   onClose,
+  onFullyClose,
 }: TaskFullPageProps) => {
   const [editedTask, setEditedTask] = useState<Task>({
     ...task,
@@ -39,9 +43,35 @@ export const TaskFullPage = ({
   });
   const [newComment, setNewComment] = useState("");
   const [newAttachment, setNewAttachment] = useState("");
+  const [isExiting, setIsExiting] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const notesRef = useRef<HTMLDivElement>(null);
+  const titleRef = useRef<HTMLDivElement>(null);
+  const descriptionRef = useRef<HTMLDivElement>(null);
+  const statusRef = useRef<HTMLButtonElement>(null);
+  const assigneeRef = useRef<HTMLInputElement>(null);
+  const commentsRef = useRef<HTMLDivElement>(null);
+  const startDateRef = useRef<HTMLInputElement>(null);
+  const dueDateRef = useRef<HTMLInputElement>(null);
+  const valueStreamRef = useRef<HTMLDivElement>(null);
+  const scheduleRef = useRef<HTMLDivElement>(null);
+  const [currentSectionIndex, setCurrentSectionIndex] = useState(0);
 
   // Track last update timestamp to prevent feedback loops
   const lastExternalUpdateRef = useRef<string>("");
+
+  // Handle exit animation before closing
+  const handleClose = useCallback(() => {
+    setIsExiting(true);
+    setTimeout(() => {
+      if (onFullyClose) {
+        // Fully close with smooth animation
+        onFullyClose();
+      } else {
+        onClose();
+      }
+    }, 300); // Match exit animation duration
+  }, [onClose, onFullyClose]);
 
   // Update editedTask when the task prop changes
   useEffect(() => {
@@ -56,19 +86,110 @@ export const TaskFullPage = ({
     }
   }, [task.updatedAt]);
 
-  // Keyboard shortcuts
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Escape to close
-      if (e.key === "Escape") {
-        onClose();
+  // Section tabbing - list of focusable sections in order
+  const sections = [
+    titleRef,        // RichTextEditor
+    statusRef,       // SelectTrigger
+    valueStreamRef,  // ValueStreamCombobox button
+    startDateRef,    // Input date
+    dueDateRef,      // Input date
+    scheduleRef,     // TaskScheduler button
+    descriptionRef,  // RichTextEditor
+    notesRef,       // RichTextEditor
+  ];
+
+  const focusSection = useCallback((index: number) => {
+    const sectionRef = sections[index];
+    if (!sectionRef || !sectionRef.current) return;
+
+    // Scroll into view
+    sectionRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+
+    // Focus based on element type
+    setTimeout(() => {
+      const element = sectionRef.current;
+      if (!element) return;
+
+      // For RichTextEditor divs, find the contenteditable element
+      const editable = element.querySelector('[contenteditable="true"]') as HTMLElement;
+      if (editable) {
+        editable.focus();
         return;
       }
-    };
 
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onClose]);
+      // For Input elements (date inputs)
+      if (element instanceof HTMLInputElement) {
+        element.focus();
+        return;
+      }
+
+      // For Button elements (SelectTrigger)
+      if (element instanceof HTMLButtonElement) {
+        element.focus();
+        return;
+      }
+
+      // For ValueStreamCombobox: find the button trigger
+      if (index === 2) { // valueStreamRef is at index 2
+        const button = element.querySelector('button[role="combobox"]') as HTMLButtonElement;
+        if (button) {
+          button.focus();
+          return;
+        }
+      }
+
+      // For TaskScheduler: find the focusable button
+      if (index === 5) { // scheduleRef is at index 5
+        // Try to find button with text containing "Find" or "best time" (collapsed state)
+        const buttons = element.querySelectorAll('button');
+        for (const btn of buttons) {
+          const text = btn.textContent || '';
+          if (text.includes('Find') || text.includes('best time') || text.includes('Find the best')) {
+            btn.focus();
+            return;
+          }
+        }
+        // If scheduled, try to find the cancel button or any interactive button
+        for (const btn of buttons) {
+          if (btn.textContent?.includes('Cancel') || btn.textContent?.includes('Scheduled')) {
+            btn.focus();
+            return;
+          }
+        }
+        // Fallback: focus first focusable button if found
+        if (buttons.length > 0) {
+          buttons[0].focus();
+          return;
+        }
+      }
+
+      // Try to focus the element itself
+      if (element.tabIndex >= 0) {
+        element.focus();
+      }
+    }, 300); // Wait for scroll animation
+  }, [sections]);
+
+  // Configurable keyboard shortcuts
+  useRegisterShortcut('close_dialog', () => {
+    handleClose();
+  });
+
+  useRegisterShortcut('focus_notes', () => {
+    notesRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    setTimeout(() => {
+      const editable = notesRef.current?.querySelector('[contenteditable="true"]') as HTMLElement;
+      if (editable) {
+        editable.focus();
+      }
+    }, 300);
+  });
+
+  useRegisterShortcut('tab_section', () => {
+    const nextIndex = (currentSectionIndex + 1) % sections.length;
+    setCurrentSectionIndex(nextIndex);
+    focusSection(nextIndex);
+  });
 
   const handleUpdate = useCallback((updates: Partial<Task>) => {
     const updated = {
@@ -113,15 +234,30 @@ export const TaskFullPage = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-background overflow-y-auto">
+    <div 
+      className={`fixed inset-0 z-50 bg-background overflow-y-auto will-change-[transform,opacity] ${
+        isExiting 
+          ? "animate-view-morph-out" 
+          : "animate-view-morph-in"
+      }`}
+      style={{
+        transform: isExiting ? "scale(0.98) translateZ(0)" : "scale(1) translateZ(0)",
+        opacity: isExiting ? 0 : 1,
+        transition: isExiting 
+          ? "opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1), transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)" 
+          : "opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1), transform 0.4s cubic-bezier(0.16, 1, 0.3, 1)",
+        backfaceVisibility: "hidden",
+        WebkitBackfaceVisibility: "hidden",
+      }}
+    >
       {/* Header */}
-      <div className="sticky top-0 z-10 bg-background/95 backdrop-blur-sm border-b border-border/30">
+      <div className="sticky top-0 z-10 bg-background/95 backdrop-blur-sm border-b border-border/30 transition-all duration-300">
         <div className="max-w-5xl mx-auto px-8 py-4 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <Button
               variant="ghost"
               size="icon"
-              onClick={onClose}
+              onClick={handleClose}
               className="h-9 w-9 text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-lg transition-all"
               title="Back to board (Esc)"
             >
@@ -136,12 +272,7 @@ export const TaskFullPage = ({
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => {
-              if (confirm(`Delete task "${editedTask.title}"?`)) {
-                onDelete(task.id);
-                onClose();
-              }
-            }}
+            onClick={() => setIsDeleteDialogOpen(true)}
             className="h-9 w-9 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg transition-all"
             title="Delete task"
           >
@@ -154,7 +285,7 @@ export const TaskFullPage = ({
       <div className="max-w-5xl mx-auto px-8 py-12">
         <div className="space-y-12">
           {/* Title */}
-          <div>
+          <div ref={titleRef}>
             <RichTextEditor
               content={editedTask.title}
               onChange={(html) => handleUpdate({ title: html })}
@@ -175,7 +306,7 @@ export const TaskFullPage = ({
                 value={editedTask.status}
                 onValueChange={(value) => handleUpdate({ status: value as Task["status"] })}
               >
-                <SelectTrigger className="h-11 border-border/50 focus:border-primary/50 transition-[border-color] duration-150">
+                <SelectTrigger ref={statusRef} className="h-11 border-border/50 focus:border-primary/50 transition-[border-color] duration-150">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -186,7 +317,7 @@ export const TaskFullPage = ({
               </Select>
             </div>
 
-            <div className="space-y-3">
+            <div className="space-y-3" ref={valueStreamRef}>
               <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                 Value Stream
               </Label>
@@ -204,6 +335,7 @@ export const TaskFullPage = ({
                 Assignee
               </Label>
               <Input
+                ref={assigneeRef}
                 value={editedTask.assignee}
                 onChange={(e) => handleUpdate({ assignee: e.target.value })}
                 className="h-11 border-border/50 focus:border-primary/50 transition-[border-color] duration-150"
@@ -219,6 +351,7 @@ export const TaskFullPage = ({
                 Start Date
               </Label>
               <Input
+                ref={startDateRef}
                 type="date"
                 value={editedTask.startDate || ""}
                 onChange={(e) => handleUpdate({ startDate: e.target.value })}
@@ -232,6 +365,7 @@ export const TaskFullPage = ({
                 Due Date
               </Label>
               <Input
+                ref={dueDateRef}
                 type="date"
                 value={editedTask.dueDate || ""}
                 onChange={(e) => handleUpdate({ dueDate: e.target.value })}
@@ -241,28 +375,32 @@ export const TaskFullPage = ({
           </div>
 
           {/* Schedule */}
-          <TaskScheduler
-            taskId={editedTask.id}
-            taskTitle={editedTask.title}
-            comments={editedTask.comments}
-            onScheduled={(action) => {
-              if (action === 'approved') {
-                toast.success("Time block added to calendar");
-              }
-            }}
-          />
+          <div ref={scheduleRef}>
+            <TaskScheduler
+              taskId={editedTask.id}
+              taskTitle={editedTask.title}
+              comments={editedTask.comments}
+              onScheduled={(action) => {
+                if (action === 'approved') {
+                  toast.success("Time block added to calendar");
+                }
+              }}
+            />
+          </div>
 
           {/* Description */}
           <div className="space-y-4">
             <Label className="text-sm font-semibold text-foreground">
               Description
             </Label>
-            <RichTextEditor
-              content={editedTask.description || ""}
-              onChange={(html) => handleUpdate({ description: html })}
-              placeholder="Add a detailed description... Type / for commands, * for bullets"
-              variant="minimal"
-            />
+            <div ref={descriptionRef}>
+              <RichTextEditor
+                content={editedTask.description || ""}
+                onChange={(html) => handleUpdate({ description: html })}
+                placeholder="Add a detailed description... Type / for commands, * for bullets"
+                variant="minimal"
+              />
+            </div>
           </div>
 
           {/* Attachments Section - Full Width */}
@@ -358,7 +496,7 @@ export const TaskFullPage = ({
               <div className="flex-shrink-0 w-8 h-8 rounded-full bg-muted flex items-center justify-center mt-1">
                 <User className="h-4 w-4 text-muted-foreground" />
               </div>
-              <div className="flex-1">
+              <div className="flex-1" ref={commentsRef}>
                 <RichTextEditor
                   content={newComment}
                   onChange={(html) => setNewComment(html)}
@@ -383,16 +521,33 @@ export const TaskFullPage = ({
             <Label className="text-sm font-semibold text-foreground">
               Notes
             </Label>
-            <RichTextEditor
-              content={editedTask.notes || ""}
-              onChange={(html) => handleUpdate({ notes: html })}
-              placeholder="Write your notes, thoughts, or documentation here... Type / for commands, * for bullets, create tables and more!"
-              variant="full"
-            />
-            <span className="text-xs text-muted-foreground">Cmd/Ctrl+D to focus notes • Full formatting available: headings, tables, code blocks, and Word Art!</span>
+            <div ref={notesRef}>
+              <RichTextEditor
+                content={editedTask.notes || ""}
+                onChange={(html) => handleUpdate({ notes: html })}
+                placeholder="Write your notes, thoughts, or documentation here... Type / for commands, * for bullets, create tables and more!"
+                variant="full"
+              />
+            </div>
+            <span className="text-xs text-muted-foreground">Ctrl+D to focus notes • Ctrl+Tab to cycle through sections • Full formatting available: headings, tables, code blocks, and Word Art!</span>
           </div>
         </div>
       </div>
+
+      <DeleteTaskDialog
+        open={isDeleteDialogOpen}
+        onOpenChange={setIsDeleteDialogOpen}
+        taskTitle={editedTask.title}
+        onConfirm={async () => {
+          try {
+            await onDelete(task.id);
+            handleClose();
+          } catch (error) {
+            // Re-throw so DeleteTaskDialog can handle it (keep dialog open on error)
+            throw error;
+          }
+        }}
+      />
     </div>
   );
 };
