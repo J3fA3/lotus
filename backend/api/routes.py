@@ -59,6 +59,9 @@ from api.knowledge_routes import router as knowledge_router
 # Import Document-Cognitive Nexus Integration
 from services.document_cognitive_integration import DocumentCognitiveIntegration
 
+# Import Phase 6 services
+from services.outcome_tracker import get_outcome_tracker
+
 router = APIRouter()
 
 # Include Cognitive Nexus routes
@@ -201,6 +204,9 @@ async def update_task(
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
 
+    # Phase 6: Track previous status for outcome tracking
+    previous_status = task.status
+
     # Update only provided fields
     update_data = task_data.model_dump(exclude_unset=True)
     field_mapping = {
@@ -213,7 +219,7 @@ async def update_task(
         "description": "description",
         "notes": "notes"
     }
-    
+
     for api_field, db_field in field_mapping.items():
         if api_field in update_data:
             setattr(task, db_field, update_data[api_field])
@@ -251,6 +257,21 @@ async def update_task(
 
     await db.commit()
     await db.refresh(task)
+
+    # Phase 6: Record task outcome if status changed to "done"
+    if "status" in update_data and task.status != previous_status:
+        try:
+            tracker = await get_outcome_tracker(db)
+            await tracker.record_outcome_on_status_change(
+                task_id=task_id,
+                new_status=task.status,
+                previous_status=previous_status
+            )
+            # Commit outcome separately (don't fail task update if outcome tracking fails)
+            await db.commit()
+        except Exception as e:
+            # Log error but don't fail the task update
+            print(f"Outcome tracking failed for task {task_id}: {e}")
 
     return _task_to_schema(task)
 

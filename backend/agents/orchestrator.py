@@ -74,6 +74,9 @@ from config.gemini_prompts import (
 )
 from pydantic import BaseModel
 
+# Phase 6 imports (new)
+from services.kg_evolution_service import KGEvolutionService
+
 # Logging
 logger = logging.getLogger(__name__)
 
@@ -115,6 +118,9 @@ class OrchestratorState(TypedDict):
     relationship_quality: float
     task_quality: float
     reasoning_trace: Annotated[List[str], operator.add]  # Append-only
+
+    # Phase 6: Concept extraction (NEW)
+    extracted_concepts: List[Dict]  # Domain-specific concepts
 
     # Task matching results
     existing_task_matches: List[TaskMatch]
@@ -531,8 +537,78 @@ async def run_phase1_agents(state: OrchestratorState) -> Dict:
         "entity_quality": phase1_result.get("entity_quality", 0.0),
         "relationship_quality": phase1_result.get("relationship_quality", 0.0),
         "task_quality": phase1_result.get("task_quality", 0.0),
-        "reasoning_trace": reasoning
+        "reasoning_trace": reasoning,
+        "extracted_concepts": []  # Will be populated by extract_concepts node
     }
+
+
+# ============================================================================
+# NODE 2B: EXTRACT CONCEPTS (Phase 6 - NEW)
+# ============================================================================
+
+async def extract_concepts(state: OrchestratorState) -> Dict:
+    """Node 2b: Extract domain-specific concepts from context.
+
+    This is a Phase 6 feature that identifies strategic themes and topics.
+    Concepts are 2-4 word noun phrases like "pharmacy pinning effectiveness",
+    NOT generic terms like "email" or "meeting".
+
+    Returns:
+        State updates with extracted_concepts
+    """
+    reasoning = ["\n=== PHASE 6: CONCEPT EXTRACTION ==="]
+
+    db = state.get("db")
+    if not db:
+        reasoning.append("⚠ No database session, skipping concept extraction")
+        return {"reasoning_trace": reasoning, "extracted_concepts": []}
+
+    context = state["input_context"]
+    user_profile = state.get("user_profile")
+
+    try:
+        # Use KG Evolution Service for concept extraction
+        kg_service = KGEvolutionService(db)
+
+        concepts = await kg_service.extract_concepts(
+            text=context,
+            user_profile=user_profile
+        )
+
+        reasoning.append(f"→ Extracted {len(concepts)} domain-specific concepts")
+
+        # Convert to dict format for state
+        concept_dicts = [
+            {
+                "name": c.name,
+                "importance_score": c.importance_score,
+                "confidence_tier": c.confidence_tier,
+                "projects": c.related_projects,
+                "markets": c.related_markets
+            }
+            for c in concepts
+        ]
+
+        # Log top concepts
+        for concept in concepts[:3]:
+            reasoning.append(
+                f"  • {concept.name} (importance: {concept.importance_score:.2f}, tier: {concept.confidence_tier})"
+            )
+
+        logger.info(f"Extracted {len(concepts)} concepts from context")
+
+        return {
+            "extracted_concepts": concept_dicts,
+            "reasoning_trace": reasoning
+        }
+
+    except Exception as e:
+        logger.error(f"Concept extraction failed: {e}")
+        reasoning.append(f"⚠ Concept extraction failed: {str(e)}")
+        return {
+            "extracted_concepts": [],
+            "reasoning_trace": reasoning
+        }
 
 
 # ============================================================================
@@ -1288,11 +1364,12 @@ def create_orchestrator_graph():
     """
     workflow = StateGraph(OrchestratorState)
 
-    # Add all nodes (existing + Phase 3 new)
+    # Add all nodes (existing + Phase 3 new + Phase 6 new)
     workflow.add_node("load_profile", load_user_profile)  # Phase 3: NEW
     workflow.add_node("classify", classify_request)
     workflow.add_node("answer", answer_question)
     workflow.add_node("run_phase1", run_phase1_agents)
+    workflow.add_node("extract_concepts", extract_concepts)  # Phase 6: NEW
     workflow.add_node("find_tasks", find_related_tasks)
     workflow.add_node("check_enrichments", check_task_enrichments)  # Phase 3: NEW
     workflow.add_node("enrich_proposals", enrich_task_proposals)
@@ -1332,10 +1409,12 @@ def create_orchestrator_graph():
     # Question answering path → END (unchanged)
     workflow.add_edge("answer", END)
 
-    # Task creation path (Phase 5 optimized with parallelization)
-    # Phase 5: Run find_tasks and check_enrichments in parallel after Phase 1
+    # Task creation path (Phase 6 enhanced)
+    # Phase 6: Extract concepts after Phase 1 (runs quickly, no need to parallelize)
+    workflow.add_edge("run_phase1", "extract_concepts")  # Phase 6: NEW
+    # Phase 5: Run find_tasks and check_enrichments in parallel after concept extraction
     workflow.add_node("parallel_analysis", parallel_task_analysis)  # Phase 5: NEW parallel node
-    workflow.add_edge("run_phase1", "parallel_analysis")  # Phase 5: CHANGED
+    workflow.add_edge("extract_concepts", "parallel_analysis")  # Phase 6: CHANGED (was run_phase1)
     workflow.add_edge("parallel_analysis", "enrich_proposals")  # Phase 5: CHANGED
     workflow.add_edge("enrich_proposals", "filter_relevance")  # Phase 3: NEW
     workflow.add_edge("filter_relevance", "calculate_confidence")  # Phase 3: CHANGED (was enrich_proposals)
@@ -1416,6 +1495,9 @@ async def process_assistant_message(
         "entity_quality": 0.0,
         "relationship_quality": 0.0,
         "task_quality": 0.0,
+
+        # Phase 6: Concept extraction (NEW)
+        "extracted_concepts": [],
 
         # Task matching results
         "existing_task_matches": [],
