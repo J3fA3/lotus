@@ -26,7 +26,7 @@ Usage:
 """
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 from dataclasses import dataclass
 
@@ -36,6 +36,8 @@ from sqlalchemy import select, and_
 from db.models import CalendarEvent, Task, MeetingPrep
 from agents.enrichment_engine import get_gemini_client
 from services.user_profile import get_user_profile
+from utils.datetime_utils import now_utc, normalize_datetime
+from utils.json_utils import parse_json_response
 
 logger = logging.getLogger(__name__)
 
@@ -124,7 +126,7 @@ class MeetingPrepAssistant:
         Returns:
             List of CalendarEvent objects (meetings only)
         """
-        start_time = datetime.utcnow()
+        start_time = now_utc()
         end_time = start_time + timedelta(days=days_ahead)
 
         query = select(CalendarEvent).where(
@@ -283,7 +285,10 @@ class MeetingPrepAssistant:
         Returns:
             "critical", "high", "medium", or "low"
         """
-        hours_until = (meeting_time - datetime.utcnow()).total_seconds() / 3600
+        now = now_utc()
+        # Ensure meeting_time is timezone-aware
+        meeting_time = normalize_datetime(meeting_time)
+        hours_until = (meeting_time - now).total_seconds() / 3600
 
         if hours_until < 4:
             return "critical"  # Meeting in <4 hours
@@ -348,20 +353,20 @@ Return ONLY valid JSON (no markdown):
 JSON response:"""
 
             # Call Gemini
-            response = await self.gemini.generate_content_async(prompt)
+            response_text = await self.gemini.generate(
+                prompt=prompt,
+                temperature=0.3,
+                max_tokens=1024,
+                fallback_to_qwen=True
+            )
 
-            # Parse response
-            import json
-            text = response.text.strip()
-            if text.startswith("```json"):
-                text = text[7:]
-            if text.startswith("```"):
-                text = text[3:]
-            if text.endswith("```"):
-                text = text[:-3]
-            text = text.strip()
-
-            result = json.loads(text)
+            # Parse response using shared utility
+            default = {
+                'checklist': [],
+                'estimated_time': 30,
+                'reasoning': 'Basic prep needed'
+            }
+            result = parse_json_response(response_text, default=default)
 
             return {
                 'checklist': result.get('checklist', []),

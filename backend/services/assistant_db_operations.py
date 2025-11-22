@@ -116,7 +116,7 @@ def _build_agent_comment(
     Returns:
         Formatted comment text
     """
-    lines = ["🤖 **AI Assistant Analysis**\n"]
+    lines = ["🤖 **Lotus Analysis**\n"]
 
     # Confidence and decision
     confidence = proposal.get("confidence", 0)
@@ -216,7 +216,7 @@ async def enrich_existing_tasks(
                 id=f"comment-{uuid.uuid4().hex[:12]}",
                 task_id=task.id,
                 text=op_data.get("text", ""),
-                author=op_data.get("author", "AI Assistant")
+                author=op_data.get("author", "Lotus")
             )
             db.add(comment)
 

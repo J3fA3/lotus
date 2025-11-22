@@ -28,6 +28,7 @@ import { DocumentList } from "./DocumentList";
 import { uploadDocument, listDocuments } from "@/api/tasks";
 import { ValueStreamCombobox } from "./ValueStreamCombobox";
 import { RichTextEditor } from "./RichTextEditor";
+import { TaskScheduler } from "./TaskScheduler";
 
 interface TaskDetailSheetProps {
   task: Task;
@@ -452,6 +453,21 @@ export const TaskDetailSheet = ({
               />
             </div>
           </div>
+
+          {/* Schedule */}
+          <TaskScheduler
+            taskId={editedTask.id}
+            taskTitle={editedTask.title}
+            comments={editedTask.comments}
+            onScheduled={(action) => {
+              // Only show toast for approvals, not cancellations (cancellation already shows its own toast)
+              if (action === 'approved') {
+                toast.success("Time block added to calendar");
+              }
+              // Refresh task to get updated comments
+              // The parent component should handle this via onUpdate
+            }}
+          />
 
           {/* Assignee - only show in peek mode since it's in the grid for expanded */}
           {!isExpanded && (
