@@ -299,10 +299,10 @@ async def get_todays_events(
             "date": "2025-11-18"
         }
     """
-        try:
-            calendar_service = get_calendar_sync_service()
-            today = now_utc()
-            events = await calendar_service.get_events_by_date(user_id, db, today)
+    try:
+        calendar_service = get_calendar_sync_service()
+        today = now_utc()
+        events = await calendar_service.get_events_by_date(user_id, db, today)
 
         events_data = [
             {

@@ -104,32 +104,36 @@ async def health_check():
 # ============= Task CRUD =============
 
 @router.get("/tasks", response_model=List[TaskSchema])
-async def get_tasks(db: AsyncSession = Depends(get_db)):
-    """Get all tasks"""
+async def get_tasks(
+    db: AsyncSession = Depends(get_db),
+    limit: int = 20,
+    offset: int = 0,
+) -> List[TaskSchema]:
+    """Get tasks with pagination (default limit 20)."""
+    # Enforce maximum limit to protect the server
+    if limit > 200:
+        limit = 200
     try:
         # Add timeout to prevent indefinite hanging (8 seconds, leaving 2s buffer for frontend timeout)
         result = await asyncio.wait_for(
             db.execute(
                 select(Task)
                 .options(selectinload(Task.comments), selectinload(Task.attachments))
+                .limit(limit)
+                .offset(offset)
             ),
-            timeout=8.0
+            timeout=8.0,
         )
         tasks = result.scalars().all()
-
         # Convert to response format with loaded relationships
         return [_task_to_schema(task, load_relationships=True) for task in tasks]
     except asyncio.TimeoutError:
-        # Log the timeout error
         import logging
         logging.error("Database query timed out after 8 seconds")
-        # Return empty list instead of crashing
         return []
     except Exception as e:
-        # Log the error for debugging
         import logging
         logging.error(f"Error fetching tasks: {str(e)}", exc_info=True)
-        # Return empty list instead of crashing
         return []
 
 
