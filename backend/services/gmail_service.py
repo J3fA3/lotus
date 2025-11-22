@@ -92,14 +92,14 @@ class GmailService:
     async def get_recent_emails(
         self,
         max_results: Optional[int] = None,
-        query: str = "is:unread",
+        query: str = "in:inbox",  # Changed from "is:unread" to get ALL inbox emails
         user_id: str = "me"
     ) -> List[Dict[str, Any]]:
         """Fetch recent emails matching query.
 
         Args:
             max_results: Maximum number of emails to fetch (default from env)
-            query: Gmail search query (default: unread emails)
+            query: Gmail search query (default: "in:inbox" - all inbox emails)
             user_id: Gmail user ID (default: "me")
 
         Returns:
@@ -418,8 +418,9 @@ class GmailService:
     async def _execute_with_retry(
         self,
         request,
-        max_retries: int = 3,
-        base_delay: float = 1.0
+        max_retries: int = 5,  # Increased from 3
+        base_delay: float = 2.0,  # Increased from 1.0
+        timeout: float = 60.0  # Add explicit timeout
     ) -> Any:
         """Execute Gmail API request with exponential backoff retry.
 
@@ -427,11 +428,14 @@ class GmailService:
         - 401 (token refresh handled by OAuth service)
         - 429 (rate limit - retry with backoff)
         - 500+ (server errors - retry with backoff)
+        - SSL errors (retry with backoff)
+        - Timeout errors (retry with backoff)
 
         Args:
             request: Gmail API request object
             max_retries: Maximum number of retries
             base_delay: Base delay in seconds for exponential backoff
+            timeout: Timeout in seconds for each request
 
         Returns:
             API response
@@ -439,14 +443,38 @@ class GmailService:
         Raises:
             HttpError: If all retries fail
         """
+        import socket
+        import ssl
+        
         last_error = None
 
         for attempt in range(max_retries + 1):
             try:
                 # Execute request in thread pool (API calls are blocking)
                 loop = asyncio.get_event_loop()
+                
+                # Set socket timeout
+                socket.setdefaulttimeout(timeout)
+                
                 response = await loop.run_in_executor(None, request.execute)
                 return response
+
+            except (ssl.SSLError, socket.timeout, ConnectionError, OSError) as e:
+                # Network/SSL errors - always retry
+                last_error = e
+                error_type = type(e).__name__
+                
+                if attempt < max_retries:
+                    delay = base_delay * (2 ** attempt)
+                    logger.warning(
+                        f"Network error ({error_type}), retrying in {delay}s "
+                        f"(attempt {attempt + 1}/{max_retries}): {e}"
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+                else:
+                    logger.error(f"Network error ({error_type}) after {max_retries} retries: {e}")
+                    raise ValueError(f"Gmail API network error after {max_retries} retries: {e}")
 
             except HttpError as e:
                 last_error = e
@@ -476,8 +504,17 @@ class GmailService:
                 raise
 
             except Exception as e:
+                last_error = e
                 logger.error(f"Unexpected error in Gmail API request: {e}")
-                raise
+                
+                # Retry on unexpected errors
+                if attempt < max_retries:
+                    delay = base_delay * (2 ** attempt)
+                    logger.warning(f"Retrying after unexpected error in {delay}s...")
+                    await asyncio.sleep(delay)
+                    continue
+                else:
+                    raise
 
         # All retries exhausted
         if last_error:
