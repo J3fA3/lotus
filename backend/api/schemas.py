@@ -259,3 +259,52 @@ class VersionComparisonResponse(BaseModel):
     created_at_b: str
     changed_fields: List[str]
     diff: dict  # {field: {old: value, new: value}}
+
+
+# ============================================================================
+# QUESTION QUEUE SCHEMAS (Phase 6 Stage 4)
+# ============================================================================
+
+class QuestionSchema(BaseModel):
+    """Schema for contextual question"""
+    id: int
+    task_id: str
+    field_name: str
+    question: str
+    suggested_answer: Optional[str]
+    importance: str  # "HIGH", "MEDIUM", "LOW"
+    confidence: float
+    priority_score: float
+    status: str  # "queued", "ready", "shown", "answered", "dismissed", "snoozed"
+    created_at: str
+    ready_at: Optional[str]
+    shown_at: Optional[str]
+    answered_at: Optional[str]
+    answer: Optional[str]
+    answer_source: Optional[str]
+    answer_applied: bool
+    user_feedback: Optional[str]
+    semantic_cluster: Optional[str]
+
+    class Config:
+        from_attributes = True
+
+
+class QuestionListResponse(BaseModel):
+    """Response containing list of questions"""
+    total: int
+    questions: List[QuestionSchema]
+
+
+class QuestionAnswerRequest(BaseModel):
+    """Request to answer a question"""
+    answer: str
+    answer_source: str = "user_input"  # "user_input", "selected_suggestion"
+    feedback: Optional[str] = None  # "helpful", "not_helpful"
+    feedback_comment: Optional[str] = None
+    apply_to_task: bool = True  # Should answer be applied to task immediately?
+
+
+class QuestionSnoozeRequest(BaseModel):
+    """Request to snooze a question"""
+    snooze_hours: int = 24

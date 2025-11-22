@@ -42,7 +42,11 @@ from api.schemas import (
     ValueStreamCreateRequest,
     TaskVersionSchema,
     TaskVersionHistoryResponse,
-    VersionComparisonResponse
+    VersionComparisonResponse,
+    QuestionSchema,
+    QuestionListResponse,
+    QuestionAnswerRequest,
+    QuestionSnoozeRequest
 )
 from db.database import get_db
 from db.models import Task, Comment, Attachment, InferenceHistory, ShortcutConfig, Document, ValueStream
@@ -552,6 +556,237 @@ async def compare_task_versions(
     except Exception as e:
         print(f"Error comparing versions for task {task_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to compare versions: {str(e)}")
+
+
+# ============================================================================
+# QUESTION QUEUE ENDPOINTS (Phase 6 Stage 4)
+# ============================================================================
+
+@router.get("/questions/ready", response_model=QuestionListResponse)
+async def get_ready_questions(
+    limit: int = Query(default=10, ge=1, le=50),
+    task_id: Optional[str] = Query(default=None),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get questions ready to be shown to user.
+
+    Ordered by priority score (highest first).
+    """
+    try:
+        from services.question_queue_service import get_question_queue_service
+
+        service = await get_question_queue_service(db)
+        questions = await service.get_ready_questions(limit=limit, task_id=task_id)
+
+        # Convert to schemas
+        question_schemas = []
+        for q in questions:
+            question_schemas.append(QuestionSchema(
+                id=q.id,
+                task_id=q.task_id,
+                field_name=q.field_name,
+                question=q.question,
+                suggested_answer=q.suggested_answer,
+                importance=q.importance,
+                confidence=q.confidence,
+                priority_score=q.priority_score,
+                status=q.status,
+                created_at=q.created_at.isoformat(),
+                ready_at=q.ready_at.isoformat() if q.ready_at else None,
+                shown_at=q.shown_at.isoformat() if q.shown_at else None,
+                answered_at=q.answered_at.isoformat() if q.answered_at else None,
+                answer=q.answer,
+                answer_source=q.answer_source,
+                answer_applied=q.answer_applied,
+                user_feedback=q.user_feedback,
+                semantic_cluster=q.semantic_cluster
+            ))
+
+        return QuestionListResponse(
+            total=len(question_schemas),
+            questions=question_schemas
+        )
+
+    except Exception as e:
+        print(f"Error fetching ready questions: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch questions: {str(e)}")
+
+
+@router.get("/questions/pending", response_model=QuestionListResponse)
+async def get_pending_questions(
+    limit: int = Query(default=50, ge=1, le=100),
+    task_id: Optional[str] = Query(default=None),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get all pending questions (queued or ready).
+
+    Ordered by priority score.
+    """
+    try:
+        from services.question_queue_service import get_question_queue_service
+
+        service = await get_question_queue_service(db)
+        questions = await service.get_pending_questions(task_id=task_id, limit=limit)
+
+        # Convert to schemas
+        question_schemas = []
+        for q in questions:
+            question_schemas.append(QuestionSchema(
+                id=q.id,
+                task_id=q.task_id,
+                field_name=q.field_name,
+                question=q.question,
+                suggested_answer=q.suggested_answer,
+                importance=q.importance,
+                confidence=q.confidence,
+                priority_score=q.priority_score,
+                status=q.status,
+                created_at=q.created_at.isoformat(),
+                ready_at=q.ready_at.isoformat() if q.ready_at else None,
+                shown_at=q.shown_at.isoformat() if q.shown_at else None,
+                answered_at=q.answered_at.isoformat() if q.answered_at else None,
+                answer=q.answer,
+                answer_source=q.answer_source,
+                answer_applied=q.answer_applied,
+                user_feedback=q.user_feedback,
+                semantic_cluster=q.semantic_cluster
+            ))
+
+        return QuestionListResponse(
+            total=len(question_schemas),
+            questions=question_schemas
+        )
+
+    except Exception as e:
+        print(f"Error fetching pending questions: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch questions: {str(e)}")
+
+
+@router.post("/questions/{question_id}/answer", response_model=QuestionSchema)
+async def answer_question(
+    question_id: int,
+    answer_request: QuestionAnswerRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Answer a question and optionally apply to task.
+    """
+    try:
+        from services.question_queue_service import get_question_queue_service
+
+        service = await get_question_queue_service(db)
+
+        # Record answer
+        success = await service.answer_question(
+            question_id=question_id,
+            answer=answer_request.answer,
+            answer_source=answer_request.answer_source,
+            feedback=answer_request.feedback,
+            feedback_comment=answer_request.feedback_comment
+        )
+
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to record answer")
+
+        # Apply to task if requested
+        if answer_request.apply_to_task:
+            applied = await service.apply_answer_to_task(question_id, user_approved=True)
+            if not applied:
+                print(f"Warning: Failed to apply answer to task for question {question_id}")
+
+        # Return updated question
+        question = await service.get_question(question_id)
+        if not question:
+            raise HTTPException(status_code=404, detail="Question not found")
+
+        return QuestionSchema(
+            id=question.id,
+            task_id=question.task_id,
+            field_name=question.field_name,
+            question=question.question,
+            suggested_answer=question.suggested_answer,
+            importance=question.importance,
+            confidence=question.confidence,
+            priority_score=question.priority_score,
+            status=question.status,
+            created_at=question.created_at.isoformat(),
+            ready_at=question.ready_at.isoformat() if question.ready_at else None,
+            shown_at=question.shown_at.isoformat() if question.shown_at else None,
+            answered_at=question.answered_at.isoformat() if question.answered_at else None,
+            answer=question.answer,
+            answer_source=question.answer_source,
+            answer_applied=question.answer_applied,
+            user_feedback=question.user_feedback,
+            semantic_cluster=question.semantic_cluster
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error answering question {question_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to answer question: {str(e)}")
+
+
+@router.post("/questions/{question_id}/dismiss")
+async def dismiss_question(
+    question_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Dismiss a question without answering.
+    """
+    try:
+        from services.question_queue_service import get_question_queue_service
+
+        service = await get_question_queue_service(db)
+        success = await service.dismiss_question(question_id)
+
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to dismiss question")
+
+        return {"status": "dismissed", "question_id": question_id}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error dismissing question {question_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to dismiss question: {str(e)}")
+
+
+@router.post("/questions/{question_id}/snooze")
+async def snooze_question(
+    question_id: int,
+    snooze_request: QuestionSnoozeRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Snooze a question to show later.
+    """
+    try:
+        from services.question_queue_service import get_question_queue_service
+
+        service = await get_question_queue_service(db)
+        success = await service.snooze_question(
+            question_id=question_id,
+            snooze_hours=snooze_request.snooze_hours
+        )
+
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to snooze question")
+
+        return {
+            "status": "snoozed",
+            "question_id": question_id,
+            "snooze_hours": snooze_request.snooze_hours
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error snoozing question {question_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to snooze question: {str(e)}")
 
 
 @router.delete("/tasks/{task_id}")
