@@ -76,6 +76,8 @@ from pydantic import BaseModel
 
 # Phase 6 imports (new)
 from services.kg_evolution_service import KGEvolutionService
+from services.task_synthesizer import get_task_synthesizer
+from services.context_gap_detector import get_context_gap_detector
 
 # Logging
 logger = logging.getLogger(__name__)
@@ -121,6 +123,11 @@ class OrchestratorState(TypedDict):
 
     # Phase 6: Concept extraction (NEW)
     extracted_concepts: List[Dict]  # Domain-specific concepts
+
+    # Phase 6 Stage 2: Task Synthesis (NEW)
+    synthesized_task_descriptions: List[Dict]  # Intelligent task descriptions
+    task_synthesis_quality: List[Dict]  # Quality metrics for each synthesis
+    synthesis_context_gaps: List[Dict]  # Missing information questions
 
     # Task matching results
     existing_task_matches: List[TaskMatch]
@@ -607,6 +614,144 @@ async def extract_concepts(state: OrchestratorState) -> Dict:
         reasoning.append(f"⚠ Concept extraction failed: {str(e)}")
         return {
             "extracted_concepts": [],
+            "reasoning_trace": reasoning
+        }
+
+
+# ============================================================================
+# NODE 2C: SYNTHESIZE TASKS (Phase 6 Stage 2 - NEW)
+# ============================================================================
+
+async def synthesize_tasks(state: OrchestratorState) -> Dict:
+    """Node 2c: Synthesize intelligent task descriptions from raw operations.
+
+    This is a Phase 6 Stage 2 feature that transforms raw task operations
+    into rich, contextual task descriptions with:
+    - Auto-filled fields (priority, effort, project, assignee)
+    - Expandable sections (why it matters, how to approach, related work)
+    - Context gaps (questions for missing information)
+    - Quality metrics
+
+    Returns:
+        State updates with synthesized_task_descriptions, task_synthesis_quality, synthesis_context_gaps
+    """
+    reasoning = ["\n=== PHASE 6 STAGE 2: TASK SYNTHESIS ==="]
+
+    db = state.get("db")
+    if not db:
+        reasoning.append("⚠ No database session, skipping task synthesis")
+        return {
+            "reasoning_trace": reasoning,
+            "synthesized_task_descriptions": [],
+            "task_synthesis_quality": [],
+            "synthesis_context_gaps": []
+        }
+
+    # Check if we have task operations to synthesize
+    task_operations = state.get("task_operations", [])
+    if not task_operations:
+        reasoning.append("→ No task operations to synthesize, skipping")
+        return {
+            "reasoning_trace": reasoning,
+            "synthesized_task_descriptions": [],
+            "task_synthesis_quality": [],
+            "synthesis_context_gaps": []
+        }
+
+    # Only synthesize CREATE operations (not UPDATE or COMMENT)
+    create_operations = [op for op in task_operations if op.get("operation") == "CREATE"]
+    if not create_operations:
+        reasoning.append("→ No CREATE operations to synthesize, skipping")
+        return {
+            "reasoning_trace": reasoning,
+            "synthesized_task_descriptions": [],
+            "task_synthesis_quality": [],
+            "synthesis_context_gaps": []
+        }
+
+    reasoning.append(f"→ Synthesizing {len(create_operations)} task(s) with KG context")
+
+    try:
+        # Get task synthesizer and context gap detector
+        synthesizer = await get_task_synthesizer(db)
+        gap_detector = await get_context_gap_detector(db)
+
+        synthesized_tasks = []
+        quality_metrics = []
+        all_context_gaps = []
+
+        user_id = state.get("user_id")
+
+        for idx, operation in enumerate(create_operations):
+            # Get raw task description from operation
+            raw_description = operation.get("description", "")
+            if not raw_description:
+                reasoning.append(f"  ⚠ Task {idx+1}: No description, skipping synthesis")
+                continue
+
+            try:
+                # Synthesize intelligent task description
+                synthesis_result = await synthesizer.synthesize_task(
+                    raw_input=raw_description,
+                    user_id=user_id,
+                    conversation_id=None  # TODO: Track conversation threads
+                )
+
+                task_desc = synthesis_result.task_description
+
+                # Analyze context gaps
+                gap_analysis = await gap_detector.analyze_gaps(
+                    task_desc=task_desc,
+                    user_id=user_id
+                )
+
+                # Calculate quality metrics (synthesizer does this internally)
+                quality = synthesizer._calculate_quality_metrics(task_desc)
+
+                # Log synthesis results
+                reasoning.append(
+                    f"  • Task {idx+1}: '{task_desc.title[:60]}...' "
+                    f"(quality={quality.overall_quality:.2f}, gaps={len(task_desc.context_gaps)})"
+                )
+
+                if task_desc.priority:
+                    reasoning.append(f"    - Priority: {task_desc.priority.value} (auto-filled)")
+                if task_desc.effort_estimate:
+                    reasoning.append(f"    - Effort: {task_desc.effort_estimate.value} (auto-filled)")
+                if task_desc.context_gaps:
+                    reasoning.append(f"    - {len(task_desc.context_gaps)} context gaps identified")
+
+                # Convert to dict for state (Pydantic -> dict)
+                synthesized_tasks.append(task_desc.dict())
+                quality_metrics.append(quality.dict())
+                all_context_gaps.extend([gap.dict() for gap in task_desc.context_gaps])
+
+            except Exception as e:
+                logger.error(f"Task synthesis failed for operation {idx}: {e}")
+                reasoning.append(f"  ⚠ Task {idx+1}: Synthesis failed - {str(e)}")
+                continue
+
+        reasoning.append(
+            f"✅ Synthesized {len(synthesized_tasks)}/{len(create_operations)} tasks "
+            f"(avg quality: {sum(q['overall_quality'] for q in quality_metrics) / max(len(quality_metrics), 1):.2f})"
+        )
+
+        logger.info(f"Synthesized {len(synthesized_tasks)} tasks with avg quality {sum(q['overall_quality'] for q in quality_metrics) / max(len(quality_metrics), 1):.2f}")
+
+        return {
+            "synthesized_task_descriptions": synthesized_tasks,
+            "task_synthesis_quality": quality_metrics,
+            "synthesis_context_gaps": all_context_gaps,
+            "reasoning_trace": reasoning
+        }
+
+    except Exception as e:
+        logger.error(f"Task synthesis node failed: {e}", exc_info=True)
+        reasoning.append(f"⚠ Task synthesis failed: {str(e)}")
+        return {
+            "synthesized_task_descriptions": [],
+            "task_synthesis_quality": [],
+            "synthesis_context_gaps": [],
             "reasoning_trace": reasoning
         }
 
@@ -1411,10 +1556,13 @@ def create_orchestrator_graph():
 
     # Task creation path (Phase 6 enhanced)
     # Phase 6: Extract concepts after Phase 1 (runs quickly, no need to parallelize)
-    workflow.add_edge("run_phase1", "extract_concepts")  # Phase 6: NEW
-    # Phase 5: Run find_tasks and check_enrichments in parallel after concept extraction
+    workflow.add_edge("run_phase1", "extract_concepts")  # Phase 6 Stage 1: NEW
+    # Phase 6 Stage 2: Synthesize intelligent task descriptions
+    workflow.add_node("synthesize_tasks", synthesize_tasks)  # Phase 6 Stage 2: NEW
+    workflow.add_edge("extract_concepts", "synthesize_tasks")  # Phase 6 Stage 2: NEW
+    # Phase 5: Run find_tasks and check_enrichments in parallel after synthesis
     workflow.add_node("parallel_analysis", parallel_task_analysis)  # Phase 5: NEW parallel node
-    workflow.add_edge("extract_concepts", "parallel_analysis")  # Phase 6: CHANGED (was run_phase1)
+    workflow.add_edge("synthesize_tasks", "parallel_analysis")  # Phase 6 Stage 2: CHANGED (was extract_concepts)
     workflow.add_edge("parallel_analysis", "enrich_proposals")  # Phase 5: CHANGED
     workflow.add_edge("enrich_proposals", "filter_relevance")  # Phase 3: NEW
     workflow.add_edge("filter_relevance", "calculate_confidence")  # Phase 3: CHANGED (was enrich_proposals)
@@ -1424,7 +1572,7 @@ def create_orchestrator_graph():
     # Execute → END (unchanged)
     workflow.add_edge("execute", END)
 
-    logger.info("Phase 3 orchestrator graph created with enhanced flow")
+    logger.info("Phase 6 Stage 2 orchestrator graph created with intelligent task synthesis")
     return workflow.compile()
 
 
@@ -1498,6 +1646,11 @@ async def process_assistant_message(
 
         # Phase 6: Concept extraction (NEW)
         "extracted_concepts": [],
+
+        # Phase 6 Stage 2: Task Synthesis (NEW)
+        "synthesized_task_descriptions": [],
+        "task_synthesis_quality": [],
+        "synthesis_context_gaps": [],
 
         # Task matching results
         "existing_task_matches": [],
