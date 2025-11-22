@@ -195,3 +195,67 @@ class ValueStreamCreateRequest(BaseModel):
     """Request for creating a new value stream"""
     name: str
     color: Optional[str] = None
+
+
+# ============================================================================
+# TASK VERSION CONTROL SCHEMAS (Phase 6 Stage 3)
+# ============================================================================
+
+class TaskVersionSchema(BaseModel):
+    """Schema for task version history entry"""
+    id: int
+    task_id: str
+    version_number: int
+    created_at: str
+
+    # Versioning type
+    is_snapshot: bool
+    is_milestone: bool
+
+    # Provenance
+    changed_by: Optional[str]
+    change_source: str
+    ai_model: Optional[str]
+
+    # Change detection
+    change_type: str
+    changed_fields: List[str]
+
+    # Data (one of these will be populated)
+    snapshot_data: Optional[dict]
+    delta_data: Optional[dict]
+
+    # PR-style comment
+    pr_comment: Optional[str]
+    pr_comment_generated_at: Optional[str]
+
+    # Learning signals
+    ai_suggestion_overridden: bool
+    overridden_fields: List[str]
+    override_reason: Optional[str]
+
+    # Quality
+    change_confidence: Optional[float]
+    user_approved: Optional[bool]
+
+    class Config:
+        from_attributes = True
+
+
+class TaskVersionHistoryResponse(BaseModel):
+    """Response containing version history for a task"""
+    task_id: str
+    total_versions: int
+    versions: List[TaskVersionSchema]
+    has_more: bool
+
+
+class VersionComparisonResponse(BaseModel):
+    """Response for comparing two versions"""
+    task_id: str
+    version_a: int
+    version_b: int
+    created_at_a: str
+    created_at_b: str
+    changed_fields: List[str]
+    diff: dict  # {field: {old: value, new: value}}

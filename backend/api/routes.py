@@ -39,7 +39,10 @@ from api.schemas import (
     DocumentListResponse,
     KnowledgeBaseSummaryResponse,
     ValueStreamSchema,
-    ValueStreamCreateRequest
+    ValueStreamCreateRequest,
+    TaskVersionSchema,
+    TaskVersionHistoryResponse,
+    VersionComparisonResponse
 )
 from db.database import get_db
 from db.models import Task, Comment, Attachment, InferenceHistory, ShortcutConfig, Document, ValueStream
@@ -395,6 +398,160 @@ async def update_task(
             print(f"Outcome tracking failed for task {task_id}: {e}")
 
     return _task_to_schema(task)
+
+
+# ============================================================================
+# TASK VERSION HISTORY ENDPOINTS (Phase 6 Stage 3)
+# ============================================================================
+
+@router.get("/tasks/{task_id}/versions", response_model=TaskVersionHistoryResponse)
+async def get_task_version_history(
+    task_id: str,
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get version history for a task.
+
+    Returns list of versions in reverse chronological order (newest first).
+    """
+    try:
+        from services.task_version_service import get_task_version_service
+        from sqlalchemy import func, select as sql_select
+        from db.task_version_models import TaskVersion
+
+        # Get version service
+        version_service = await get_task_version_service(db)
+
+        # Get total count
+        count_result = await db.execute(
+            sql_select(func.count(TaskVersion.id)).where(TaskVersion.task_id == task_id)
+        )
+        total_versions = count_result.scalar()
+
+        # Get versions
+        versions = await version_service.get_version_history(task_id, limit=limit, offset=offset)
+
+        # Convert to schema
+        version_schemas = []
+        for v in versions:
+            version_schemas.append(TaskVersionSchema(
+                id=v.id,
+                task_id=v.task_id,
+                version_number=v.version_number,
+                created_at=v.created_at.isoformat(),
+                is_snapshot=v.is_snapshot,
+                is_milestone=v.is_milestone,
+                changed_by=v.changed_by,
+                change_source=v.change_source,
+                ai_model=v.ai_model,
+                change_type=v.change_type,
+                changed_fields=v.changed_fields or [],
+                snapshot_data=v.snapshot_data,
+                delta_data=v.delta_data,
+                pr_comment=v.pr_comment,
+                pr_comment_generated_at=v.pr_comment_generated_at.isoformat() if v.pr_comment_generated_at else None,
+                ai_suggestion_overridden=v.ai_suggestion_overridden,
+                overridden_fields=v.overridden_fields or [],
+                override_reason=v.override_reason,
+                change_confidence=v.change_confidence,
+                user_approved=v.user_approved
+            ))
+
+        return TaskVersionHistoryResponse(
+            task_id=task_id,
+            total_versions=total_versions,
+            versions=version_schemas,
+            has_more=(offset + len(versions)) < total_versions
+        )
+
+    except Exception as e:
+        print(f"Error fetching version history for task {task_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch version history: {str(e)}")
+
+
+@router.get("/tasks/{task_id}/versions/{version_number}", response_model=TaskVersionSchema)
+async def get_task_version(
+    task_id: str,
+    version_number: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get a specific version of a task.
+    """
+    try:
+        from services.task_version_service import get_task_version_service
+
+        version_service = await get_task_version_service(db)
+        version = await version_service.get_version(task_id, version_number)
+
+        if not version:
+            raise HTTPException(status_code=404, detail=f"Version {version_number} not found for task {task_id}")
+
+        return TaskVersionSchema(
+            id=version.id,
+            task_id=version.task_id,
+            version_number=version.version_number,
+            created_at=version.created_at.isoformat(),
+            is_snapshot=version.is_snapshot,
+            is_milestone=version.is_milestone,
+            changed_by=version.changed_by,
+            change_source=version.change_source,
+            ai_model=version.ai_model,
+            change_type=version.change_type,
+            changed_fields=version.changed_fields or [],
+            snapshot_data=version.snapshot_data,
+            delta_data=version.delta_data,
+            pr_comment=version.pr_comment,
+            pr_comment_generated_at=version.pr_comment_generated_at.isoformat() if version.pr_comment_generated_at else None,
+            ai_suggestion_overridden=version.ai_suggestion_overridden,
+            overridden_fields=version.overridden_fields or [],
+            override_reason=version.override_reason,
+            change_confidence=version.change_confidence,
+            user_approved=version.user_approved
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error fetching version {version_number} for task {task_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch version: {str(e)}")
+
+
+@router.get("/tasks/{task_id}/versions/compare", response_model=VersionComparisonResponse)
+async def compare_task_versions(
+    task_id: str,
+    version_a: int = Query(..., description="First version number"),
+    version_b: int = Query(..., description="Second version number"),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Compare two versions of a task.
+
+    Returns the differences between version_a and version_b.
+    """
+    try:
+        from services.task_version_service import get_task_version_service
+
+        version_service = await get_task_version_service(db)
+        comparison = await version_service.compare_versions(task_id, version_a, version_b)
+
+        return VersionComparisonResponse(
+            task_id=task_id,
+            version_a=comparison["version_a"],
+            version_b=comparison["version_b"],
+            created_at_a=comparison["created_at_a"],
+            created_at_b=comparison["created_at_b"],
+            changed_fields=comparison["changed_fields"],
+            diff=comparison["diff"]
+        )
+
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        print(f"Error comparing versions for task {task_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to compare versions: {str(e)}")
 
 
 @router.delete("/tasks/{task_id}")

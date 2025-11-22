@@ -220,3 +220,99 @@ export function getConfidenceTierColor(tier: ConfidenceTier): string {
   };
   return colors[tier];
 }
+
+// ============================================================================
+// TASK VERSION CONTROL (Phase 6 Stage 3)
+// ============================================================================
+
+export interface TaskVersion {
+  id: number;
+  task_id: string;
+  version_number: number;
+  created_at: string;
+
+  // Versioning type
+  is_snapshot: boolean;
+  is_milestone: boolean;
+
+  // Provenance
+  changed_by?: string;
+  change_source: string;
+  ai_model?: string;
+
+  // Change detection
+  change_type: string;
+  changed_fields: string[];
+
+  // Data (one will be populated)
+  snapshot_data?: Record<string, any>;
+  delta_data?: {
+    old: Record<string, any>;
+    new: Record<string, any>;
+  };
+
+  // PR-style comment
+  pr_comment?: string;
+  pr_comment_generated_at?: string;
+
+  // Learning signals
+  ai_suggestion_overridden: boolean;
+  overridden_fields: string[];
+  override_reason?: string;
+
+  // Quality
+  change_confidence?: number;
+  user_approved?: boolean;
+}
+
+export interface TaskVersionHistoryResponse {
+  task_id: string;
+  total_versions: number;
+  versions: TaskVersion[];
+  has_more: boolean;
+}
+
+export interface VersionComparison {
+  task_id: string;
+  version_a: number;
+  version_b: number;
+  created_at_a: string;
+  created_at_b: string;
+  changed_fields: string[];
+  diff: Record<string, { old: any; new: any }>;
+}
+
+// Helper functions for version display
+
+export function getChangeTypeIcon(changeType: string): string {
+  const icons: Record<string, string> = {
+    created: "✨",
+    status_change: "🔄",
+    field_update: "📝",
+    description_edit: "📄",
+    ai_override: "💡"
+  };
+  return icons[changeType] || "📝";
+}
+
+export function getChangeTypeColor(changeType: string): string {
+  const colors: Record<string, string> = {
+    created: "bg-purple-50 text-purple-700 border-purple-200",
+    status_change: "bg-blue-50 text-blue-700 border-blue-200",
+    field_update: "bg-gray-50 text-gray-700 border-gray-200",
+    description_edit: "bg-green-50 text-green-700 border-green-200",
+    ai_override: "bg-amber-50 text-amber-700 border-amber-200"
+  };
+  return colors[changeType] || "bg-gray-50 text-gray-700 border-gray-200";
+}
+
+export function getChangeSourceLabel(source: string): string {
+  const labels: Record<string, string> = {
+    user_edit: "User Edit",
+    user_create: "User Created",
+    ai_synthesis: "AI Created",
+    ai_enrichment: "AI Enriched",
+    system: "System"
+  };
+  return labels[source] || source;
+}
