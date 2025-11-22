@@ -335,6 +335,7 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
   // Track if we're currently updating from user input to prevent feedback loops
   const isLocalUpdateRef = useRef(false);
   const previousContentRef = useRef(content);
+  const resetLocalUpdateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const extensions = [
     StarterKit.configure({
@@ -433,6 +434,18 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
       const html = editor.getHTML();
       // Mark that this is a local update from user typing
       isLocalUpdateRef.current = true;
+
+      // Clear any existing timeout
+      if (resetLocalUpdateTimeoutRef.current) {
+        clearTimeout(resetLocalUpdateTimeoutRef.current);
+      }
+
+      // Set a timeout to allow external updates again after user stops typing
+      // This prevents immediate overwrites from stale props while typing
+      resetLocalUpdateTimeoutRef.current = setTimeout(() => {
+        isLocalUpdateRef.current = false;
+      }, 2000);
+
       previousContentRef.current = html;
       onChange?.(html);
     },
@@ -440,12 +453,12 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
   });
 
   // Only sync content when it's an external change (not from user typing)
+  // Only sync content when it's an external change (not from user typing)
   useEffect(() => {
     if (!editor) return;
 
     // If this is a local update (from user typing), don't sync
     if (isLocalUpdateRef.current) {
-      isLocalUpdateRef.current = false;
       return;
     }
 
@@ -453,7 +466,22 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
     const currentContent = editor.getHTML();
     if (content !== currentContent && content !== previousContentRef.current) {
       previousContentRef.current = content;
-      editor.commands.setContent(content, false); // false = don't emit update event
+      // Save cursor position
+      const { from, to } = editor.state.selection;
+
+      editor.commands.setContent(content, { emitUpdate: false }); // false = don't emit update event
+
+      // Restore cursor position if possible (best effort)
+      // Note: This is tricky because the content length might have changed
+      // But for minor updates it helps keep context
+      try {
+        const newDocSize = editor.state.doc.content.size;
+        if (from <= newDocSize && to <= newDocSize) {
+          editor.commands.setTextSelection({ from, to });
+        }
+      } catch (e) {
+        // Ignore selection errors
+      }
     }
   }, [content, editor]);
 
@@ -480,6 +508,9 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
 
     return () => {
       editor.off('selectionUpdate', updateTableState);
+      if (resetLocalUpdateTimeoutRef.current) {
+        clearTimeout(resetLocalUpdateTimeoutRef.current);
+      }
     };
   }, [editor]);
 
