@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { Task, Comment } from "@/types/task";
+import { LotusIcon } from "./LotusIcon";
 import { Input } from "./ui/input";
 import { Textarea } from "./ui/textarea";
 import { Button } from "./ui/button";
@@ -232,11 +233,16 @@ export const TaskFullPage = ({
             </div>
           </div>
 
-          {/* AI Scheduling */}
+          {/* Schedule */}
           <TaskScheduler
             taskId={editedTask.id}
             taskTitle={editedTask.title}
-            onScheduled={() => toast.success("Time block added to calendar")}
+            comments={editedTask.comments}
+            onScheduled={(action) => {
+              if (action === 'approved') {
+                toast.success("Time block added to calendar");
+              }
+            }}
           />
 
           {/* Description */}
@@ -305,8 +311,18 @@ export const TaskFullPage = ({
               <div className="space-y-3">
                 {editedTask.comments.map((comment) => (
                   <div key={comment.id} className="flex gap-3">
-                    <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
-                      <User className="h-4 w-4 text-primary" />
+                    <div
+                      className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
+                        comment.author === "Lotus"
+                          ? "bg-gradient-to-br from-[hsl(var(--lotus-green-light))] to-[hsl(var(--lotus-green-medium))]"
+                          : "bg-primary/10"
+                      }`}
+                    >
+                      {comment.author === "Lotus" ? (
+                        <LotusIcon className="text-[hsl(var(--lotus-paper))]" size={16} />
+                      ) : (
+                        <User className="h-4 w-4 text-primary" />
+                      )}
                     </div>
                     <div className="flex-1 space-y-1">
                       <div className="flex items-center gap-2">

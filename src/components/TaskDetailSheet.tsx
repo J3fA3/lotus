@@ -447,11 +447,19 @@ export const TaskDetailSheet = ({
             </div>
           </div>
 
-          {/* AI Scheduling */}
+          {/* Schedule */}
           <TaskScheduler
             taskId={editedTask.id}
             taskTitle={editedTask.title}
-            onScheduled={() => toast.success("Time block added to calendar")}
+            comments={editedTask.comments}
+            onScheduled={(action) => {
+              // Only show toast for approvals, not cancellations (cancellation already shows its own toast)
+              if (action === 'approved') {
+                toast.success("Time block added to calendar");
+              }
+              // Refresh task to get updated comments
+              // The parent component should handle this via onUpdate
+            }}
           />
 
           {/* Assignee - only show in peek mode since it's in the grid for expanded */}

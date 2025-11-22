@@ -124,7 +124,8 @@ class MeetingPrepAssistant:
         Returns:
             List of CalendarEvent objects (meetings only)
         """
-        start_time = datetime.utcnow()
+        from datetime import timezone
+        start_time = datetime.now(timezone.utc)
         end_time = start_time + timedelta(days=days_ahead)
 
         query = select(CalendarEvent).where(
@@ -283,7 +284,12 @@ class MeetingPrepAssistant:
         Returns:
             "critical", "high", "medium", or "low"
         """
-        hours_until = (meeting_time - datetime.utcnow()).total_seconds() / 3600
+        from datetime import timezone
+        now = datetime.now(timezone.utc)
+        # Ensure meeting_time is timezone-aware
+        if meeting_time.tzinfo is None:
+            meeting_time = meeting_time.replace(tzinfo=timezone.utc)
+        hours_until = (meeting_time - now).total_seconds() / 3600
 
         if hours_until < 4:
             return "critical"  # Meeting in <4 hours
@@ -348,11 +354,16 @@ Return ONLY valid JSON (no markdown):
 JSON response:"""
 
             # Call Gemini
-            response = await self.gemini.generate_content_async(prompt)
+            response_text = await self.gemini.generate(
+                prompt=prompt,
+                temperature=0.3,
+                max_tokens=1024,
+                fallback_to_qwen=True
+            )
 
             # Parse response
             import json
-            text = response.text.strip()
+            text = response_text.strip()
             if text.startswith("```json"):
                 text = text[7:]
             if text.startswith("```"):

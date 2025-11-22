@@ -104,8 +104,9 @@ export async function scheduleTask(
   daysAhead: number = 7
 ): Promise<SchedulingResponse> {
   try {
+    // Pass task_id to backend so it only schedules this specific task
     const response = await fetch(
-      `${API_BASE_URL}/calendar/schedule-tasks?user_id=${userId}&days_ahead=${daysAhead}&max_suggestions=5`,
+      `${API_BASE_URL}/calendar/schedule-tasks?user_id=${userId}&days_ahead=${daysAhead}&max_suggestions=5&task_id=${encodeURIComponent(taskId)}`,
       {
         method: "POST",
       }
@@ -118,7 +119,8 @@ export async function scheduleTask(
 
     const data = await response.json();
     
-    // Filter suggestions for this specific task
+    // Backend now filters by task_id, so all suggestions should be for this task
+    // But keep filter as safety check
     const filteredSuggestions = data.suggestions.filter(
       (s: TimeBlockSuggestion) => s.task_id === taskId
     );
@@ -192,5 +194,109 @@ export async function approveTimeBlock(
       throw error;
     }
     throw new Error("Unknown error occurred while approving time block");
+  }
+}
+
+/**
+ * Scheduled block information
+ */
+export interface ScheduledBlockInfo {
+  id: number;
+  start_time: string;
+  end_time: string;
+  duration_minutes: number;
+  calendar_event_id: string | null;
+  quality_score: number | null;
+  confidence_score: number | null;
+}
+
+/**
+ * Task scheduled status response
+ */
+export interface TaskScheduledResponse {
+  scheduled: boolean;
+  block: ScheduledBlockInfo | null;
+}
+
+/**
+ * Check if a task is already scheduled
+ */
+export async function checkTaskScheduled(
+  taskId: string,
+  userId: number = 1
+): Promise<TaskScheduledResponse> {
+  try {
+    const response = await fetch(
+      `${API_BASE_URL}/calendar/task-scheduled?task_id=${encodeURIComponent(taskId)}&user_id=${userId}`
+    );
+
+    if (!response.ok) {
+      throw new Error(`Failed to check task scheduled status: ${response.statusText}`);
+    }
+
+    return response.json();
+  } catch (error) {
+    if (error instanceof Error) {
+      throw error;
+    }
+    throw new Error("Unknown error occurred while checking task scheduled status");
+  }
+}
+
+/**
+ * Cancel a scheduled block for a task (removes calendar event but keeps task)
+ */
+export async function cancelScheduledBlock(
+  taskId: string,
+  userId: number = 1
+): Promise<{ success: boolean; message: string; deleted_calendar_events: number }> {
+  try {
+    const response = await fetch(
+      `${API_BASE_URL}/calendar/cancel-block/${encodeURIComponent(taskId)}?user_id=${userId}`,
+      {
+        method: "DELETE",
+      }
+    );
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: response.statusText }));
+      throw new Error(error.detail || "Failed to cancel scheduled block");
+    }
+
+    return response.json();
+  } catch (error) {
+    if (error instanceof Error) {
+      throw error;
+    }
+    throw new Error("Unknown error occurred while cancelling scheduled block");
+  }
+}
+
+/**
+ * Sync calendar events from Google Calendar
+ */
+export async function syncCalendar(
+  userId: number = 1,
+  daysAhead: number = 14
+): Promise<{ success: boolean; events_count: number; synced_at: string }> {
+  try {
+    const response = await fetch(
+      `${API_BASE_URL}/calendar/sync?user_id=${userId}&days_ahead=${daysAhead}`,
+      {
+        method: "POST",
+      }
+    );
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: response.statusText }));
+      throw new Error(error.detail || "Failed to sync calendar");
+    }
+
+    return response.json();
+  } catch (error) {
+    if (error instanceof Error) {
+      throw error;
+    }
+    throw new Error("Unknown error occurred while syncing calendar");
   }
 }

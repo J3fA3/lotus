@@ -80,8 +80,13 @@ class MeetingParserAgent:
             prompt = self._build_parsing_prompt(event, user_profile, recent_tasks)
 
             # Call Gemini
-            response = await self.gemini.generate_content_async(prompt)
-            result = self._parse_gemini_response(response.text)
+            response_text = await self.gemini.generate(
+                prompt=prompt,
+                temperature=0.3,
+                max_tokens=1024,
+                fallback_to_qwen=True
+            )
+            result = self._parse_gemini_response(response_text)
 
             # Get related tasks from knowledge graph
             related_tasks = await self._find_related_tasks(
@@ -319,8 +324,9 @@ JSON response:"""
         """
         from datetime import datetime, timedelta
 
+        from datetime import timezone
         # Get upcoming calendar events
-        start_time = datetime.utcnow()
+        start_time = datetime.now(timezone.utc)
         end_time = start_time + timedelta(days=days_ahead)
 
         query = select(CalendarEvent).where(

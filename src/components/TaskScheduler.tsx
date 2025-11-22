@@ -6,33 +6,279 @@
  * with a calm, lotus-papyrus aesthetic.
  */
 
-import { useState } from "react";
-import { Calendar, Sparkles, Clock, ChevronRight, Check, X } from "lucide-react";
+import { useState, useEffect, useMemo, useRef } from "react";
+import { Calendar, Sparkles, Clock, ChevronRight, Check, X, CheckCircle2 } from "lucide-react";
 import "./TaskScheduler.css";
 import { Button } from "./ui/button";
 import { Label } from "./ui/label";
 import { toast } from "sonner";
-import { format } from "date-fns";
+import { format, formatDistanceToNow, parse } from "date-fns";
 import {
   scheduleTask,
   approveTimeBlock,
   checkCalendarAuth,
   getAuthorizationUrl,
+  cancelScheduledBlock,
   type TimeBlockSuggestion,
 } from "@/api/calendar";
+import { Comment } from "@/types/task";
+
+interface ScheduledBlockInfo {
+  start_time: string;
+  end_time: string;
+  duration_minutes: number;
+  quality_score: number | null;
+}
 
 interface TaskSchedulerProps {
   taskId: string;
   taskTitle: string;
-  onScheduled?: () => void;
+  comments?: Comment[];
+  onScheduled?: (action?: 'approved' | 'cancelled') => void;
 }
 
-export const TaskScheduler = ({ taskId, taskTitle, onScheduled }: TaskSchedulerProps) => {
+/**
+ * Parse scheduling comment to extract block information
+ * Format: "⏰ Time blocked: Friday, November 28 at 02:30 PM - 03:00 PM (30 minutes) I've added this to your calendar as '🪷 Katie Data Deep Dive'. Quality score: 85/100 (Great time for this task)"
+ */
+function parseSchedulingComment(comment: Comment): ScheduledBlockInfo | null {
+  if (comment.author !== "Lotus" || !comment.text.includes("⏰ Time blocked:")) {
+    return null;
+  }
+
+  try {
+    const text = comment.text;
+    
+    // Extract time range: "Friday, November 28 at 02:30 PM - 03:00 PM"
+    const timeMatch = text.match(/Time blocked:\s*([^•]+?)\s*-\s*(\d{1,2}:\d{2}\s*(?:AM|PM))/i);
+    if (!timeMatch) return null;
+
+    const dateTimeStr = timeMatch[1].trim(); // "Friday, November 28 at 02:30 PM"
+    const endTimeStr = timeMatch[2].trim(); // "03:00 PM"
+
+    // Parse the date and start time
+    const dateTimeMatch = dateTimeStr.match(/(.+?)\s+at\s+(\d{1,2}:\d{2}\s*(?:AM|PM))/i);
+    if (!dateTimeMatch) return null;
+
+    const datePart = dateTimeMatch[1].trim(); // "Friday, November 28"
+    const startTimeStr = dateTimeMatch[2].trim(); // "02:30 PM"
+
+    // Parse date: "Friday, November 28" -> we need the year, assume current year
+    const currentYear = new Date().getFullYear();
+    const fullDateStr = `${datePart}, ${currentYear}`;
+    
+    // Try to parse: "Friday, November 28, 2025"
+    let startDate: Date;
+    try {
+      startDate = parse(`${fullDateStr} ${startTimeStr}`, "EEEE, MMMM d, yyyy h:mm a", new Date());
+    } catch {
+      // Fallback: try without day name
+      const datePartMatch = datePart.match(/(\w+)\s+(\d+)/);
+      if (datePartMatch) {
+        const monthName = datePartMatch[1];
+        const day = datePartMatch[2];
+        startDate = parse(`${monthName} ${day}, ${currentYear} ${startTimeStr}`, "MMMM d, yyyy h:mm a", new Date());
+      } else {
+        return null;
+      }
+    }
+
+    // Parse end time (same date, different time)
+    let endDate: Date;
+    try {
+      endDate = parse(`${fullDateStr} ${endTimeStr}`, "EEEE, MMMM d, yyyy h:mm a", new Date());
+    } catch {
+      const datePartMatch = datePart.match(/(\w+)\s+(\d+)/);
+      if (datePartMatch) {
+        const monthName = datePartMatch[1];
+        const day = datePartMatch[2];
+        endDate = parse(`${monthName} ${day}, ${currentYear} ${endTimeStr}`, "MMMM d, yyyy h:mm a", new Date());
+      } else {
+        return null;
+      }
+    }
+
+    // Extract duration: "(30 minutes)"
+    const durationMatch = text.match(/\((\d+)\s*minutes?\)/i);
+    const duration_minutes = durationMatch ? parseInt(durationMatch[1], 10) : 
+      Math.round((endDate.getTime() - startDate.getTime()) / (1000 * 60));
+
+    // Extract quality score: "Quality score: 85/100"
+    const qualityMatch = text.match(/Quality score:\s*(\d+)\/100/i);
+    const quality_score = qualityMatch ? parseInt(qualityMatch[1], 10) : null;
+
+    return {
+      start_time: startDate.toISOString(),
+      end_time: endDate.toISOString(),
+      duration_minutes,
+      quality_score,
+    };
+  } catch (error) {
+    console.error("Failed to parse scheduling comment:", error);
+    return null;
+  }
+}
+
+export const TaskScheduler = ({ taskId, taskTitle, comments = [], onScheduled }: TaskSchedulerProps) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [suggestions, setSuggestions] = useState<TimeBlockSuggestion[]>([]);
   const [isAuthorized, setIsAuthorized] = useState<boolean | null>(null);
   const [approving, setApproving] = useState<number | null>(null);
+  const [cancelling, setCancelling] = useState(false);
+  const [optimisticScheduledBlock, setOptimisticScheduledBlock] = useState<ScheduledBlockInfo | null>(null);
+  const [isAnimatingOut, setIsAnimatingOut] = useState(false);
+  const [isCancelled, setIsCancelled] = useState(false);
+  const previousTaskIdRef = useRef<string>(taskId);
+
+  // Reset optimistic state when taskId changes (e.g., task deleted or switched)
+  useEffect(() => {
+    if (taskId !== previousTaskIdRef.current) {
+      setOptimisticScheduledBlock(null);
+      setIsExpanded(false);
+      setSuggestions([]);
+      setIsCancelled(false);
+      setIsAnimatingOut(false);
+      previousTaskIdRef.current = taskId;
+    }
+  }, [taskId]);
+
+  // Clear optimistic state if comments no longer contain scheduling comments or if cancelled
+  useEffect(() => {
+    if (optimisticScheduledBlock) {
+      const hasSchedulingComment = comments?.some(
+        c => c.author === "Lotus" && c.text.includes("⏰ Time blocked:")
+      );
+      const hasCancellation = comments?.some(
+        c => c.author === "Lotus" && c.text.includes("❌ Scheduled block cancelled")
+      );
+      
+      if (!hasSchedulingComment || hasCancellation) {
+        // Comments were cleared, scheduling comment was removed, or task was cancelled
+        setOptimisticScheduledBlock(null);
+      }
+    }
+  }, [comments, optimisticScheduledBlock]);
+
+  // Check for cancellation comments and update cancelled state
+  useEffect(() => {
+    if (!comments || comments.length === 0) {
+      setIsCancelled(false);
+      return;
+    }
+
+    // Check if there's any cancellation comment
+    const hasCancellation = comments.some(
+      c => c.author === "Lotus" && c.text.includes("❌ Scheduled block cancelled")
+    );
+
+    if (hasCancellation) {
+      // Find the most recent scheduling comment
+      const schedulingComments = comments
+        .filter(c => c.author === "Lotus" && c.text.includes("⏰ Time blocked:"))
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+      // Find the most recent cancellation comment
+      const cancellationComments = comments
+        .filter(c => c.author === "Lotus" && c.text.includes("❌ Scheduled block cancelled"))
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+      if (schedulingComments.length > 0 && cancellationComments.length > 0) {
+        const mostRecentSchedulingTime = new Date(schedulingComments[0].createdAt).getTime();
+        const mostRecentCancellationTime = new Date(cancellationComments[0].createdAt).getTime();
+        
+        // If cancellation is after the most recent scheduling, mark as cancelled
+        if (mostRecentCancellationTime > mostRecentSchedulingTime) {
+          setIsCancelled(true);
+          return;
+        }
+      }
+    }
+
+    setIsCancelled(false);
+  }, [comments]);
+
+  // Parse scheduling comment from task comments - automatically runs when comments change
+  const scheduledBlock = useMemo(() => {
+    // Don't show scheduled block if cancelled or animating out
+    if (isCancelled || isAnimatingOut) {
+      return null;
+    }
+
+    // First check optimistic state (immediately after approval)
+    // But only if there's still a scheduling comment to back it up
+    if (optimisticScheduledBlock) {
+      const hasSchedulingComment = comments?.some(
+        c => c.author === "Lotus" && c.text.includes("⏰ Time blocked:")
+      );
+      if (!hasSchedulingComment) {
+        // No scheduling comment found, clear optimistic state
+        return null;
+      }
+      return optimisticScheduledBlock;
+    }
+
+    if (!comments || comments.length === 0) {
+      return null;
+    }
+
+    // Find the most recent scheduling comment (Lotus comments with "⏰ Time blocked:")
+    const schedulingComments = comments
+      .filter(c => c.author === "Lotus" && c.text.includes("⏰ Time blocked:"))
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+    if (schedulingComments.length === 0) {
+      return null;
+    }
+
+    // Parse the most recent scheduling comment
+    return parseSchedulingComment(schedulingComments[0]);
+  }, [comments, optimisticScheduledBlock, isAnimatingOut, isCancelled]);
+
+  // Handle approval with optimistic update and smooth animation
+  const handleApprove = async (suggestion: TimeBlockSuggestion) => {
+    setApproving(suggestion.id);
+
+    try {
+      // Optimistically set scheduled block immediately for instant feedback
+      const startDate = new Date(suggestion.start_time);
+      const endDate = new Date(suggestion.end_time);
+      const duration = Math.round((endDate.getTime() - startDate.getTime()) / (1000 * 60));
+      
+      // Remove approved suggestion first (smooth animation)
+      setSuggestions(prev => prev.filter(s => s.id !== suggestion.id));
+      
+      // Collapse the expanded view with animation
+      setTimeout(() => {
+        setIsExpanded(false);
+      }, 150);
+
+      // Set optimistic state after a brief delay for smooth transition
+      setTimeout(() => {
+        setOptimisticScheduledBlock({
+          start_time: suggestion.start_time,
+          end_time: suggestion.end_time,
+          duration_minutes: duration,
+          quality_score: suggestion.quality_score,
+        });
+      }, 200);
+
+      await approveTimeBlock(suggestion.id);
+      toast.success("Time block added to your calendar");
+      
+      // Call onScheduled to trigger task refresh (which will update comments)
+      if (onScheduled) {
+        onScheduled('approved');
+      }
+    } catch (error) {
+      console.error("Approval error:", error);
+      // Clear optimistic state on error
+      setOptimisticScheduledBlock(null);
+      toast.error(error instanceof Error ? error.message : "Failed to approve time block");
+    } finally {
+      setApproving(null);
+    }
+  };
 
   const handleExpand = async () => {
     if (isExpanded) {
@@ -58,7 +304,8 @@ export const TaskScheduler = ({ taskId, taskTitle, onScheduled }: TaskSchedulerP
       const response = await scheduleTask(taskId);
 
       if (response.suggestions.length === 0) {
-        toast.info("No available time slots found in the next 7 days");
+        const message = response.message || "No available time slots found in the next 7 days";
+        toast.info(message, { duration: 5000 });
         setSuggestions([]);
       } else {
         setSuggestions(response.suggestions);
@@ -84,33 +331,6 @@ export const TaskScheduler = ({ taskId, taskTitle, onScheduled }: TaskSchedulerP
     }
   };
 
-  const handleApprove = async (suggestion: TimeBlockSuggestion) => {
-    setApproving(suggestion.id);
-
-    try {
-      await approveTimeBlock(suggestion.id);
-      toast.success("Time block added to your calendar");
-      
-      // Remove approved suggestion with smooth animation
-      setSuggestions(prev => prev.filter(s => s.id !== suggestion.id));
-      
-      if (onScheduled) {
-        onScheduled();
-      }
-
-      // Collapse if no more suggestions
-      if (suggestions.length === 1) {
-        setTimeout(() => {
-          setIsExpanded(false);
-        }, 300);
-      }
-    } catch (error) {
-      console.error("Approval error:", error);
-      toast.error(error instanceof Error ? error.message : "Failed to approve time block");
-    } finally {
-      setApproving(null);
-    }
-  };
 
   const handleReject = (suggestion: TimeBlockSuggestion) => {
     setSuggestions(prev => prev.filter(s => s.id !== suggestion.id));
@@ -121,6 +341,43 @@ export const TaskScheduler = ({ taskId, taskTitle, onScheduled }: TaskSchedulerP
       setTimeout(() => {
         setIsExpanded(false);
       }, 150);
+    }
+  };
+
+  const handleCancel = async () => {
+    if (!scheduledBlock) return;
+    
+    setCancelling(true);
+    // Start exit animation immediately for smooth UX
+    setIsAnimatingOut(true);
+    // Mark as cancelled immediately to prevent reappearing
+    setIsCancelled(true);
+    
+    // Immediately clear optimistic state to prevent reappearing
+    setOptimisticScheduledBlock(null);
+    
+    try {
+      await cancelScheduledBlock(taskId);
+      
+      // Wait for animation to complete
+      setTimeout(() => {
+        setIsAnimatingOut(false);
+        toast.success("Scheduled block cancelled");
+        
+        // Call onScheduled to trigger task refresh (which will update comments)
+        // Pass 'cancelled' so parent doesn't show "Time block added" message
+        if (onScheduled) {
+          onScheduled('cancelled');
+        }
+      }, 300); // Match animation duration
+    } catch (error) {
+      console.error("Cancellation error:", error);
+      // Reset animation state on error
+      setIsAnimatingOut(false);
+      setIsCancelled(false);
+      toast.error(error instanceof Error ? error.message : "Failed to cancel scheduled block");
+    } finally {
+      setCancelling(false);
     }
   };
 
@@ -136,6 +393,91 @@ export const TaskScheduler = ({ taskId, taskTitle, onScheduled }: TaskSchedulerP
     return "bg-muted/30";
   };
 
+  // Compact scheduled state - replaces the button
+  // Show during animation, then hide after animation completes
+  if (scheduledBlock) {
+    const startDate = new Date(scheduledBlock.start_time);
+    const endDate = new Date(scheduledBlock.end_time);
+    const isToday = format(startDate, "yyyy-MM-dd") === format(new Date(), "yyyy-MM-dd");
+    const isTomorrow = format(startDate, "yyyy-MM-dd") === format(new Date(Date.now() + 86400000), "yyyy-MM-dd");
+    const isPast = startDate < new Date();
+
+    return (
+      <div className="space-y-3 transition-all duration-300">
+        <Label className="flex items-center gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+          <Sparkles className="h-3.5 w-3.5 opacity-60" />
+          Scheduled
+        </Label>
+        
+        {/* Compact Scheduled State - Replaces Button */}
+        <div 
+          className={`relative overflow-hidden rounded-lg border border-[hsl(var(--lotus-green-medium)/0.3)] bg-gradient-to-br from-[hsl(var(--lotus-green-light)/0.08)] to-[hsl(var(--lotus-green-light)/0.03)] p-3 transition-all duration-300 ${
+            isAnimatingOut 
+              ? 'animate-out slide-out-to-right-full fade-out-0' 
+              : 'animate-in slide-in-from-top-2 fade-in-0 hover:border-[hsl(var(--lotus-green-medium)/0.5)] hover:shadow-zen-sm'
+          }`}
+          style={{ 
+            animationDuration: isAnimatingOut ? '300ms' : '400ms',
+            animationFillMode: 'forwards'
+          }}
+        >
+          {/* Subtle left accent */}
+          <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-[hsl(var(--lotus-green-medium))] to-[hsl(var(--lotus-green-medium)/0.5)]" />
+          
+          <div className="pl-3 flex items-center gap-3">
+            {/* Clock icon */}
+            <div className="flex-shrink-0 w-7 h-7 rounded-full bg-[hsl(var(--lotus-green-medium)/0.15)] flex items-center justify-center ring-1 ring-[hsl(var(--lotus-green-medium)/0.2)] animate-in zoom-in-50"
+              style={{ animationDuration: '300ms', animationDelay: '100ms' }}
+            >
+              <Clock className="h-3.5 w-3.5 text-[hsl(var(--lotus-green-medium))]" />
+            </div>
+            
+            {/* Time info - compact */}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <p className="text-sm font-medium text-foreground">
+                  {isPast ? "Past" : isToday ? "Today" : isTomorrow ? "Tomorrow" : format(startDate, "MMM d")}
+                </p>
+                <span className="text-xs text-muted-foreground">
+                  {format(startDate, "h:mm a")} - {format(endDate, "h:mm a")}
+                </span>
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-0.5 ml-0">
+                {scheduledBlock.duration_minutes} min
+                {scheduledBlock.quality_score !== null && scheduledBlock.quality_score >= 75 && (
+                  <span className="ml-1.5 text-[hsl(var(--lotus-green-medium))]">
+                    • {scheduledBlock.quality_score >= 90 ? "Excellent" : "Great"} time
+                  </span>
+                )}
+              </p>
+            </div>
+
+            {/* Cancel button */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleCancel}
+              disabled={cancelling}
+              className="h-7 px-2 text-xs text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all flex-shrink-0"
+            >
+              {cancelling ? (
+                <>
+                  <div className="h-3 w-3 mr-1 rounded-full border-2 border-destructive/30 border-t-destructive animate-spin" />
+                  Cancelling...
+                </>
+              ) : (
+                <>
+                  <X className="h-3 w-3 mr-1" />
+                  Cancel
+                </>
+              )}
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-3 transition-all duration-300">
       {/* Collapsed State - Subtle Integration */}
@@ -143,7 +485,7 @@ export const TaskScheduler = ({ taskId, taskTitle, onScheduled }: TaskSchedulerP
         <div className="space-y-3">
           <Label className="flex items-center gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
             <Sparkles className="h-3.5 w-3.5 opacity-60" />
-            AI Scheduling
+            Schedule
           </Label>
           <Button
             variant="outline"
@@ -152,7 +494,7 @@ export const TaskScheduler = ({ taskId, taskTitle, onScheduled }: TaskSchedulerP
             className="w-full h-10 justify-between border-border/50 hover:border-primary/50 hover:bg-accent/30 transition-all duration-200 group"
           >
             <span className="text-sm text-muted-foreground group-hover:text-foreground transition-colors">
-              Let AI find the best time
+              Find the best time
             </span>
             <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-primary group-hover:translate-x-0.5 transition-all" />
           </Button>
@@ -165,7 +507,7 @@ export const TaskScheduler = ({ taskId, taskTitle, onScheduled }: TaskSchedulerP
           <div className="flex items-center justify-between">
             <Label className="flex items-center gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
               <Sparkles className="h-3.5 w-3.5 opacity-60" />
-              AI Scheduling
+              Schedule
             </Label>
             <Button
               variant="ghost"
@@ -265,12 +607,6 @@ export const TaskScheduler = ({ taskId, taskTitle, onScheduled }: TaskSchedulerP
                       </div>
                     </div>
 
-                    {/* Reasoning */}
-                    {suggestion.reasoning && (
-                      <p className="text-xs text-muted-foreground leading-relaxed mb-3 pl-5">
-                        {suggestion.reasoning}
-                      </p>
-                    )}
 
                     {/* Actions */}
                     <div className="flex items-center gap-2 pl-5">

@@ -82,23 +82,32 @@ export const KanbanBoard = () => {
     } catch (err) {
       console.error("Backend health check failed:", err);
       setBackendConnected(false);
-      toast.error("Backend not connected. Using demo mode.", {
-        description: "Start the backend server to enable AI features.",
-        duration: TOAST_DURATION.LONG,
-      });
+      // Don't show error toast for health check failures - it's expected if backend is down
+      // The warning banner will be shown instead
     }
   }, []);
 
   const loadTasks = useCallback(async () => {
     setIsLoading(true);
+    
+    // Safety timeout: ensure loading state is always cleared after 15 seconds
+    const safetyTimeout = setTimeout(() => {
+      setIsLoading(false);
+      console.warn("Task loading timeout - clearing loading state");
+    }, 15000);
+    
     try {
       const fetchedTasks = await tasksApi.fetchTasks();
+      clearTimeout(safetyTimeout);
       setTasks(fetchedTasks);
     } catch (err) {
+      clearTimeout(safetyTimeout);
       console.error("Failed to load tasks:", err);
       toast.error("Failed to load tasks from backend", {
         description: err instanceof Error ? err.message : "Unknown error",
       });
+      // Set empty tasks array so UI can still render
+      setTasks([]);
     } finally {
       setIsLoading(false);
     }
