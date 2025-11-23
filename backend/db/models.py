@@ -55,6 +55,7 @@ class Task(Base):
     comments = relationship("Comment", back_populates="task", cascade="all, delete-orphan")
     attachments = relationship("Attachment", back_populates="task", cascade="all, delete-orphan")
     source_context = relationship("ContextItem", backref="generated_tasks")
+    versions = relationship("TaskVersion", back_populates="task", cascade="all, delete-orphan")
 
 
 class Comment(Base):

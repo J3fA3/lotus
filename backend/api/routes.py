@@ -39,7 +39,17 @@ from api.schemas import (
     DocumentListResponse,
     KnowledgeBaseSummaryResponse,
     ValueStreamSchema,
-    ValueStreamCreateRequest
+    ValueStreamCreateRequest,
+    TaskVersionSchema,
+    TaskVersionHistoryResponse,
+    VersionComparisonResponse,
+    QuestionSchema,
+    QuestionListResponse,
+    QuestionAnswerRequest,
+    QuestionSnoozeRequest,
+    QuestionBatchSchema,
+    QuestionBatchWithQuestions,
+    BatchProcessResponse
 )
 from db.database import get_db
 from db.models import Task, Comment, Attachment, InferenceHistory, ShortcutConfig, Document, ValueStream
@@ -56,14 +66,23 @@ from agents.knowledge_base import KnowledgeBase
 from api.context_routes import router as context_router
 from api.knowledge_routes import router as knowledge_router
 
+# Import Phase 6 routers
+from api.kg_lifecycle_routes import router as kg_lifecycle_router
+
 # Import Document-Cognitive Nexus Integration
 from services.document_cognitive_integration import DocumentCognitiveIntegration
+
+# Import Phase 6 services
+from services.outcome_tracker import get_outcome_tracker
 
 router = APIRouter()
 
 # Include Cognitive Nexus routes
 router.include_router(context_router)
 router.include_router(knowledge_router)
+
+# Include Phase 6 routes
+router.include_router(kg_lifecycle_router)
 
 # Initialize AI components
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
@@ -171,6 +190,38 @@ async def create_task(
     )
     task = result.scalar_one_or_none()
 
+    # Phase 6 Stage 3: Create initial version
+    try:
+        from services.task_version_service import get_task_version_service
+        from services.pr_comment_generator import get_pr_comment_generator
+
+        version_service = await get_task_version_service(db)
+        pr_generator = get_pr_comment_generator()
+
+        # Create initial version (snapshot)
+        version = await version_service.create_initial_version(
+            task=task,
+            changed_by="user",  # TODO: Get from auth
+            ai_model=None  # Set to AI model if created by AI
+        )
+
+        # Generate creation comment
+        pr_comment = pr_generator.generate_creation_comment(
+            task_data={},
+            change_source="user_create",
+            ai_model=None
+        )
+        version.pr_comment = pr_comment
+        version.pr_comment_generated_at = datetime.utcnow()
+
+        await db.commit()
+
+    except Exception as e:
+        # Log error but don't fail task creation
+        print(f"Initial version creation failed for task {task_id}: {e}")
+        import traceback
+        traceback.print_exc()
+
     return _task_to_schema(task, load_relationships=True)
 
 
@@ -199,7 +250,7 @@ async def update_task(
     """Update a task with provided fields"""
     import logging
     logger = logging.getLogger(__name__)
-    
+
     try:
         result = await db.execute(
             select(Task)
@@ -210,6 +261,21 @@ async def update_task(
 
         if not task:
             raise HTTPException(status_code=404, detail="Task not found")
+
+        # Phase 6 Stage 3: Capture old values BEFORE update (for version control)
+        old_values = {
+            "status": task.status,
+            "title": task.title,
+            "description": task.description,
+            "assignee": task.assignee,
+            "priority": getattr(task, "priority", None),
+            "effort": getattr(task, "effort", None),
+            "project": getattr(task, "project", None),
+            "start_date": task.start_date,  # Already a string in DB
+            "due_date": task.due_date,  # Already a string in DB
+            "value_stream": task.value_stream,
+            "notes": task.notes
+        }
 
         # Store original status before updates for automatic start date logic
         original_status = task.status
@@ -226,7 +292,7 @@ async def update_task(
             "description": "description",
             "notes": "notes"
         }
-        
+
         for api_field, db_field in field_mapping.items():
             if api_field in update_data:
                 setattr(task, db_field, update_data[api_field])
@@ -268,10 +334,79 @@ async def update_task(
                 )
                 db.add(attachment)
 
+        # Phase 6 Stage 3: Create version BEFORE final commit (in same transaction)
+        # Capture new values
+        new_values = {
+            "status": task.status,
+            "title": task.title,
+            "description": task.description,
+            "assignee": task.assignee,
+            "priority": getattr(task, "priority", None),
+            "effort": getattr(task, "effort", None),
+            "project": getattr(task, "project", None),
+            "start_date": task.start_date,  # Already a string in DB
+            "due_date": task.due_date,  # Already a string in DB
+            "value_stream": task.value_stream,
+            "notes": task.notes
+        }
+
+        # Detect which fields actually changed
+        changed_fields = []
+        for field, new_val in new_values.items():
+            old_val = old_values.get(field)
+            if old_val != new_val:
+                changed_fields.append(field)
+
+        # Create version if significant changes
+        if changed_fields:
+            try:
+                from services.task_version_service import get_task_version_service
+                from services.pr_comment_generator import get_pr_comment_generator
+
+                version_service = await get_task_version_service(db)
+                pr_generator = get_pr_comment_generator()
+
+                # Detect if AI suggestions were overridden
+                # TODO: Add ai_suggestions parameter to API when AI enrichment is implemented
+                ai_suggestions = None  # Will be populated from orchestrator enrichment
+                ai_overridden = False
+                overridden_fields = []
+
+                # Create version
+                version = await version_service.create_update_version(
+                    task_id=task_id,
+                    old_values={k: v for k, v in old_values.items() if k in changed_fields},
+                    new_values={k: v for k, v in new_values.items() if k in changed_fields},
+                    changed_by=update_data.get("updated_by", "user"),  # TODO: Get from auth
+                    change_source="user_edit",
+                    ai_model=None,
+                    ai_suggestions=ai_suggestions
+                )
+
+                # Generate PR-style comment if version was created
+                if version:
+                    change_type = "status_change" if "status" in changed_fields else "field_update"
+                    pr_comment = await pr_generator.generate_comment(
+                        changed_fields=changed_fields,
+                        old_values={k: v for k, v in old_values.items() if k in changed_fields},
+                        new_values={k: v for k, v in new_values.items() if k in changed_fields},
+                        change_type=change_type,
+                        change_source="user_edit",
+                        ai_suggestions=ai_suggestions,
+                        ai_overridden=ai_overridden,
+                        overridden_fields=overridden_fields
+                    )
+                    version.pr_comment = pr_comment
+                    version.pr_comment_generated_at = datetime.utcnow()
+
+            except Exception as e:
+                # Log error but don't fail the task update
+                logger.error(f"Version creation failed for task {task_id}: {e}", exc_info=True)
+
         task.updated_at = datetime.utcnow()
 
         await db.commit()
-        
+
         # Reload task with relationships using selectinload instead of refresh
         result = await db.execute(
             select(Task)
@@ -279,12 +414,27 @@ async def update_task(
             .options(selectinload(Task.comments), selectinload(Task.attachments))
         )
         task = result.scalar_one_or_none()
-        
+
         if not task:
             raise HTTPException(status_code=404, detail="Task not found after update")
 
+        # Phase 6: Record task outcome if status changed to "done"
+        if "status" in changed_fields and task.status == "done":
+            try:
+                tracker = await get_outcome_tracker(db)
+                await tracker.record_outcome_on_status_change(
+                    task_id=task_id,
+                    new_status=task.status,
+                    previous_status=old_values["status"]
+                )
+                # Commit outcome separately (don't fail task update if outcome tracking fails)
+                await db.commit()
+            except Exception as e:
+                # Log error but don't fail the task update
+                logger.error(f"Outcome tracking failed for task {task_id}: {e}", exc_info=True)
+
         return _task_to_schema(task, load_relationships=True)
-    
+
     except HTTPException:
         raise
     except Exception as e:
@@ -294,6 +444,622 @@ async def update_task(
             status_code=500,
             detail=f"An unexpected error occurred while updating the task: {str(e)}"
         )
+
+
+
+# ============================================================================
+# TASK VERSION HISTORY ENDPOINTS (Phase 6 Stage 3)
+# ============================================================================
+
+@router.get("/tasks/{task_id}/versions", response_model=TaskVersionHistoryResponse)
+async def get_task_version_history(
+    task_id: str,
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get version history for a task.
+
+    Returns list of versions in reverse chronological order (newest first).
+    """
+    try:
+        from services.task_version_service import get_task_version_service
+        from sqlalchemy import func, select as sql_select
+        from db.task_version_models import TaskVersion
+
+        # Get version service
+        version_service = await get_task_version_service(db)
+
+        # Get total count
+        count_result = await db.execute(
+            sql_select(func.count(TaskVersion.id)).where(TaskVersion.task_id == task_id)
+        )
+        total_versions = count_result.scalar()
+
+        # Get versions
+        versions = await version_service.get_version_history(task_id, limit=limit, offset=offset)
+
+        # Convert to schema
+        version_schemas = []
+        for v in versions:
+            version_schemas.append(TaskVersionSchema(
+                id=v.id,
+                task_id=v.task_id,
+                version_number=v.version_number,
+                created_at=v.created_at.isoformat(),
+                is_snapshot=v.is_snapshot,
+                is_milestone=v.is_milestone,
+                changed_by=v.changed_by,
+                change_source=v.change_source,
+                ai_model=v.ai_model,
+                change_type=v.change_type,
+                changed_fields=v.changed_fields or [],
+                snapshot_data=v.snapshot_data,
+                delta_data=v.delta_data,
+                pr_comment=v.pr_comment,
+                pr_comment_generated_at=v.pr_comment_generated_at.isoformat() if v.pr_comment_generated_at else None,
+                ai_suggestion_overridden=v.ai_suggestion_overridden,
+                overridden_fields=v.overridden_fields or [],
+                override_reason=v.override_reason,
+                change_confidence=v.change_confidence,
+                user_approved=v.user_approved
+            ))
+
+        return TaskVersionHistoryResponse(
+            task_id=task_id,
+            total_versions=total_versions,
+            versions=version_schemas,
+            has_more=(offset + len(versions)) < total_versions
+        )
+
+    except Exception as e:
+        print(f"Error fetching version history for task {task_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch version history: {str(e)}")
+
+
+@router.get("/tasks/{task_id}/versions/{version_number}", response_model=TaskVersionSchema)
+async def get_task_version(
+    task_id: str,
+    version_number: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get a specific version of a task.
+    """
+    try:
+        from services.task_version_service import get_task_version_service
+
+        version_service = await get_task_version_service(db)
+        version = await version_service.get_version(task_id, version_number)
+
+        if not version:
+            raise HTTPException(status_code=404, detail=f"Version {version_number} not found for task {task_id}")
+
+        return TaskVersionSchema(
+            id=version.id,
+            task_id=version.task_id,
+            version_number=version.version_number,
+            created_at=version.created_at.isoformat(),
+            is_snapshot=version.is_snapshot,
+            is_milestone=version.is_milestone,
+            changed_by=version.changed_by,
+            change_source=version.change_source,
+            ai_model=version.ai_model,
+            change_type=version.change_type,
+            changed_fields=version.changed_fields or [],
+            snapshot_data=version.snapshot_data,
+            delta_data=version.delta_data,
+            pr_comment=version.pr_comment,
+            pr_comment_generated_at=version.pr_comment_generated_at.isoformat() if version.pr_comment_generated_at else None,
+            ai_suggestion_overridden=version.ai_suggestion_overridden,
+            overridden_fields=version.overridden_fields or [],
+            override_reason=version.override_reason,
+            change_confidence=version.change_confidence,
+            user_approved=version.user_approved
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error fetching version {version_number} for task {task_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch version: {str(e)}")
+
+
+@router.get("/tasks/{task_id}/versions/compare", response_model=VersionComparisonResponse)
+async def compare_task_versions(
+    task_id: str,
+    version_a: int = Query(..., description="First version number"),
+    version_b: int = Query(..., description="Second version number"),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Compare two versions of a task.
+
+    Returns the differences between version_a and version_b.
+    """
+    try:
+        from services.task_version_service import get_task_version_service
+
+        version_service = await get_task_version_service(db)
+        comparison = await version_service.compare_versions(task_id, version_a, version_b)
+
+        return VersionComparisonResponse(
+            task_id=task_id,
+            version_a=comparison["version_a"],
+            version_b=comparison["version_b"],
+            created_at_a=comparison["created_at_a"],
+            created_at_b=comparison["created_at_b"],
+            changed_fields=comparison["changed_fields"],
+            diff=comparison["diff"]
+        )
+
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        print(f"Error comparing versions for task {task_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to compare versions: {str(e)}")
+
+
+# ============================================================================
+# QUESTION QUEUE ENDPOINTS (Phase 6 Stage 4)
+# ============================================================================
+
+@router.get("/questions/ready", response_model=QuestionListResponse)
+async def get_ready_questions(
+    limit: int = Query(default=10, ge=1, le=50),
+    task_id: Optional[str] = Query(default=None),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get questions ready to be shown to user.
+
+    Ordered by priority score (highest first).
+    """
+    try:
+        from services.question_queue_service import get_question_queue_service
+
+        service = await get_question_queue_service(db)
+        questions = await service.get_ready_questions(limit=limit, task_id=task_id)
+
+        # Convert to schemas
+        question_schemas = []
+        for q in questions:
+            question_schemas.append(QuestionSchema(
+                id=q.id,
+                task_id=q.task_id,
+                field_name=q.field_name,
+                question=q.question,
+                suggested_answer=q.suggested_answer,
+                importance=q.importance,
+                confidence=q.confidence,
+                priority_score=q.priority_score,
+                status=q.status,
+                created_at=q.created_at.isoformat(),
+                ready_at=q.ready_at.isoformat() if q.ready_at else None,
+                shown_at=q.shown_at.isoformat() if q.shown_at else None,
+                answered_at=q.answered_at.isoformat() if q.answered_at else None,
+                answer=q.answer,
+                answer_source=q.answer_source,
+                answer_applied=q.answer_applied,
+                user_feedback=q.user_feedback,
+                semantic_cluster=q.semantic_cluster
+            ))
+
+        return QuestionListResponse(
+            total=len(question_schemas),
+            questions=question_schemas
+        )
+
+    except Exception as e:
+        print(f"Error fetching ready questions: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch questions: {str(e)}")
+
+
+@router.get("/questions/pending", response_model=QuestionListResponse)
+async def get_pending_questions(
+    limit: int = Query(default=50, ge=1, le=100),
+    task_id: Optional[str] = Query(default=None),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get all pending questions (queued or ready).
+
+    Ordered by priority score.
+    """
+    try:
+        from services.question_queue_service import get_question_queue_service
+
+        service = await get_question_queue_service(db)
+        questions = await service.get_pending_questions(task_id=task_id, limit=limit)
+
+        # Convert to schemas
+        question_schemas = []
+        for q in questions:
+            question_schemas.append(QuestionSchema(
+                id=q.id,
+                task_id=q.task_id,
+                field_name=q.field_name,
+                question=q.question,
+                suggested_answer=q.suggested_answer,
+                importance=q.importance,
+                confidence=q.confidence,
+                priority_score=q.priority_score,
+                status=q.status,
+                created_at=q.created_at.isoformat(),
+                ready_at=q.ready_at.isoformat() if q.ready_at else None,
+                shown_at=q.shown_at.isoformat() if q.shown_at else None,
+                answered_at=q.answered_at.isoformat() if q.answered_at else None,
+                answer=q.answer,
+                answer_source=q.answer_source,
+                answer_applied=q.answer_applied,
+                user_feedback=q.user_feedback,
+                semantic_cluster=q.semantic_cluster
+            ))
+
+        return QuestionListResponse(
+            total=len(question_schemas),
+            questions=question_schemas
+        )
+
+    except Exception as e:
+        print(f"Error fetching pending questions: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch questions: {str(e)}")
+
+
+@router.post("/questions/{question_id}/answer", response_model=QuestionSchema)
+async def answer_question(
+    question_id: int,
+    answer_request: QuestionAnswerRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Answer a question and optionally apply to task.
+    """
+    try:
+        from services.question_queue_service import get_question_queue_service
+
+        service = await get_question_queue_service(db)
+
+        # Record answer
+        success = await service.answer_question(
+            question_id=question_id,
+            answer=answer_request.answer,
+            answer_source=answer_request.answer_source,
+            feedback=answer_request.feedback,
+            feedback_comment=answer_request.feedback_comment
+        )
+
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to record answer")
+
+        # Apply to task if requested
+        if answer_request.apply_to_task:
+            applied = await service.apply_answer_to_task(question_id, user_approved=True)
+            if not applied:
+                print(f"Warning: Failed to apply answer to task for question {question_id}")
+
+        # Return updated question
+        question = await service.get_question(question_id)
+        if not question:
+            raise HTTPException(status_code=404, detail="Question not found")
+
+        return QuestionSchema(
+            id=question.id,
+            task_id=question.task_id,
+            field_name=question.field_name,
+            question=question.question,
+            suggested_answer=question.suggested_answer,
+            importance=question.importance,
+            confidence=question.confidence,
+            priority_score=question.priority_score,
+            status=question.status,
+            created_at=question.created_at.isoformat(),
+            ready_at=question.ready_at.isoformat() if question.ready_at else None,
+            shown_at=question.shown_at.isoformat() if question.shown_at else None,
+            answered_at=question.answered_at.isoformat() if question.answered_at else None,
+            answer=question.answer,
+            answer_source=question.answer_source,
+            answer_applied=question.answer_applied,
+            user_feedback=question.user_feedback,
+            semantic_cluster=question.semantic_cluster
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error answering question {question_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to answer question: {str(e)}")
+
+
+@router.post("/questions/{question_id}/dismiss")
+async def dismiss_question(
+    question_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Dismiss a question without answering.
+    """
+    try:
+        from services.question_queue_service import get_question_queue_service
+
+        service = await get_question_queue_service(db)
+        success = await service.dismiss_question(question_id)
+
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to dismiss question")
+
+        return {"status": "dismissed", "question_id": question_id}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error dismissing question {question_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to dismiss question: {str(e)}")
+
+
+@router.post("/questions/{question_id}/snooze")
+async def snooze_question(
+    question_id: int,
+    snooze_request: QuestionSnoozeRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Snooze a question to show later.
+    """
+    try:
+        from services.question_queue_service import get_question_queue_service
+
+        service = await get_question_queue_service(db)
+        success = await service.snooze_question(
+            question_id=question_id,
+            snooze_hours=snooze_request.snooze_hours
+        )
+
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to snooze question")
+
+        return {
+            "status": "snoozed",
+            "question_id": question_id,
+            "snooze_hours": snooze_request.snooze_hours
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error snoozing question {question_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to snooze question: {str(e)}")
+
+
+# ============================================================================
+# QUESTION BATCHING ENDPOINTS (Phase 6 Stage 4)
+# ============================================================================
+
+@router.get("/questions/batches/ready", response_model=List[QuestionBatchWithQuestions])
+async def get_ready_batches(
+    limit: int = Query(default=10, ge=1, le=50),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get batches of questions ready to be shown.
+
+    Each batch contains related questions grouped for minimal interruption.
+    """
+    try:
+        from services.question_batching_service import get_question_batching_service
+
+        service = await get_question_batching_service(db)
+        batches = await service.get_ready_batches(limit=limit)
+
+        # Fetch questions for each batch
+        result = []
+        for batch in batches:
+            questions = await service.get_batch_questions(batch.id)
+
+            # Convert to schemas
+            question_schemas = []
+            for q in questions:
+                question_schemas.append(QuestionSchema(
+                    id=q.id,
+                    task_id=q.task_id,
+                    field_name=q.field_name,
+                    question=q.question,
+                    suggested_answer=q.suggested_answer,
+                    importance=q.importance,
+                    confidence=q.confidence,
+                    priority_score=q.priority_score,
+                    status=q.status,
+                    created_at=q.created_at.isoformat(),
+                    ready_at=q.ready_at.isoformat() if q.ready_at else None,
+                    shown_at=q.shown_at.isoformat() if q.shown_at else None,
+                    answered_at=q.answered_at.isoformat() if q.answered_at else None,
+                    answer=q.answer,
+                    answer_source=q.answer_source,
+                    answer_applied=q.answer_applied,
+                    user_feedback=q.user_feedback,
+                    semantic_cluster=q.semantic_cluster
+                ))
+
+            batch_schema = QuestionBatchSchema(
+                id=batch.id,
+                batch_type=batch.batch_type,
+                semantic_cluster=batch.semantic_cluster,
+                question_count=batch.question_count,
+                question_ids=batch.question_ids,
+                task_ids=batch.task_ids,
+                shown_to_user=batch.shown_to_user,
+                shown_at=batch.shown_at.isoformat() if batch.shown_at else None,
+                completed=batch.completed,
+                completed_at=batch.completed_at.isoformat() if batch.completed_at else None,
+                answered_count=batch.answered_count,
+                dismissed_count=batch.dismissed_count,
+                snoozed_count=batch.snoozed_count,
+                created_at=batch.created_at.isoformat()
+            )
+
+            result.append(QuestionBatchWithQuestions(
+                batch=batch_schema,
+                questions=question_schemas
+            ))
+
+        return result
+
+    except Exception as e:
+        print(f"Error fetching ready batches: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch batches: {str(e)}")
+
+
+@router.get("/questions/batches/{batch_id}", response_model=QuestionBatchWithQuestions)
+async def get_batch(
+    batch_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get a specific batch with its questions.
+    """
+    try:
+        from services.question_batching_service import get_question_batching_service
+
+        service = await get_question_batching_service(db)
+        batch = await service.get_batch(batch_id)
+
+        if not batch:
+            raise HTTPException(status_code=404, detail="Batch not found")
+
+        questions = await service.get_batch_questions(batch_id)
+
+        # Convert to schemas
+        question_schemas = []
+        for q in questions:
+            question_schemas.append(QuestionSchema(
+                id=q.id,
+                task_id=q.task_id,
+                field_name=q.field_name,
+                question=q.question,
+                suggested_answer=q.suggested_answer,
+                importance=q.importance,
+                confidence=q.confidence,
+                priority_score=q.priority_score,
+                status=q.status,
+                created_at=q.created_at.isoformat(),
+                ready_at=q.ready_at.isoformat() if q.ready_at else None,
+                shown_at=q.shown_at.isoformat() if q.shown_at else None,
+                answered_at=q.answered_at.isoformat() if q.answered_at else None,
+                answer=q.answer,
+                answer_source=q.answer_source,
+                answer_applied=q.answer_applied,
+                user_feedback=q.user_feedback,
+                semantic_cluster=q.semantic_cluster
+            ))
+
+        batch_schema = QuestionBatchSchema(
+            id=batch.id,
+            batch_type=batch.batch_type,
+            semantic_cluster=batch.semantic_cluster,
+            question_count=batch.question_count,
+            question_ids=batch.question_ids,
+            task_ids=batch.task_ids,
+            shown_to_user=batch.shown_to_user,
+            shown_at=batch.shown_at.isoformat() if batch.shown_at else None,
+            completed=batch.completed,
+            completed_at=batch.completed_at.isoformat() if batch.completed_at else None,
+            answered_count=batch.answered_count,
+            dismissed_count=batch.dismissed_count,
+            snoozed_count=batch.snoozed_count,
+            created_at=batch.created_at.isoformat()
+        )
+
+        return QuestionBatchWithQuestions(
+            batch=batch_schema,
+            questions=question_schemas
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error fetching batch {batch_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch batch: {str(e)}")
+
+
+@router.post("/questions/batches/process", response_model=BatchProcessResponse)
+async def process_batches(
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Process batches (background job endpoint).
+
+    Creates batches from queued questions and wakes snoozed questions.
+    Can be called periodically via cron or manually.
+    """
+    try:
+        from services.question_batching_service import get_question_batching_service
+
+        service = await get_question_batching_service(db)
+        stats = await service.process_batches_background()
+
+        return BatchProcessResponse(**stats)
+
+    except Exception as e:
+        print(f"Error processing batches: {e}")
+        return BatchProcessResponse(
+            batches_created=0,
+            questions_woken=0,
+            processed_at=datetime.utcnow().isoformat(),
+            error=str(e)
+        )
+
+
+@router.post("/questions/batches/{batch_id}/shown")
+async def mark_batch_shown(
+    batch_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Mark batch as shown to user.
+    """
+    try:
+        from services.question_batching_service import get_question_batching_service
+
+        service = await get_question_batching_service(db)
+        success = await service.mark_batch_shown(batch_id)
+
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to mark batch as shown")
+
+        return {"status": "shown", "batch_id": batch_id}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error marking batch {batch_id} as shown: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to mark batch as shown: {str(e)}")
+
+
+@router.post("/questions/batches/{batch_id}/completed")
+async def mark_batch_completed(
+    batch_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Mark batch as completed.
+    """
+    try:
+        from services.question_batching_service import get_question_batching_service
+
+        service = await get_question_batching_service(db)
+        success = await service.mark_batch_completed(batch_id)
+
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to mark batch as completed")
+
+        return {"status": "completed", "batch_id": batch_id}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error marking batch {batch_id} as completed: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to mark batch as completed: {str(e)}")
 
 
 @router.delete("/tasks/{task_id}")

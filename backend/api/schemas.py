@@ -195,3 +195,151 @@ class ValueStreamCreateRequest(BaseModel):
     """Request for creating a new value stream"""
     name: str
     color: Optional[str] = None
+
+
+# ============================================================================
+# TASK VERSION CONTROL SCHEMAS (Phase 6 Stage 3)
+# ============================================================================
+
+class TaskVersionSchema(BaseModel):
+    """Schema for task version history entry"""
+    id: int
+    task_id: str
+    version_number: int
+    created_at: str
+
+    # Versioning type
+    is_snapshot: bool
+    is_milestone: bool
+
+    # Provenance
+    changed_by: Optional[str]
+    change_source: str
+    ai_model: Optional[str]
+
+    # Change detection
+    change_type: str
+    changed_fields: List[str]
+
+    # Data (one of these will be populated)
+    snapshot_data: Optional[dict]
+    delta_data: Optional[dict]
+
+    # PR-style comment
+    pr_comment: Optional[str]
+    pr_comment_generated_at: Optional[str]
+
+    # Learning signals
+    ai_suggestion_overridden: bool
+    overridden_fields: List[str]
+    override_reason: Optional[str]
+
+    # Quality
+    change_confidence: Optional[float]
+    user_approved: Optional[bool]
+
+    class Config:
+        from_attributes = True
+
+
+class TaskVersionHistoryResponse(BaseModel):
+    """Response containing version history for a task"""
+    task_id: str
+    total_versions: int
+    versions: List[TaskVersionSchema]
+    has_more: bool
+
+
+class VersionComparisonResponse(BaseModel):
+    """Response for comparing two versions"""
+    task_id: str
+    version_a: int
+    version_b: int
+    created_at_a: str
+    created_at_b: str
+    changed_fields: List[str]
+    diff: dict  # {field: {old: value, new: value}}
+
+
+# ============================================================================
+# QUESTION QUEUE SCHEMAS (Phase 6 Stage 4)
+# ============================================================================
+
+class QuestionSchema(BaseModel):
+    """Schema for contextual question"""
+    id: int
+    task_id: str
+    field_name: str
+    question: str
+    suggested_answer: Optional[str]
+    importance: str  # "HIGH", "MEDIUM", "LOW"
+    confidence: float
+    priority_score: float
+    status: str  # "queued", "ready", "shown", "answered", "dismissed", "snoozed"
+    created_at: str
+    ready_at: Optional[str]
+    shown_at: Optional[str]
+    answered_at: Optional[str]
+    answer: Optional[str]
+    answer_source: Optional[str]
+    answer_applied: bool
+    user_feedback: Optional[str]
+    semantic_cluster: Optional[str]
+
+    class Config:
+        from_attributes = True
+
+
+class QuestionListResponse(BaseModel):
+    """Response containing list of questions"""
+    total: int
+    questions: List[QuestionSchema]
+
+
+class QuestionAnswerRequest(BaseModel):
+    """Request to answer a question"""
+    answer: str
+    answer_source: str = "user_input"  # "user_input", "selected_suggestion"
+    feedback: Optional[str] = None  # "helpful", "not_helpful"
+    feedback_comment: Optional[str] = None
+    apply_to_task: bool = True  # Should answer be applied to task immediately?
+
+
+class QuestionSnoozeRequest(BaseModel):
+    """Request to snooze a question"""
+    snooze_hours: int = 24
+
+
+class QuestionBatchSchema(BaseModel):
+    """Schema for question batch"""
+    id: str
+    batch_type: str
+    semantic_cluster: Optional[str]
+    question_count: int
+    question_ids: List[int]
+    task_ids: List[str]
+    shown_to_user: bool
+    shown_at: Optional[str]
+    completed: bool
+    completed_at: Optional[str]
+    answered_count: int
+    dismissed_count: int
+    snoozed_count: int
+    created_at: str
+
+    class Config:
+        from_attributes = True
+
+
+class QuestionBatchWithQuestions(BaseModel):
+    """Batch with full question objects"""
+    batch: QuestionBatchSchema
+    questions: List[QuestionSchema]
+
+
+class BatchProcessResponse(BaseModel):
+    """Response from batch processing"""
+    batches_created: int
+    questions_woken: int
+    processed_at: str
+    error: Optional[str] = None
