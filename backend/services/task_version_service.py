@@ -465,7 +465,8 @@ class TaskVersionService:
             "effort": task.effort,
             "project": task.project,
             "assignee": task.assignee,
-            "due_date": task.due_date.isoformat() if task.due_date else None,
+            "start_date": task.start_date,  # Already a string in DB
+            "due_date": task.due_date,  # Already a string in DB
             "created_at": task.created_at.isoformat() if task.created_at else None,
             "updated_at": task.updated_at.isoformat() if task.updated_at else None
         }

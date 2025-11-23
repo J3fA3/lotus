@@ -21,7 +21,7 @@ echo ""
 # Start backend in background
 echo "🐍 Starting backend server..."
 cd "$(dirname "$0")/backend"
-python main.py > /tmp/backend.log 2>&1 &
+source venv/bin/activate && python3 main.py > /tmp/backend.log 2>&1 &
 BACKEND_PID=$!
 echo "   Backend PID: $BACKEND_PID"
 

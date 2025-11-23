@@ -271,8 +271,8 @@ async def update_task(
             "priority": getattr(task, "priority", None),
             "effort": getattr(task, "effort", None),
             "project": getattr(task, "project", None),
-            "start_date": task.start_date.isoformat() if task.start_date else None,
-            "due_date": task.due_date.isoformat() if task.due_date else None,
+            "start_date": task.start_date,  # Already a string in DB
+            "due_date": task.due_date,  # Already a string in DB
             "value_stream": task.value_stream,
             "notes": task.notes
         }
@@ -344,8 +344,8 @@ async def update_task(
             "priority": getattr(task, "priority", None),
             "effort": getattr(task, "effort", None),
             "project": getattr(task, "project", None),
-            "start_date": task.start_date.isoformat() if task.start_date else None,
-            "due_date": task.due_date.isoformat() if task.due_date else None,
+            "start_date": task.start_date,  # Already a string in DB
+            "due_date": task.due_date,  # Already a string in DB
             "value_stream": task.value_stream,
             "notes": task.notes
         }
