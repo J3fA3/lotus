@@ -45,7 +45,7 @@ from db.knowledge_graph_models_v2 import (
     TaskSimilarityIndex
 )
 from db.models import Task
-from agents.gemini_client import get_gemini_client
+from services.gemini_client import get_gemini_client
 from prompts.synthesis_prompts import get_synthesis_prompt
 
 logger = logging.getLogger(__name__)

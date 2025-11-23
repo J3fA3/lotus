@@ -29,7 +29,7 @@ from models.intelligent_task import (
     AutoFillMetadata
 )
 from db.knowledge_graph_models_v2 import ConversationThreadNode
-from agents.gemini_client import get_gemini_client
+from services.gemini_client import get_gemini_client
 
 logger = logging.getLogger(__name__)
 

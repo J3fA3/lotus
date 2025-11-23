@@ -20,7 +20,7 @@ from typing import List, Dict, Optional, Tuple, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, or_, update, desc
 from datetime import datetime, timedelta
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import json
 import re
 
@@ -43,7 +43,7 @@ from services.gemini_client import get_gemini_client
 class ExtractedConcept(BaseModel):
     """Single extracted concept from context."""
     name: str  # 2-4 words, domain-specific
-    confidence: float  # 0.0-1.0
+    confidence: float = Field(..., ge=0.0, le=1.0, description="Confidence score between 0.0 and 1.0")
     context: str  # Where it was mentioned
 
 

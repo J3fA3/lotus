@@ -17,6 +17,7 @@ from api.calendar_routes import router as calendar_router
 from services.knowledge_graph_scheduler import scheduler
 from services.knowledge_graph_config import config as kg_config
 from services.calendar_scheduler import get_calendar_scheduler
+from services.phase6_learning_scheduler import get_phase6_learning_scheduler
 from api.knowledge_graphql_schema import create_graphql_router
 from config.constants import (
     API_TITLE,
@@ -80,6 +81,11 @@ async def lifespan(app: FastAPI):
         logger.error(f"⚠️  Failed to start email polling: {e}")
         logger.warning("   Email polling disabled - check OAuth configuration")
 
+    # Start Phase 6 Learning scheduler
+    logger.info("🧠 Starting Phase 6 Learning scheduler...")
+    phase6_scheduler = get_phase6_learning_scheduler()
+    phase6_scheduler.start()
+
     yield
 
     # Shutdown
@@ -89,6 +95,10 @@ async def lifespan(app: FastAPI):
 
     logger.info("📅 Stopping Calendar scheduler...")
     calendar_scheduler.stop()
+
+    # Stop Phase 6 Learning scheduler
+    logger.info("🧠 Stopping Phase 6 Learning scheduler...")
+    phase6_scheduler.stop()
 
     # Stop Email Polling Service (Phase 5)
     logger.info("📧 Stopping Email Polling Service...")
@@ -124,6 +134,10 @@ app.add_middleware(
 app.include_router(router, prefix="/api")
 app.include_router(assistant_router, prefix="/api")
 app.include_router(calendar_router, prefix="/api")
+
+# Include Phase 6 quality routes
+from routes.quality_routes import router as quality_router
+app.include_router(quality_router, prefix="/api")
 
 # Include GraphQL endpoint (if enabled)
 if kg_config.GRAPHQL_ENABLED:

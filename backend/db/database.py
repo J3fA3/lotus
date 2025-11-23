@@ -26,6 +26,46 @@ from .models import (  # noqa: F401
     MeetingPrep
 )
 
+# Import Phase 6 models (Cognitive Nexus)
+from .knowledge_graph_models_v2 import (  # noqa: F401
+    ConceptNode,
+    ConversationThreadNode,
+    TaskOutcomeNode,
+    ConceptRelationship,
+    TaskSimilarityIndex,
+    ConceptTaskLink
+)
+
+from .task_version_models import (  # noqa: F401
+    TaskVersion,
+    VersionDiff,
+    VersionComment
+)
+
+from .question_queue_models import (  # noqa: F401
+    QuestionQueue,
+    QuestionBatch,
+    QuestionEngagementMetrics
+)
+
+from .implicit_learning_models import (  # noqa: F401
+    ImplicitSignal,
+    SignalAggregate,
+    LearningModel,
+    ModelPerformanceLog
+)
+
+from .outcome_learning_models import (  # noqa: F401
+    OutcomeQualityCorrelation,
+    LearningPriorityScore,
+    QualityFeatureAnalysis
+)
+
+from .task_quality_models import (  # noqa: F401
+    TaskQualityScore,
+    QualityTrend
+)
+
 # Configuration
 DEFAULT_DATABASE_URL = "sqlite:///./tasks.db"
 

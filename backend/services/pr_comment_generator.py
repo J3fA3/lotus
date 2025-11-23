@@ -21,7 +21,7 @@ Complex changes (Gemini-based, context-aware):
 
 import logging
 from typing import Dict, List, Optional
-from agents.gemini_client import get_gemini_client
+from services.gemini_client import get_gemini_client
 
 logger = logging.getLogger(__name__)
 

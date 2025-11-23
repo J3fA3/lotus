@@ -483,6 +483,12 @@ const QualityDistributionCard = ({
     { name: "Fair/Needs Improvement", value: fair, color: "#eab308" },
   ].filter(d => d.value > 0);
 
+  const chartConfig = {
+    excellent: { label: "Excellent", color: "#22c55e" },
+    good: { label: "Good", color: "#3b82f6" },
+    fair: { label: "Fair/Needs Improvement", color: "#eab308" },
+  };
+
   return (
     <Card>
       <CardHeader>
@@ -490,25 +496,27 @@ const QualityDistributionCard = ({
         <CardDescription>Percentage of tasks by quality tier</CardDescription>
       </CardHeader>
       <CardContent>
-        <ResponsiveContainer width="100%" height={250}>
-          <PieChart>
-            <Pie
-              data={data}
-              cx="50%"
-              cy="50%"
-              labelLine={false}
-              label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-              outerRadius={80}
-              fill="#8884d8"
-              dataKey="value"
-            >
-              {data.map((entry, index) => (
-                <Cell key={`cell-${index}`} fill={entry.color} />
-              ))}
-            </Pie>
-            <ChartTooltip content={<ChartTooltipContent />} />
-          </PieChart>
-        </ResponsiveContainer>
+        <ChartContainer config={chartConfig} className="h-[250px]">
+          <ResponsiveContainer width="100%" height="100%">
+            <PieChart>
+              <Pie
+                data={data}
+                cx="50%"
+                cy="50%"
+                labelLine={false}
+                label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                outerRadius={80}
+                fill="#8884d8"
+                dataKey="value"
+              >
+                {data.map((entry, index) => (
+                  <Cell key={`cell-${index}`} fill={entry.color} />
+                ))}
+              </Pie>
+              <ChartTooltip content={<ChartTooltipContent />} />
+            </PieChart>
+          </ResponsiveContainer>
+        </ChartContainer>
       </CardContent>
     </Card>
   );
@@ -590,6 +598,10 @@ const QualityTrendsCard = ({ trendData }: { trendData: QualityTrendPoint[] }) =>
   const lastQuality = trendData[trendData.length - 1]?.quality || 0;
   const trendDirection = lastQuality > firstQuality ? "up" : lastQuality < firstQuality ? "down" : "stable";
 
+  const chartConfig = {
+    quality: { label: "Quality Score", color: "#3b82f6" },
+  };
+
   return (
     <Card>
       <CardHeader>
@@ -609,26 +621,28 @@ const QualityTrendsCard = ({ trendData }: { trendData: QualityTrendPoint[] }) =>
         </div>
       </CardHeader>
       <CardContent>
-        <ResponsiveContainer width="100%" height={300}>
-          <LineChart data={trendData}>
-            <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-            <XAxis
-              dataKey="date"
-              className="text-xs"
-              tickFormatter={(value) => new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-            />
-            <YAxis className="text-xs" domain={[0, 100]} />
-            <ChartTooltip content={<ChartTooltipContent />} />
-            <Line
-              type="monotone"
-              dataKey="quality"
-              stroke="#3b82f6"
-              strokeWidth={2}
-              dot={{ fill: "#3b82f6", r: 4 }}
-              activeDot={{ r: 6 }}
-            />
-          </LineChart>
-        </ResponsiveContainer>
+        <ChartContainer config={chartConfig} className="h-[300px]">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={trendData}>
+              <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+              <XAxis
+                dataKey="date"
+                className="text-xs"
+                tickFormatter={(value) => new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+              />
+              <YAxis className="text-xs" domain={[0, 100]} />
+              <ChartTooltip content={<ChartTooltipContent />} />
+              <Line
+                type="monotone"
+                dataKey="quality"
+                stroke="#3b82f6"
+                strokeWidth={2}
+                dot={{ fill: "#3b82f6", r: 4 }}
+                activeDot={{ r: 6 }}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </ChartContainer>
       </CardContent>
     </Card>
   );
@@ -646,19 +660,19 @@ const DetailedMetricsCards = ({ components }: { components: TrustIndexData["comp
         <CardContent className="space-y-3">
           <MetricRow
             label="Average Quality"
-            value={`${components.quality_consistency.metrics.avg_quality.toFixed(1)}/100`}
+            value={`${(components.quality_consistency.metrics.avg_quality ?? 0).toFixed(1)}/100`}
           />
           <MetricRow
             label="Quality Variance"
-            value={components.quality_consistency.metrics.quality_variance.toFixed(1)}
+            value={(components.quality_consistency.metrics.quality_variance ?? 0).toFixed(1)}
           />
           <MetricRow
             label="Excellent Tasks"
-            value={`${components.quality_consistency.metrics.excellent_pct.toFixed(1)}%`}
+            value={`${(components.quality_consistency.metrics.excellent_pct ?? 0).toFixed(1)}%`}
           />
           <MetricRow
             label="Good or Better"
-            value={`${components.quality_consistency.metrics.good_or_better_pct.toFixed(1)}%`}
+            value={`${(components.quality_consistency.metrics.good_or_better_pct ?? 0).toFixed(1)}%`}
           />
         </CardContent>
       </Card>
@@ -671,20 +685,20 @@ const DetailedMetricsCards = ({ components }: { components: TrustIndexData["comp
         <CardContent className="space-y-3">
           <MetricRow
             label="AI Acceptance Rate"
-            value={`${components.user_engagement.metrics.acceptance_rate.toFixed(1)}%`}
+            value={`${(components.user_engagement.metrics.acceptance_rate ?? 0).toFixed(1)}%`}
           />
           <MetricRow
             label="Edit Rate"
-            value={`${components.user_engagement.metrics.edit_rate.toFixed(1)}%`}
+            value={`${(components.user_engagement.metrics.edit_rate ?? 0).toFixed(1)}%`}
             lowIsBetter
           />
           <MetricRow
             label="Question Answer Rate"
-            value={`${components.user_engagement.metrics.question_answer_rate.toFixed(1)}%`}
+            value={`${(components.user_engagement.metrics.question_answer_rate ?? 0).toFixed(1)}%`}
           />
           <MetricRow
             label="Auto-fill Acceptance"
-            value={`${components.user_engagement.metrics.auto_fill_acceptance_rate.toFixed(1)}%`}
+            value={`${(components.user_engagement.metrics.auto_fill_acceptance_rate ?? 0).toFixed(1)}%`}
           />
         </CardContent>
       </Card>
@@ -697,15 +711,15 @@ const DetailedMetricsCards = ({ components }: { components: TrustIndexData["comp
         <CardContent className="space-y-3">
           <MetricRow
             label="Completion Rate"
-            value={`${components.outcome_success.metrics.completion_rate.toFixed(1)}%`}
+            value={`${(components.outcome_success.metrics.completion_rate ?? 0).toFixed(1)}%`}
           />
           <MetricRow
             label="Avg Time to Complete"
-            value={`${(components.outcome_success.metrics.avg_time_to_complete / 60).toFixed(1)} min`}
+            value={`${((components.outcome_success.metrics.avg_time_to_complete ?? 0) / 60).toFixed(1)} min`}
           />
           <MetricRow
             label="Fast Completions"
-            value={`${components.outcome_success.metrics.fast_completion_pct.toFixed(1)}%`}
+            value={`${(components.outcome_success.metrics.fast_completion_pct ?? 0).toFixed(1)}%`}
           />
         </CardContent>
       </Card>
@@ -718,12 +732,12 @@ const DetailedMetricsCards = ({ components }: { components: TrustIndexData["comp
         <CardContent className="space-y-3">
           <MetricRow
             label="Avg Evaluation Time"
-            value={`${components.system_performance.metrics.avg_evaluation_time_ms.toFixed(0)}ms`}
+            value={`${(components.system_performance.metrics.avg_evaluation_time_ms ?? 0).toFixed(0)}ms`}
             lowIsBetter
           />
           <MetricRow
             label="Fast Evaluations (<50ms)"
-            value={`${components.system_performance.metrics.fast_evaluation_pct.toFixed(1)}%`}
+            value={`${(components.system_performance.metrics.fast_evaluation_pct ?? 0).toFixed(1)}%`}
           />
         </CardContent>
       </Card>
