@@ -16,6 +16,20 @@ IMPORTANT RULES:
 4. Infer implicit tasks (e.g., "we need better docs" → "Improve documentation")
 5. Return ONLY valid JSON, no extra text
 
+SPECIAL PATTERNS TO DETECT:
+- Meeting preparation (e.g., "prepare one pager", "present", "all hands") → task
+- Collaborative asks (e.g., "are you OK presenting", "can you review") → task
+- Deadline references:
+  * "Monday" / "Tuesday" / etc. → task with that due date
+  * "next week" / "this Friday" → task with deadline
+  * "before the meeting" → task with deadline
+- Time allocations (e.g., "40 minutes", "2 hours") → include in description
+
+EXAMPLES:
+- "Are you OK presenting your one pager?" → Task: "Prepare one pager for presentation"
+- "Monday's all hands" → Due date: Monday
+- "Chloe has 2 slides" → Context, not necessarily a separate task
+
 OUTPUT FORMAT (strict JSON array):
 {
   "tasks": [

@@ -16,7 +16,7 @@ Scoring Rules:
 - 30-50: Generic team context, unclear
 - 0-20: Explicitly for someone else or unrelated
 
-Only creates tasks with score >= 70
+Only creates tasks with score >= 50 (lowered from 70 to improve recall)
 """
 
 import logging
@@ -40,11 +40,11 @@ class RelevanceScore(BaseModel):
 class RelevanceFilter:
     """Filters tasks by relevance to the user."""
 
-    def __init__(self, relevance_threshold: int = 70):
+    def __init__(self, relevance_threshold: int = 50):
         """Initialize relevance filter.
 
         Args:
-            relevance_threshold: Minimum score to keep task (default 70)
+            relevance_threshold: Minimum score to keep task (default 50, lowered from 70 for better recall)
         """
         self.gemini = get_gemini_client()
         self.threshold = relevance_threshold
@@ -70,7 +70,7 @@ class RelevanceFilter:
         assignee = task.get("assignee", "")
 
         # Quick check 1: Explicitly assigned to someone else
-        if assignee and assignee.lower() not in ["unassigned", "", user_profile.name.lower()]:
+        if assignee and assignee.lower() not in ["unassigned", "", "you", user_profile.name.lower()]:
             # Check if it's NOT one of user's aliases
             is_alias = any(alias.lower() in assignee.lower() for alias in user_profile.aliases)
             if not is_alias:
@@ -102,6 +102,19 @@ class RelevanceFilter:
                 score=100,
                 is_for_user=True,
                 reasoning="Task uses first-person pronouns (I/me/my)"
+            )
+
+        # Quick check 3: Group-directed messages with action items
+        group_directed = ["everyone", "you all", "please prepare", "please review", "please make sure", 
+                         "please complete", "please submit", "you need to", "you should"]
+        
+        matches = [phrase for phrase in group_directed if phrase in text]
+        if matches:
+            logger.debug("Task is part of group-directed message with action items")
+            return RelevanceScore(
+                score=60,
+                is_for_user=True,
+                reasoning=f"Group-directed message with action items: {', '.join(matches)}"
             )
 
         # Use Gemini for nuanced scoring
@@ -202,6 +215,7 @@ class RelevanceFilter:
         filtered_count = 0
 
         for task in proposed_tasks:
+            print(f"DEBUG: Scoring task: {task.get('title')}")
             score_result = await self.score_relevance(task, user_profile, context)
 
             # Store relevance score in task
@@ -242,6 +256,7 @@ def get_relevance_filter(threshold: int = 70) -> RelevanceFilter:
         RelevanceFilter singleton
     """
     global _relevance_filter
-    if _relevance_filter is None:
+    # Recreate if threshold changed or doesn't exist
+    if _relevance_filter is None or _relevance_filter.threshold != threshold:
         _relevance_filter = RelevanceFilter(relevance_threshold=threshold)
     return _relevance_filter

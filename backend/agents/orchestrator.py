@@ -1033,7 +1033,7 @@ async def filter_relevant_tasks(state: OrchestratorState) -> Dict:
         profile = UserProfile(**user_profile_dict)
 
         # Use relevance filter (Phase 3)
-        relevance_filter = get_relevance_filter(threshold=70)
+        relevance_filter = get_relevance_filter()
 
         filtered_tasks = await relevance_filter.filter_tasks(
             proposed_tasks=proposed_tasks,

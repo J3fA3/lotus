@@ -45,6 +45,12 @@ class EmailPollingService:
         self.emails_processed = 0
         self.errors_count = 0
 
+        # Circuit breaker: disable after consecutive failures
+        self.consecutive_failures = 0
+        self.max_consecutive_failures = 3
+        self.circuit_broken = False
+        self.circuit_retry_at = None
+
         logger.info(f"Email polling service initialized (interval={self.poll_interval_minutes}min)")
 
     async def start(self):
@@ -117,8 +123,32 @@ class EmailPollingService:
         """Main polling loop."""
         while self._running:
             try:
-                # Perform sync
-                await self._sync_emails()
+                # Check circuit breaker
+                if self.circuit_broken:
+                    now = datetime.now(timezone.utc)
+                    if self.circuit_retry_at and now < self.circuit_retry_at:
+                        # Still in cooldown, skip this iteration
+                        logger.warning(f"Circuit breaker active, retrying at {self.circuit_retry_at}")
+                        await asyncio.sleep(60)
+                        continue
+                    else:
+                        # Try to reset circuit breaker
+                        logger.info("Attempting to reset circuit breaker...")
+                        self.circuit_broken = False
+                        self.consecutive_failures = 0
+
+                # Perform sync with timeout to prevent hangs
+                try:
+                    await asyncio.wait_for(
+                        self._sync_emails(),
+                        timeout=300  # 5 minute max for entire sync
+                    )
+                    # Success! Reset failure counter
+                    self.consecutive_failures = 0
+
+                except asyncio.TimeoutError:
+                    logger.error("Email sync timeout (5 minutes), treating as failure")
+                    raise Exception("Sync timeout")
 
                 # Wait for next interval
                 await asyncio.sleep(self.poll_interval_minutes * 60)
@@ -128,8 +158,20 @@ class EmailPollingService:
                 break
 
             except Exception as e:
-                logger.error(f"Error in polling loop: {e}")
+                logger.error(f"Error in polling loop: {e}", exc_info=True)
                 self.errors_count += 1
+                self.consecutive_failures += 1
+
+                # Activate circuit breaker if too many consecutive failures
+                if self.consecutive_failures >= self.max_consecutive_failures:
+                    self.circuit_broken = True
+                    # Cool down for 1 hour
+                    self.circuit_retry_at = datetime.now(timezone.utc) + timedelta(hours=1)
+                    logger.error(
+                        f"🔴 CIRCUIT BREAKER ACTIVATED: {self.consecutive_failures} consecutive failures. "
+                        f"Email polling disabled until {self.circuit_retry_at}. "
+                        f"Core system continues normally."
+                    )
 
                 # Wait before retry (shorter interval on error)
                 await asyncio.sleep(60)  # 1 minute retry interval
@@ -347,9 +389,15 @@ class EmailPollingService:
                 }
 
         except Exception as e:
-            logger.error(f"Email sync failed: {e}")
+            logger.error(f"Email sync failed: {e}", exc_info=True)
             self.errors_count += 1
-            raise
+            # Don't re-raise - let circuit breaker handle it
+            # This prevents crashes from propagating to main application
+            return {
+                "emails_processed": 0,
+                "errors": [str(e)],
+                "duration_ms": int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
+            }
 
     def _build_email_context(self, email_data, classification) -> str:
         """Build context string from email for orchestrator.
