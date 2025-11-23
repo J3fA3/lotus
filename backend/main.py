@@ -70,16 +70,25 @@ async def lifespan(app: FastAPI):
     calendar_scheduler = get_calendar_scheduler()
     calendar_scheduler.start()
 
-    # Start Email Polling Service (Phase 5)
-    logger.info("📧 Starting Email Polling Service...")
-    from services.email_polling_service import get_email_polling_service
-    email_polling_service = get_email_polling_service()
-    try:
-        await email_polling_service.start()
-        logger.info(f"✅ Email polling started (every {email_polling_service.poll_interval_minutes} minutes)")
-    except Exception as e:
-        logger.error(f"⚠️  Failed to start email polling: {e}")
-        logger.warning("   Email polling disabled - check OAuth configuration")
+    # Start Email Polling Service (Phase 5) - OPT-IN ONLY
+    # Set ENABLE_EMAIL_POLLING=true in .env to enable
+    email_polling_enabled = os.getenv("ENABLE_EMAIL_POLLING", "false").lower() == "true"
+
+    if email_polling_enabled:
+        logger.info("📧 Starting Email Polling Service (opt-in enabled)...")
+        from services.email_polling_service import get_email_polling_service
+        email_polling_service = get_email_polling_service()
+        try:
+            await email_polling_service.start()
+            logger.info(f"✅ Email polling started (every {email_polling_service.poll_interval_minutes} minutes)")
+        except Exception as e:
+            logger.error(f"⚠️  Failed to start email polling: {e}")
+            logger.warning("   Email polling disabled - check OAuth configuration")
+    else:
+        logger.info("📧 Email polling disabled (set ENABLE_EMAIL_POLLING=true to enable)")
+        # Create a dummy service for graceful shutdown
+        from services.email_polling_service import EmailPollingService
+        email_polling_service = EmailPollingService()
 
     # Start Phase 6 Learning scheduler
     logger.info("🧠 Starting Phase 6 Learning scheduler...")

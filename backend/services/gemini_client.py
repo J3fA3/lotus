@@ -99,7 +99,8 @@ class GeminiClient:
         prompt: str,
         schema: Type[T],
         temperature: float = 0.1,
-        fallback_to_qwen: bool = True
+        fallback_to_qwen: bool = True,
+        timeout: int = 10  # 10 second timeout by default
     ) -> T:
         """Generate structured output matching a Pydantic schema.
 
@@ -108,6 +109,7 @@ class GeminiClient:
             schema: Pydantic BaseModel class to match
             temperature: Sampling temperature (0.0-1.0, lower = more deterministic)
             fallback_to_qwen: If True, fall back to Qwen on Gemini failure
+            timeout: Maximum seconds to wait for response (default 10)
 
         Returns:
             Instance of the schema class with generated data
@@ -121,6 +123,8 @@ class GeminiClient:
         # Try Gemini first
         if self.available:
             try:
+                import asyncio
+
                 # Convert Pydantic schema to JSON schema for Gemini
                 json_schema = schema.model_json_schema()
 
@@ -130,14 +134,25 @@ class GeminiClient:
                 enhanced_prompt = f"""{prompt}
 
 IMPORTANT: Return ONLY valid JSON matching the requested schema. Do not include markdown formatting or explanations."""
-                
-                response = self.model.generate_content(
-                    enhanced_prompt,
-                    generation_config=genai.GenerationConfig(
-                        temperature=temperature,
-                        max_output_tokens=2048
-                    )
-                )
+
+                # Run with timeout to prevent hangs
+                async def _generate():
+                    # Gemini SDK is sync, run in thread pool
+                    import concurrent.futures
+                    loop = asyncio.get_event_loop()
+                    with concurrent.futures.ThreadPoolExecutor() as pool:
+                        return await loop.run_in_executor(
+                            pool,
+                            lambda: self.model.generate_content(
+                                enhanced_prompt,
+                                generation_config=genai.GenerationConfig(
+                                    temperature=temperature,
+                                    max_output_tokens=2048
+                                )
+                            )
+                        )
+
+                response = await asyncio.wait_for(_generate(), timeout=timeout)
 
                 # Parse response text as JSON
                 result_json = response.text.strip()
@@ -158,6 +173,11 @@ IMPORTANT: Return ONLY valid JSON matching the requested schema. Do not include 
 
                 logger.debug(f"Gemini structured generation successful: {schema.__name__}")
                 return result
+
+            except asyncio.TimeoutError:
+                logger.error(f"Gemini timeout ({timeout}s) - falling back to Qwen")
+                if not fallback_to_qwen:
+                    raise Exception(f"Gemini timeout after {timeout}s")
 
             except Exception as e:
                 logger.error(f"Gemini structured generation failed: {e}")

@@ -16,7 +16,7 @@ Scoring Rules:
 - 30-50: Generic team context, unclear
 - 0-20: Explicitly for someone else or unrelated
 
-Only creates tasks with score >= 70
+Only creates tasks with score >= 50 (lowered from 70 to improve recall)
 """
 
 import logging
@@ -40,11 +40,11 @@ class RelevanceScore(BaseModel):
 class RelevanceFilter:
     """Filters tasks by relevance to the user."""
 
-    def __init__(self, relevance_threshold: int = 70):
+    def __init__(self, relevance_threshold: int = 50):
         """Initialize relevance filter.
 
         Args:
-            relevance_threshold: Minimum score to keep task (default 70)
+            relevance_threshold: Minimum score to keep task (default 50, lowered from 70 for better recall)
         """
         self.gemini = get_gemini_client()
         self.threshold = relevance_threshold
