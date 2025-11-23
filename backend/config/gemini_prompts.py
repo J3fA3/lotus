@@ -55,9 +55,11 @@ Score this task's relevance to {user_profile.get('name', 'the user')} (0-100):
 SCORING RULES:
 - 100: Directly mentions user's name or uses "I/me"
 - 80-90: Relates to user's projects or responsibilities
-- 60-70: Team task where user involvement is likely
+- 60-70: Team task where user involvement is likely, OR message addressed to "everyone"/"you all" with action items
 - 30-50: Generic team context, unclear if relevant
 - 0-20: Explicitly for someone else or unrelated
+
+IMPORTANT: If the context contains phrases like "everyone", "you all", "please prepare", "please review", or similar group-directed language with clear action items, score at least 60 (likely relevant to the user as part of the group).
 
 Return JSON:
 {{
