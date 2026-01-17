@@ -8,10 +8,13 @@ import { TableHeader } from '@tiptap/extension-table-header';
 import { CodeBlockLowlight } from '@tiptap/extension-code-block-lowlight';
 import { Placeholder } from '@tiptap/extension-placeholder';
 import Link from '@tiptap/extension-link';
+import TaskList from '@tiptap/extension-task-list';
+import TaskItem from '@tiptap/extension-task-item';
 import { common, createLowlight } from 'lowlight';
 import { ReactRenderer } from '@tiptap/react';
 import tippy, { Instance as TippyInstance } from 'tippy.js';
 import Suggestion from '@tiptap/suggestion';
+import { InputRule } from '@tiptap/core';
 
 import { SlashCommandMenu, MenuItem } from './RichTextEditorMenu';
 import { WordArt, WORD_ART_STYLES } from './WordArtExtension';
@@ -118,6 +121,20 @@ const getMenuItems = (editor: Editor, variant?: string): MenuItem[] => {
     },
 
     // Lists
+    {
+      title: 'Task List',
+      description: 'Interactive checklist with checkboxes',
+      icon: '☑',
+      keywords: ['task', 'todo', 'checkbox', 'checklist', 'check', 'done'],
+      command: ({ editor, range }) => {
+        editor
+          .chain()
+          .focus()
+          .deleteRange(range)
+          .toggleTaskList()
+          .run();
+      },
+    },
     {
       title: 'Bullet List',
       description: 'Create a bullet point list',
@@ -344,6 +361,18 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
     Placeholder.configure({
       placeholder,
     }),
+    // Task list with interactive checkboxes
+    TaskList.configure({
+      HTMLAttributes: {
+        class: 'task-list',
+      },
+    }),
+    TaskItem.configure({
+      nested: true, // Allow nested task items
+      HTMLAttributes: {
+        class: 'task-item',
+      },
+    }),
     // Link extension with autolink and custom paste handler
     Link.configure({
       openOnClick: false,
@@ -353,14 +382,80 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
     }),
     createSlashCommand(variant),
     WordArt,
-    // Custom keyboard shortcuts extension
+    // Custom keyboard shortcuts and input rules extension
     Extension.create({
       name: 'customKeyboardShortcuts',
       addKeyboardShortcuts() {
         return {
           // Cmd+> or Ctrl+> for blockquote (Slack-style)
           'Mod->': () => this.editor.commands.toggleBlockquote(),
+          
+          // Tab to indent list items (sink into nested list)
+          'Tab': () => {
+            if (this.editor.isActive('listItem') || this.editor.isActive('taskItem')) {
+              return this.editor.commands.sinkListItem('listItem') || 
+                     this.editor.commands.sinkListItem('taskItem');
+            }
+            return false;
+          },
+          
+          // Shift+Tab to outdent list items (lift from nested list)
+          'Shift-Tab': () => {
+            if (this.editor.isActive('listItem') || this.editor.isActive('taskItem')) {
+              return this.editor.commands.liftListItem('listItem') ||
+                     this.editor.commands.liftListItem('taskItem');
+            }
+            return false;
+          },
+          
+          // Backspace at empty list item exits the list
+          'Backspace': () => {
+            const { state } = this.editor;
+            const { $from } = state.selection;
+            
+            // Check if we're at the start of a list item and it's empty
+            if (this.editor.isActive('listItem') || this.editor.isActive('taskItem')) {
+              const node = $from.node($from.depth);
+              const isEmptyNode = node.textContent === '';
+              const isAtStart = $from.parentOffset === 0;
+              
+              if (isEmptyNode && isAtStart) {
+                // Try to lift/exit the list
+                if (this.editor.isActive('taskItem')) {
+                  return this.editor.commands.liftListItem('taskItem');
+                }
+                return this.editor.commands.liftListItem('listItem');
+              }
+            }
+            return false;
+          },
         };
+      },
+      addInputRules() {
+        // Input rule for unchecked task: [ ] at start of line
+        const uncheckedTaskRule = new InputRule({
+          find: /^\s*\[\s?\]\s$/,
+          handler: ({ state, range, chain }) => {
+            chain()
+              .deleteRange(range)
+              .toggleTaskList()
+              .run();
+          },
+        });
+        
+        // Input rule for checked task: [x] or [X] at start of line
+        const checkedTaskRule = new InputRule({
+          find: /^\s*\[[xX]\]\s$/,
+          handler: ({ state, range, chain }) => {
+            chain()
+              .deleteRange(range)
+              .toggleTaskList()
+              .updateAttributes('taskItem', { checked: true })
+              .run();
+          },
+        });
+        
+        return [uncheckedTaskRule, checkedTaskRule];
       },
     }),
   ];
