@@ -293,12 +293,6 @@ export const TaskDetailSheet = ({
     }
   });
 
-  useRegisterShortcut('delete_task', () => {
-    if (open) {
-      setIsDeleteDialogOpen(true);
-    }
-  });
-
   const handleUpdate = useCallback((updates: Partial<Task>) => {
     // Auto-set start date when moving from todo to doing
     const finalUpdates = { ...updates };
