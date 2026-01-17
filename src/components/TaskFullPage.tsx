@@ -20,6 +20,7 @@ import { RichTextEditor } from "./RichTextEditor";
 import { TaskScheduler } from "./TaskScheduler";
 import { useRegisterShortcut } from "@/contexts/ShortcutContext";
 import { DeleteTaskDialog } from "./DeleteTaskDialog";
+import { CommentItem } from "./CommentItem";
 
 interface TaskFullPageProps {
   task: Task;
@@ -220,6 +221,18 @@ export const TaskFullPage = ({
     // Increment reset key to force the RichTextEditor to sync with the empty content
     setCommentResetKey(prev => prev + 1);
   };
+
+  const handleEditComment = useCallback((commentId: string, newText: string) => {
+    const updatedComments = editedTask.comments.map(c =>
+      c.id === commentId ? { ...c, text: newText } : c
+    );
+    handleUpdate({ comments: updatedComments });
+  }, [editedTask.comments, handleUpdate]);
+
+  const handleDeleteComment = useCallback((commentId: string) => {
+    const updatedComments = editedTask.comments.filter(c => c.id !== commentId);
+    handleUpdate({ comments: updatedComments });
+  }, [editedTask.comments, handleUpdate]);
 
   const handleAddAttachment = () => {
     const trimmedUrl = newAttachment.trim();
@@ -458,40 +471,13 @@ export const TaskFullPage = ({
             {editedTask.comments.length > 0 && (
               <div className="space-y-3">
                 {editedTask.comments.map((comment) => (
-                  <div key={comment.id} className="flex gap-3">
-                    <div
-                      className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
-                        comment.author === "Lotus"
-                          ? "bg-gradient-to-br from-[hsl(var(--lotus-green-light))] to-[hsl(var(--lotus-green-medium))]"
-                          : "bg-primary/10"
-                      }`}
-                    >
-                      {comment.author === "Lotus" ? (
-                        <LotusIcon className="text-[hsl(var(--lotus-paper))]" size={16} />
-                      ) : (
-                        <User className="h-4 w-4 text-primary" />
-                      )}
-                    </div>
-                    <div className="flex-1 space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium text-foreground">{comment.author}</span>
-                        <span className="text-xs text-muted-foreground">
-                          {(() => {
-                            try {
-                              const date = new Date(comment.createdAt);
-                              return isNaN(date.getTime()) ? comment.createdAt : format(date, "MMM d");
-                            } catch {
-                              return comment.createdAt;
-                            }
-                          })()}
-                        </span>
-                      </div>
-                      <div
-                        className="text-sm text-foreground/90 leading-relaxed prose prose-sm max-w-none"
-                        dangerouslySetInnerHTML={{ __html: comment.text }}
-                      />
-                    </div>
-                  </div>
+                  <CommentItem
+                    key={comment.id}
+                    comment={comment}
+                    onEdit={handleEditComment}
+                    onDelete={handleDeleteComment}
+                    currentUser={editedTask.assignee}
+                  />
                 ))}
               </div>
             )}
