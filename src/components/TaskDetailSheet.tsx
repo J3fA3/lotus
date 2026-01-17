@@ -76,6 +76,7 @@ export const TaskDetailSheet = ({
   });
   const [newComment, setNewComment] = useState("");
   const [newAttachment, setNewAttachment] = useState("");
+  const [commentResetKey, setCommentResetKey] = useState(0);
   const [isExpanded, setIsExpanded] = useState(isExpandedProp);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [isExiting, setIsExiting] = useState(false);
@@ -103,9 +104,6 @@ export const TaskDetailSheet = ({
   const localUpdateInProgressRef = useRef(false);
   const localUpdateTimestampRef = useRef<string>("");
   const localUpdateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-  // Track the latest comment text to avoid stale state issues
-  const latestCommentTextRef = useRef<string>("");
 
   // Update editedTask when the task prop changes with skeleton transition
   useEffect(() => {
@@ -336,9 +334,7 @@ export const TaskDetailSheet = ({
   }, [editedTask, onUpdate]);
 
   const handleAddComment = useCallback(() => {
-    // Use the latest comment text from ref to avoid stale state issues
-    const commentText = latestCommentTextRef.current || newComment;
-    const trimmedComment = commentText.trim();
+    const trimmedComment = newComment.trim();
     if (!trimmedComment) {
       return;
     }
@@ -352,7 +348,8 @@ export const TaskDetailSheet = ({
 
     handleUpdate({ comments: [...(editedTask.comments || []), comment] });
     setNewComment("");
-    latestCommentTextRef.current = "";
+    // Increment reset key to force the RichTextEditor to sync with the empty content
+    setCommentResetKey(prev => prev + 1);
   }, [newComment, editedTask.assignee, editedTask.comments, handleUpdate]);
 
   const handleAddAttachment = () => {
@@ -843,14 +840,11 @@ export const TaskDetailSheet = ({
               >
                 <RichTextEditor
                   content={newComment}
-                  onChange={(html) => {
-                    setNewComment(html);
-                    // Also update ref to ensure we always have the latest value
-                    latestCommentTextRef.current = html;
-                  }}
+                  onChange={setNewComment}
                   placeholder="Add a comment... Type / for commands, * for bullets. Press Cmd/Ctrl+Enter to post"
                   variant="minimal"
                   className="border-0 border-b rounded-none"
+                  resetKey={commentResetKey}
                 />
                 <Button
                   onClick={handleAddComment}

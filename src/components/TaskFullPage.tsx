@@ -43,6 +43,7 @@ export const TaskFullPage = ({
   });
   const [newComment, setNewComment] = useState("");
   const [newAttachment, setNewAttachment] = useState("");
+  const [commentResetKey, setCommentResetKey] = useState(0);
   const [isExiting, setIsExiting] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const notesRef = useRef<HTMLDivElement>(null);
@@ -216,6 +217,8 @@ export const TaskFullPage = ({
 
     handleUpdate({ comments: [...(editedTask.comments || []), comment] });
     setNewComment("");
+    // Increment reset key to force the RichTextEditor to sync with the empty content
+    setCommentResetKey(prev => prev + 1);
   };
 
   const handleAddAttachment = () => {
@@ -499,10 +502,11 @@ export const TaskFullPage = ({
               <div className="flex-1" ref={commentsRef}>
                 <RichTextEditor
                   content={newComment}
-                  onChange={(html) => setNewComment(html)}
+                  onChange={setNewComment}
                   placeholder="Add a comment... Type / for commands, * for bullets"
                   variant="minimal"
                   className="border-0 border-b rounded-none"
+                  resetKey={commentResetKey}
                 />
                 <Button
                   onClick={handleAddComment}

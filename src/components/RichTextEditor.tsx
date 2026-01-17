@@ -30,6 +30,8 @@ interface RichTextEditorProps {
   variant?: 'minimal' | 'full' | 'title';
   className?: string;
   autoFocus?: boolean;
+  /** When this value changes, forces the editor to sync with the content prop, bypassing local update protection */
+  resetKey?: number;
 }
 
 // Slash command configuration
@@ -348,11 +350,13 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
   variant = 'minimal',
   className = '',
   autoFocus = false,
+  resetKey,
 }) => {
   // Track if we're currently updating from user input to prevent feedback loops
   const isLocalUpdateRef = useRef(false);
   const previousContentRef = useRef(content);
   const resetLocalUpdateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const previousResetKeyRef = useRef(resetKey);
 
   const extensions = [
     StarterKit.configure({
@@ -547,7 +551,28 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
     autofocus: autoFocus,
   });
 
-  // Only sync content when it's an external change (not from user typing)
+  // Force sync content when resetKey changes (bypasses local update protection)
+  // This is used when the parent explicitly wants to reset the editor content
+  useEffect(() => {
+    if (!editor) return;
+    
+    // Only act when resetKey actually changes (not on initial mount)
+    if (resetKey !== undefined && resetKey !== previousResetKeyRef.current) {
+      previousResetKeyRef.current = resetKey;
+      
+      // Clear the local update flag to allow the sync
+      isLocalUpdateRef.current = false;
+      if (resetLocalUpdateTimeoutRef.current) {
+        clearTimeout(resetLocalUpdateTimeoutRef.current);
+        resetLocalUpdateTimeoutRef.current = null;
+      }
+      
+      // Force sync the content
+      previousContentRef.current = content;
+      editor.commands.setContent(content, { emitUpdate: false });
+    }
+  }, [resetKey, content, editor]);
+
   // Only sync content when it's an external change (not from user typing)
   useEffect(() => {
     if (!editor) return;
