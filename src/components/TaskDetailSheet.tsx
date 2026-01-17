@@ -8,7 +8,6 @@ import {
   SheetTitle,
 } from "./ui/sheet";
 import { Input } from "./ui/input";
-import { Textarea } from "./ui/textarea";
 import { Button } from "./ui/button";
 import { Label } from "./ui/label";
 import {
@@ -19,13 +18,10 @@ import {
   SelectValue,
 } from "./ui/select";
 import { Skeleton } from "./ui/skeleton";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
-import { Calendar, Paperclip, MessageSquare, Trash2, X, User, Maximize2, Minimize2, FileText, Expand, Upload, Link } from "lucide-react";
-import { format } from "date-fns";
+import { Calendar, Paperclip, MessageSquare, Trash2, User, Maximize2, Minimize2, Expand } from "lucide-react";
 import { toast } from "sonner";
-import { DocumentUpload } from "./DocumentUpload";
-import { DocumentList } from "./DocumentList";
 import { uploadDocument, listDocuments } from "@/api/tasks";
+import { UnifiedAttachments } from "./UnifiedAttachments";
 import { ValueStreamCombobox } from "./ValueStreamCombobox";
 import { RichTextEditor } from "./RichTextEditor";
 import { TaskScheduler } from "./TaskScheduler";
@@ -76,14 +72,12 @@ export const TaskDetailSheet = ({
     attachments: task.attachments || [],
   });
   const [newComment, setNewComment] = useState("");
-  const [newAttachment, setNewAttachment] = useState("");
   const [commentResetKey, setCommentResetKey] = useState(0);
   const [isExpanded, setIsExpanded] = useState(isExpandedProp);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [isExiting, setIsExiting] = useState(false);
   const [uploadedDocuments, setUploadedDocuments] = useState<DocumentType[]>([]);
   const [isUploadingDocument, setIsUploadingDocument] = useState(false);
-  const [selectedDocumentFile, setSelectedDocumentFile] = useState<File | null>(null);
   const notesRef = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLDivElement>(null);
   const descriptionRef = useRef<HTMLDivElement>(null);
@@ -359,20 +353,20 @@ export const TaskDetailSheet = ({
     handleUpdate({ comments: updatedComments });
   }, [editedTask.comments, handleUpdate]);
 
-  const handleAddAttachment = () => {
-    const trimmedUrl = newAttachment.trim();
-    if (!trimmedUrl) {
-      return;
-    }
-    
-    handleUpdate({ attachments: [...(editedTask.attachments || []), trimmedUrl] });
-    setNewAttachment("");
-  };
+  const handleAddAttachment = useCallback((url: string) => {
+    handleUpdate({ attachments: [...(editedTask.attachments || []), url] });
+  }, [editedTask.attachments, handleUpdate]);
 
-  const handleRemoveAttachment = (index: number) => {
+  const handleRemoveAttachment = useCallback((index: number) => {
     const updatedAttachments = (editedTask.attachments || []).filter((_, i) => i !== index);
     handleUpdate({ attachments: updatedAttachments });
-  };
+  }, [editedTask.attachments, handleUpdate]);
+
+  const handleEditAttachment = useCallback((index: number, newUrl: string) => {
+    const updatedAttachments = [...(editedTask.attachments || [])];
+    updatedAttachments[index] = newUrl;
+    handleUpdate({ attachments: updatedAttachments });
+  }, [editedTask.attachments, handleUpdate]);
 
   // Document handlers
   const loadTaskDocuments = async () => {
@@ -384,21 +378,18 @@ export const TaskDetailSheet = ({
     }
   };
 
-  const handleDocumentUpload = async () => {
-    if (!selectedDocumentFile) return;
-
+  const handleDocumentUpload = useCallback(async (file: File) => {
     setIsUploadingDocument(true);
     try {
-      await uploadDocument(selectedDocumentFile, "tasks", task.id);
-      toast.success(`Uploaded ${selectedDocumentFile.name}`);
-      setSelectedDocumentFile(null);
+      await uploadDocument(file, "tasks", task.id);
+      toast.success(`Uploaded ${file.name}`);
       await loadTaskDocuments();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to upload document");
     } finally {
       setIsUploadingDocument(false);
     }
-  };
+  }, [task.id]);
 
   const handleDocumentDeleted = async (documentId: string) => {
     await loadTaskDocuments();
@@ -690,98 +681,22 @@ export const TaskDetailSheet = ({
           </div>
 
           {/* Attachments & Documents */}
-          <div className="space-y-4">
+          <div className="space-y-3">
             <Label className="flex items-center gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
               <Paperclip className="h-3.5 w-3.5 opacity-60" />
-              Attachments & Documents
+              Attachments
             </Label>
 
-            <Tabs defaultValue="documents" className="w-full">
-              <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="documents" className="text-xs gap-1.5">
-                  <Upload className="h-3 w-3" />
-                  Upload Files
-                </TabsTrigger>
-                <TabsTrigger value="links" className="text-xs gap-1.5">
-                  <Link className="h-3 w-3" />
-                  Add Links
-                </TabsTrigger>
-              </TabsList>
-
-              {/* Document Upload Tab */}
-              <TabsContent value="documents" className="space-y-3 mt-3">
-                <DocumentUpload
-                  onFileSelect={setSelectedDocumentFile}
-                  onFileRemove={() => setSelectedDocumentFile(null)}
-                  selectedFile={selectedDocumentFile}
-                  disabled={isUploadingDocument}
-                  showFileInfo={true}
-                />
-
-                {selectedDocumentFile && (
-                  <Button
-                    onClick={handleDocumentUpload}
-                    disabled={isUploadingDocument}
-                    className="w-full"
-                    size="sm"
-                  >
-                    {isUploadingDocument ? "Uploading..." : "Upload Document"}
-                  </Button>
-                )}
-
-                {uploadedDocuments.length > 0 && (
-                  <div className="pt-2">
-                    <p className="text-xs text-muted-foreground mb-2">Attached Documents</p>
-                    <DocumentList
-                      documents={uploadedDocuments}
-                      onDocumentDeleted={handleDocumentDeleted}
-                      showDelete={true}
-                      compact={true}
-                    />
-                  </div>
-                )}
-              </TabsContent>
-
-              {/* URL Links Tab */}
-              <TabsContent value="links" className="space-y-3 mt-3">
-                <div className="flex gap-2">
-                  <Input
-                    value={newAttachment}
-                    onChange={(e) => setNewAttachment(e.target.value)}
-                    placeholder="Paste attachment URL..."
-                    className="h-10 border-border/50 focus:border-primary/50 transition-all"
-                  />
-                  <Button
-                    onClick={handleAddAttachment}
-                    size="sm"
-                    className="h-10 px-5 bg-primary hover:bg-primary/90 transition-all"
-                  >
-                    Add
-                  </Button>
-                </div>
-
-                {editedTask.attachments.length > 0 && (
-                  <div className="space-y-2">
-                    {editedTask.attachments.map((attachment, index) => (
-                      <div
-                        key={index}
-                        className="flex items-center justify-between p-3 bg-muted/30 rounded-lg border border-border/20 group hover:border-border/40 transition-all"
-                      >
-                        <span className="text-sm truncate text-muted-foreground">{attachment}</span>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleRemoveAttachment(index)}
-                          className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-all"
-                        >
-                          <X className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </TabsContent>
-            </Tabs>
+            <UnifiedAttachments
+              attachments={editedTask.attachments}
+              onAddAttachment={handleAddAttachment}
+              onRemoveAttachment={handleRemoveAttachment}
+              onEditAttachment={handleEditAttachment}
+              documents={uploadedDocuments}
+              onFileSelect={handleDocumentUpload}
+              onDocumentDeleted={handleDocumentDeleted}
+              isUploading={isUploadingDocument}
+            />
           </div>
 
           {/* Comments - Chat-style */}
@@ -874,3 +789,4 @@ export const TaskDetailSheet = ({
     </Sheet>
   );
 };
+

@@ -1,9 +1,26 @@
 /**
- * Document List Component
+ * @fileoverview Document List Component
  *
- * Displays a list of attached documents with download and delete actions
+ * Displays a list or grid of attached documents with download and delete actions.
+ * Used for displaying uploaded documents in various contexts. For task
+ * attachments that combine links and files, see UnifiedAttachments.
+ *
+ * ## Components
+ *
+ * - `DocumentList` - Vertical list layout with file details
+ * - `DocumentGrid` - 2-column grid layout for compact display
+ *
+ * ## Features
+ *
+ * - File type icons and metadata display
+ * - Download functionality via API
+ * - Delete with confirmation dialog
+ * - Compact mode for space-constrained layouts
+ * - Empty state handling
+ *
+ * @module components/DocumentList
  */
-import { FileText, Download, Trash2, Eye } from "lucide-react";
+import { FileText, Download, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {

@@ -1,8 +1,31 @@
 /**
- * Reusable Document Upload Component
+ * @fileoverview Document Upload Component
  *
- * Supports drag-and-drop and click-to-upload for multiple document types
- * (PDF, Word, Markdown, Text, Excel)
+ * A reusable drag-and-drop file upload component with visual feedback.
+ * Used in contexts where a full-page upload experience is needed (e.g.,
+ * AI Inference Dialog). For task attachments, see UnifiedAttachments.
+ *
+ * ## Features
+ *
+ * - Drag-and-drop with visual hover state
+ * - Click-to-upload fallback
+ * - File size validation (configurable, default 50MB)
+ * - File type validation (PDF, Word, Excel, Markdown, Text)
+ * - Selected file preview with metadata
+ * - Error display for validation failures
+ *
+ * ## Usage
+ *
+ * ```tsx
+ * <DocumentUpload
+ *   onFileSelect={(file) => setSelectedFile(file)}
+ *   onFileRemove={() => setSelectedFile(null)}
+ *   selectedFile={selectedFile}
+ *   disabled={isUploading}
+ * />
+ * ```
+ *
+ * @module components/DocumentUpload
  */
 import { useState, useRef, useCallback } from "react";
 import { FileText, Upload, X, AlertCircle } from "lucide-react";
