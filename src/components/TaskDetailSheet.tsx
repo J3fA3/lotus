@@ -99,6 +99,14 @@ export const TaskDetailSheet = ({
   // Track last update timestamp to prevent feedback loops
   const lastExternalUpdateRef = useRef<string>("");
 
+  // Track in-flight local updates to prevent race conditions
+  const localUpdateInProgressRef = useRef(false);
+  const localUpdateTimestampRef = useRef<string>("");
+  const localUpdateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Track the latest comment text to avoid stale state issues
+  const latestCommentTextRef = useRef<string>("");
+
   // Update editedTask when the task prop changes with skeleton transition
   useEffect(() => {
     // Check if task actually changed (different ID)
@@ -115,19 +123,48 @@ export const TaskDetailSheet = ({
         });
         previousTaskIdRef.current = task.id;
         lastExternalUpdateRef.current = task.updatedAt || "";
+        localUpdateInProgressRef.current = false;
+        localUpdateTimestampRef.current = "";
         setIsTransitioning(false);
       }, 150);
 
       return () => clearTimeout(timer);
     } else if (task.updatedAt && task.updatedAt !== lastExternalUpdateRef.current) {
       // Same task, but externally updated (e.g., from another component)
-      // Only update if the timestamp actually changed
-      lastExternalUpdateRef.current = task.updatedAt;
-      setEditedTask({
-        ...task,
-        comments: task.comments || [],
-        attachments: task.attachments || [],
-      });
+      // CRITICAL: Don't overwrite if we have a local update in progress
+      // This prevents race conditions where the API call hasn't completed yet
+      if (localUpdateInProgressRef.current && localUpdateTimestampRef.current) {
+        // Check if this update is the response to our local update
+        // If the task.updatedAt is newer than our local timestamp, it's likely the API response
+        const taskTime = new Date(task.updatedAt).getTime();
+        const localTime = new Date(localUpdateTimestampRef.current).getTime();
+
+        if (taskTime >= localTime) {
+          // This is the API response to our update - accept it and clear the flag
+          localUpdateInProgressRef.current = false;
+          localUpdateTimestampRef.current = "";
+          // Clear the timeout since the update completed successfully
+          if (localUpdateTimeoutRef.current) {
+            clearTimeout(localUpdateTimeoutRef.current);
+            localUpdateTimeoutRef.current = null;
+          }
+          lastExternalUpdateRef.current = task.updatedAt;
+          setEditedTask({
+            ...task,
+            comments: task.comments || [],
+            attachments: task.attachments || [],
+          });
+        }
+        // Otherwise, ignore this update as we're still waiting for our update to complete
+      } else {
+        // No local update in progress, safe to update from external source
+        lastExternalUpdateRef.current = task.updatedAt;
+        setEditedTask({
+          ...task,
+          comments: task.comments || [],
+          attachments: task.attachments || [],
+        });
+      }
     }
     // If same task with same timestamp, don't update (prevents feedback loop)
   }, [task.id, task.updatedAt]);
@@ -136,6 +173,15 @@ export const TaskDetailSheet = ({
   useEffect(() => {
     setIsExpanded(isExpandedProp);
   }, [isExpandedProp]);
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (localUpdateTimeoutRef.current) {
+        clearTimeout(localUpdateTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // Section tabbing - list of focusable sections in order
   const sections = [
@@ -260,18 +306,39 @@ export const TaskDetailSheet = ({
     if (updates.status && shouldAutoSetStartDate(editedTask.status, updates.status, editedTask.startDate)) {
       finalUpdates.startDate = getTodayDateString();
     }
-    
+
+    const timestamp = new Date().toISOString();
     const updated = {
       ...editedTask,
       ...finalUpdates,
-      updatedAt: new Date().toISOString()
+      updatedAt: timestamp
     };
+
+    // Mark that we have a local update in progress to prevent race conditions
+    localUpdateInProgressRef.current = true;
+    localUpdateTimestampRef.current = timestamp;
+
+    // Clear any existing timeout
+    if (localUpdateTimeoutRef.current) {
+      clearTimeout(localUpdateTimeoutRef.current);
+    }
+
+    // Set a timeout to automatically clear the in-flight flag after 10 seconds
+    // This ensures we don't get stuck if the API call fails or takes too long
+    localUpdateTimeoutRef.current = setTimeout(() => {
+      localUpdateInProgressRef.current = false;
+      localUpdateTimestampRef.current = "";
+      localUpdateTimeoutRef.current = null;
+    }, 10000);
+
     setEditedTask(updated);
     onUpdate(updated);
   }, [editedTask, onUpdate]);
 
-  const handleAddComment = () => {
-    const trimmedComment = newComment.trim();
+  const handleAddComment = useCallback(() => {
+    // Use the latest comment text from ref to avoid stale state issues
+    const commentText = latestCommentTextRef.current || newComment;
+    const trimmedComment = commentText.trim();
     if (!trimmedComment) {
       return;
     }
@@ -285,7 +352,8 @@ export const TaskDetailSheet = ({
 
     handleUpdate({ comments: [...(editedTask.comments || []), comment] });
     setNewComment("");
-  };
+    latestCommentTextRef.current = "";
+  }, [newComment, editedTask.assignee, editedTask.comments, handleUpdate]);
 
   const handleAddAttachment = () => {
     const trimmedUrl = newAttachment.trim();
@@ -762,11 +830,25 @@ export const TaskDetailSheet = ({
               <div className="flex-shrink-0 w-7 h-7 rounded-full bg-muted flex items-center justify-center mt-1">
                 <User className="h-3.5 w-3.5 text-muted-foreground" />
               </div>
-              <div className="flex-1" ref={commentsRef}>
+              <div
+                className="flex-1"
+                ref={commentsRef}
+                onKeyDown={(e) => {
+                  // Handle Command+Enter or Ctrl+Enter to post comment
+                  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+                    e.preventDefault();
+                    handleAddComment();
+                  }
+                }}
+              >
                 <RichTextEditor
                   content={newComment}
-                  onChange={(html) => setNewComment(html)}
-                  placeholder="Add a comment... Type / for commands, * for bullets"
+                  onChange={(html) => {
+                    setNewComment(html);
+                    // Also update ref to ensure we always have the latest value
+                    latestCommentTextRef.current = html;
+                  }}
+                  placeholder="Add a comment... Type / for commands, * for bullets. Press Cmd/Ctrl+Enter to post"
                   variant="minimal"
                   className="border-0 border-b rounded-none"
                 />
