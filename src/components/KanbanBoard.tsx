@@ -425,17 +425,15 @@ export const KanbanBoard = () => {
       setFocusedColumn(columnIndex);
       setFocusedTaskIndex(taskIndex);
     } else {
-      // Find the task's position
-      const foundColumn = COLUMNS.findIndex(col => {
-        const columnTasks = tasks.filter(t => t.status === col.id);
-        return columnTasks.some(t => t.id === task.id);
-      });
+      // Find the task's position using getColumnTasks for consistent sorting
+      const foundColumn = COLUMNS.findIndex(col => col.id === task.status);
       
       if (foundColumn !== -1) {
-        const columnTasks = tasks.filter(t => t.status === COLUMNS[foundColumn].id);
+        // Use getColumnTasks to ensure we get the same sorted order as rendered
+        const columnTasks = getColumnTasks(foundColumn);
         const foundTaskIndex = columnTasks.findIndex(t => t.id === task.id);
         setFocusedColumn(foundColumn);
-        setFocusedTaskIndex(foundTaskIndex);
+        setFocusedTaskIndex(foundTaskIndex >= 0 ? foundTaskIndex : 0);
       }
     }
   };
@@ -543,7 +541,14 @@ export const KanbanBoard = () => {
           // Use setTimeout to ensure tasks state is updated first
           setTimeout(() => {
             setTasks((prev) => {
-              const newColumnTasks = prev.filter(t => t.status === updatedTask.status);
+              // Apply same sorting as getColumnTasks to ensure consistent index
+              const newColumnTasks = prev
+                .filter(t => t.status === updatedTask.status)
+                .sort((a, b) => {
+                  const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+                  const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+                  return dateB - dateA; // Newest first
+                });
               const newTaskIndex = newColumnTasks.findIndex(t => t.id === updatedTask.id);
               if (newTaskIndex !== -1) {
                 setFocusedColumn(newColumnIndex);
@@ -624,7 +629,14 @@ export const KanbanBoard = () => {
         // Use setTimeout to ensure tasks state is updated first
         setTimeout(() => {
           setTasks((prev) => {
-            const newColumnTasks = prev.filter(t => t.status === status);
+            // Apply same sorting as getColumnTasks to ensure consistent index
+            const newColumnTasks = prev
+              .filter(t => t.status === status)
+              .sort((a, b) => {
+                const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+                const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+                return dateB - dateA; // Newest first
+              });
             const newTaskIndex = newColumnTasks.findIndex(t => t.id === draggedTask.id);
             if (newTaskIndex !== -1) {
               setFocusedColumn(newColumnIndex);
