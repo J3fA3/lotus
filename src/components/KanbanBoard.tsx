@@ -84,6 +84,7 @@ export const KanbanBoard = () => {
   const [searchResults, setSearchResults] = useState<Set<string>>(new Set()); // Set of task IDs matching search
   const [isSearching, setIsSearching] = useState(false);
   const searchBarRef = useRef<TaskSearchBarRef>(null);
+  const boardHeaderRef = useRef<HTMLDivElement>(null);
 
   const { shortcuts, getShortcutByAction, updateShortcut } = useShortcuts();
 
@@ -268,6 +269,36 @@ export const KanbanBoard = () => {
     setFocusedTaskIndex((prev) => Math.max(prev - 1, 0));
     setNavigationMode(true);
   });
+
+  // Auto-scroll focused task into view during keyboard navigation
+  useEffect(() => {
+    if (!navigationMode) return;
+    
+    const focusedTask = getFocusedTask();
+    if (!focusedTask) return;
+    
+    // Small delay to ensure DOM is updated after state change
+    requestAnimationFrame(() => {
+      // When at the first task, scroll the board header into view
+      // to restore the full board context (title, search bar, etc.)
+      if (focusedTaskIndex === 0 && boardHeaderRef.current) {
+        boardHeaderRef.current.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
+        return;
+      }
+      
+      // For other tasks, scroll the task element into view
+      const taskElement = document.querySelector(`[data-task-id="${focusedTask.id}"]`);
+      if (taskElement) {
+        taskElement.scrollIntoView({
+          behavior: "smooth",
+          block: "nearest",
+        });
+      }
+    });
+  }, [focusedTaskIndex, focusedColumn, navigationMode, getFocusedTask]);
 
   useRegisterShortcut('last_task', () => {
     const columnTasks = getColumnTasks(focusedColumn);
@@ -723,7 +754,7 @@ export const KanbanBoard = () => {
   return (
     <div className="min-h-screen bg-background">
       <div className="max-w-[1600px] mx-auto px-6 lg:px-12 py-8 lg:py-12">
-        <div className="mb-10 flex items-start justify-between">
+        <div ref={boardHeaderRef} className="mb-10 flex items-start justify-between">
           <div>
             <h1 className="text-2xl font-semibold text-foreground mb-1.5 tracking-tight">
               Tasks Board
