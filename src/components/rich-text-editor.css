@@ -49,73 +49,69 @@
 /* ============================================
    LISTS - Bullet, Numbered, and Task Lists
    
-   Design System:
-   - Consistent 1.5rem (24px) left padding for all lists
-   - Consistent 1.5rem (24px) indentation per nesting level
-   - Unified vertical rhythm: 0.375rem (6px) between items
-   - Markers vertically centered with first line of text
+   Apple Notes-inspired Design System:
+   - Delicate, refined markers
+   - Consistent text alignment across all list types
+   - Tight but breathable vertical spacing
+   - Circular checkboxes (Apple signature style)
    ============================================ */
 
-/* Shared list spacing variables */
+/* Shared list spacing - tighter Apple-style rhythm */
 .rich-text-editor .ProseMirror ul:not(.task-list),
 .rich-text-editor .ProseMirror ol,
 .rich-text-editor .ProseMirror ul.task-list {
-  --list-indent: 1.5rem;
-  --list-marker-offset: 1.5rem;
-  --list-item-gap: 0.375rem;
+  --list-indent: 1.375rem;
+  --list-item-gap: 0.125rem;
+  --bullet-size: 5px;
+  --checkbox-size: 1rem;
 }
 
 /* ---- UNORDERED LISTS (Bullets) ---- */
 .rich-text-editor .ProseMirror ul:not(.task-list) {
   padding-left: var(--list-indent);
-  margin-top: 0.5rem;
-  margin-bottom: 0.5rem;
+  margin-top: 0.375rem;
+  margin-bottom: 0.375rem;
   list-style: none;
 }
 
 .rich-text-editor .ProseMirror ul:not(.task-list) > li {
   position: relative;
-  padding-left: 0;
 }
 
-/* Custom bullet markers - precisely centered with text */
+/* Bullet markers - small and refined like Apple */
 .rich-text-editor .ProseMirror ul:not(.task-list) > li::before {
   content: '';
   position: absolute;
-  left: calc(-1 * var(--list-marker-offset) + 0.25rem);
-  top: 0.55em;
-  width: 0.375rem;
-  height: 0.375rem;
+  left: calc(-1 * var(--list-indent) + 0.375rem);
+  top: 0.6em;
+  width: var(--bullet-size);
+  height: var(--bullet-size);
   border-radius: 50%;
-  background: hsl(var(--primary));
-  opacity: 0.85;
+  background: currentColor;
+  opacity: 0.7;
 }
 
-/* Nested bullet: hollow circle */
+/* Nested bullet: hollow circle (Apple style) */
 .rich-text-editor .ProseMirror ul:not(.task-list) ul > li::before {
   background: transparent;
-  border: 1.5px solid hsl(var(--primary));
-  opacity: 0.7;
-  width: 0.375rem;
-  height: 0.375rem;
+  border: 1.25px solid currentColor;
+  opacity: 0.55;
 }
 
-/* Deeply nested: small square */
+/* Deeply nested: tiny filled circle */
 .rich-text-editor .ProseMirror ul:not(.task-list) ul ul > li::before {
-  border-radius: 1px;
+  width: 4px;
+  height: 4px;
+  background: currentColor;
   border: none;
-  background: hsl(var(--muted-foreground));
-  opacity: 0.6;
-  width: 0.3rem;
-  height: 0.3rem;
-  top: 0.6em;
+  opacity: 0.4;
 }
 
 /* ---- ORDERED LISTS (Numbers) ---- */
 .rich-text-editor .ProseMirror ol {
   padding-left: var(--list-indent);
-  margin-top: 0.5rem;
-  margin-bottom: 0.5rem;
+  margin-top: 0.375rem;
+  margin-bottom: 0.375rem;
   list-style: none;
   counter-reset: list-counter;
 }
@@ -128,14 +124,14 @@
 .rich-text-editor .ProseMirror ol > li::before {
   content: counter(list-counter) ".";
   position: absolute;
-  left: calc(-1 * var(--list-marker-offset));
-  width: calc(var(--list-marker-offset) - 0.375rem);
+  left: calc(-1 * var(--list-indent));
+  width: calc(var(--list-indent) - 0.5rem);
   text-align: right;
   color: hsl(var(--primary));
   font-weight: 500;
-  font-size: 0.875em;
+  font-size: 0.9375em;
   font-variant-numeric: tabular-nums;
-  opacity: 0.9;
+  opacity: 0.85;
 }
 
 /* Nested ordered: lowercase letters */
@@ -145,7 +141,8 @@
 
 .rich-text-editor .ProseMirror ol ol > li::before {
   content: counter(list-counter, lower-alpha) ".";
-  color: hsl(var(--muted-foreground));
+  color: currentColor;
+  opacity: 0.6;
 }
 
 /* Deeply nested: roman numerals */
@@ -155,13 +152,14 @@
 
 .rich-text-editor .ProseMirror ol ol ol > li::before {
   content: counter(list-counter, lower-roman) ".";
+  opacity: 0.5;
 }
 
 /* ---- COMMON LIST ITEM STYLES ---- */
 .rich-text-editor .ProseMirror li {
   margin-top: var(--list-item-gap);
   margin-bottom: var(--list-item-gap);
-  line-height: 1.6;
+  line-height: 1.5;
 }
 
 .rich-text-editor .ProseMirror li:first-child {
@@ -176,21 +174,21 @@
   margin: 0;
 }
 
-/* Nested lists spacing */
+/* Nested lists - tighter spacing */
 .rich-text-editor .ProseMirror li > ul,
 .rich-text-editor .ProseMirror li > ol {
-  margin-top: var(--list-item-gap);
+  margin-top: 0.125rem;
   margin-bottom: 0;
 }
 
 /* ============================================
-   TASK LIST - Interactive Checklists
+   TASK LIST - Apple Notes Circular Checkboxes
    ============================================ */
 
 .rich-text-editor .ProseMirror ul.task-list {
   padding-left: 0;
-  margin-top: 0.5rem;
-  margin-bottom: 0.5rem;
+  margin-top: 0.375rem;
+  margin-bottom: 0.375rem;
   list-style: none;
 }
 
@@ -200,11 +198,11 @@
   gap: 0.5rem;
   margin-top: var(--list-item-gap);
   margin-bottom: var(--list-item-gap);
-  padding: 0.25rem 0.5rem;
-  margin-left: -0.5rem;
-  margin-right: -0.5rem;
+  padding: 0.1875rem 0.375rem;
+  margin-left: -0.375rem;
+  margin-right: -0.375rem;
   border-radius: 0.25rem;
-  transition: background-color 150ms ease;
+  transition: background-color 100ms ease;
 }
 
 .rich-text-editor .ProseMirror .task-list li.task-item:first-child {
@@ -215,89 +213,91 @@
   margin-bottom: 0;
 }
 
-/* Custom checkbox styling */
+/* Circular checkbox - Apple Notes style */
 .rich-text-editor .ProseMirror .task-list li.task-item > label {
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  margin-top: 0.1em;
+  margin-top: 0.125em;
 }
 
 .rich-text-editor .ProseMirror .task-list li.task-item > label > input[type="checkbox"] {
   appearance: none;
   -webkit-appearance: none;
-  width: 1.125rem;
-  height: 1.125rem;
-  border: 2px solid hsl(var(--border));
-  border-radius: 0.25rem;
+  width: var(--checkbox-size);
+  height: var(--checkbox-size);
+  border: 1.5px solid hsl(var(--muted-foreground) / 0.4);
+  border-radius: 50%;
   background: transparent;
   cursor: pointer;
-  transition: all 120ms ease;
+  transition: all 100ms ease;
   position: relative;
   flex-shrink: 0;
 }
 
 .rich-text-editor .ProseMirror .task-list li.task-item > label > input[type="checkbox"]:hover {
-  border-color: hsl(var(--primary));
-  background: hsl(var(--primary) / 0.08);
+  border-color: hsl(var(--primary) / 0.6);
+  background: hsl(var(--primary) / 0.05);
 }
 
 .rich-text-editor .ProseMirror .task-list li.task-item > label > input[type="checkbox"]:focus {
   outline: none;
-  box-shadow: 0 0 0 2px hsl(var(--primary) / 0.15);
+  box-shadow: 0 0 0 2px hsl(var(--primary) / 0.12);
 }
 
-/* Checked state */
+/* Checked state - filled circle */
 .rich-text-editor .ProseMirror .task-list li.task-item > label > input[type="checkbox"]:checked {
   background: hsl(var(--primary));
   border-color: hsl(var(--primary));
 }
 
-/* Checkmark icon - precisely centered */
+/* Checkmark icon - refined and centered */
 .rich-text-editor .ProseMirror .task-list li.task-item > label > input[type="checkbox"]:checked::after {
   content: '';
   position: absolute;
   left: 50%;
-  top: 45%;
-  width: 0.3rem;
-  height: 0.55rem;
+  top: 46%;
+  width: 0.25rem;
+  height: 0.4rem;
   border: solid white;
-  border-width: 0 2px 2px 0;
+  border-width: 0 1.5px 1.5px 0;
   transform: translate(-50%, -50%) rotate(45deg);
 }
 
-/* Task item content container */
+/* Task item content */
 .rich-text-editor .ProseMirror .task-list li.task-item > div {
   flex: 1;
   min-width: 0;
-  line-height: 1.6;
+  line-height: 1.5;
 }
 
 /* Strikethrough for completed tasks */
 .rich-text-editor .ProseMirror .task-list li.task-item[data-checked="true"] > div {
   text-decoration: line-through;
-  text-decoration-color: hsl(var(--muted-foreground) / 0.5);
-  opacity: 0.55;
+  text-decoration-color: hsl(var(--muted-foreground) / 0.4);
+  text-decoration-thickness: 1px;
+  opacity: 0.5;
   color: hsl(var(--muted-foreground));
 }
 
 .rich-text-editor .ProseMirror .task-list li.task-item[data-checked="true"] > div p {
   text-decoration: line-through;
-  text-decoration-color: hsl(var(--muted-foreground) / 0.5);
+  text-decoration-color: hsl(var(--muted-foreground) / 0.4);
+  text-decoration-thickness: 1px;
 }
 
-/* Nested task lists - aligned with parent checkbox */
+/* Nested task lists - aligned with parent text start */
 .rich-text-editor .ProseMirror .task-list .task-list {
-  padding-left: calc(1.125rem + 0.5rem);
-  margin-top: 0.25rem;
+  padding-left: calc(var(--checkbox-size) + 0.5rem);
+  margin-top: 0.125rem;
   margin-bottom: 0;
 }
 
-/* Hover effect - no layout shift */
+/* Subtle hover effect */
 .rich-text-editor .ProseMirror .task-list li.task-item:hover {
-  background: hsl(var(--accent) / 0.4);
+  background: hsl(var(--accent) / 0.35);
 }
 
 /* Code */
@@ -470,28 +470,24 @@
   @apply text-2xl py-2;
 }
 
-/* Minimal variant task list adjustments */
-.rich-text-editor.minimal .ProseMirror .task-list li.task-item > label > input[type="checkbox"] {
-  width: 1rem;
-  height: 1rem;
-}
-
-.rich-text-editor.minimal .ProseMirror .task-list li.task-item > label > input[type="checkbox"]:checked::after {
-  width: 0.25rem;
-  height: 0.45rem;
-}
-
-/* Minimal variant list spacing */
+/* Minimal variant - even tighter for compact UIs */
 .rich-text-editor.minimal .ProseMirror ul:not(.task-list),
 .rich-text-editor.minimal .ProseMirror ol,
 .rich-text-editor.minimal .ProseMirror ul.task-list {
-  --list-indent: 1.25rem;
-  --list-marker-offset: 1.25rem;
-  --list-item-gap: 0.25rem;
+  --list-indent: 1.125rem;
+  --list-item-gap: 0.0625rem;
+  --bullet-size: 4px;
+  --checkbox-size: 0.875rem;
+}
+
+.rich-text-editor.minimal .ProseMirror .task-list li.task-item > label > input[type="checkbox"]:checked::after {
+  width: 0.2rem;
+  height: 0.35rem;
+  border-width: 0 1.25px 1.25px 0;
 }
 
 .rich-text-editor.minimal .ProseMirror .task-list .task-list {
-  padding-left: calc(1rem + 0.5rem);
+  padding-left: calc(0.875rem + 0.5rem);
 }
 
 /* Title variant - for task titles with Word Art */
