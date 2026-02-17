@@ -3,7 +3,6 @@ import { Card } from "./ui/card";
 import { Badge } from "./ui/badge";
 import { Calendar, MessageSquare, Paperclip } from "lucide-react";
 import { format } from "date-fns";
-import "./rich-text-editor.css";
 
 interface TaskCardProps {
   task: Task;
