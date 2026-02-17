@@ -2,9 +2,9 @@ import { useState, useEffect, useRef } from "react";
 import { Comment } from "@/types/task";
 import { LotusIcon } from "./LotusIcon";
 import { Button } from "./ui/button";
+import { Textarea } from "./ui/textarea";
 import { User, Pencil, Trash2, Check, X } from "lucide-react";
 import { format } from "date-fns";
-import { RichTextEditor } from "./RichTextEditor";
 
 interface CommentItemProps {
   comment: Comment;
@@ -192,12 +192,11 @@ export const CommentItem = ({
                 }
               }}
             >
-              <RichTextEditor
-                content={editText}
-                onChange={setEditText}
+              <Textarea
+                value={editText}
+                onChange={(e) => setEditText(e.target.value)}
                 placeholder="Edit your comment... Press Cmd/Ctrl+Enter to save"
-                variant="minimal"
-                className="border rounded-md"
+                className="border rounded-md min-h-[80px]"
                 autoFocus={true}
               />
             </div>

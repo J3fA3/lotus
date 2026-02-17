@@ -5,15 +5,12 @@ import { TaskDetailSheet } from "./TaskDetailSheet";
 import { TaskFullPage } from "./TaskFullPage";
 import { QuickAddTask } from "./QuickAddTask";
 import { TaskSearchBar, TaskSearchBarRef } from "./TaskSearchBar";
-import LotusDialog from "./LotusDialog";
 import { DeleteTaskDialog } from "./DeleteTaskDialog";
 import { Button } from "./ui/button";
 import { Plus, Keyboard } from "lucide-react";
-import { LotusIcon } from "./LotusIcon";
 import { LotusLoading } from "./LotusLoading";
 import { toast } from "sonner";
 import * as tasksApi from "@/api/tasks";
-import { InferenceResponse } from "@/api/tasks";
 import { useRegisterShortcut, useShortcuts } from "@/contexts/ShortcutContext";
 import { getShortcutDisplay } from "@/hooks/useKeyboardHandler";
 
@@ -62,7 +59,6 @@ export const KanbanBoard = () => {
   const [draggedTask, setDraggedTask] = useState<Task | null>(null);
   const [quickAddColumn, setQuickAddColumn] = useState<TaskStatus | null>(null);
   const [showShortcuts, setShowShortcuts] = useState(false);
-  const [isLotusOpen, setIsLotusOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [backendConnected, setBackendConnected] = useState(false);
   const [editingShortcut, setEditingShortcut] = useState<string | null>(null);
@@ -398,11 +394,6 @@ export const KanbanBoard = () => {
     }
   });
 
-  useRegisterShortcut('toggle_lotus', () => {
-    setIsLotusOpen(!isLotusOpen);
-    toast.success(isLotusOpen ? "Lotus closed" : "Lotus opened", { duration: TOAST_DURATION.SHORT });
-  });
-
   // View mode shortcuts - separate peek/expanded toggle and fullscreen toggle
   useRegisterShortcut('toggle_peek_expanded', () => {
     if (isDialogOpen && selectedTask) {
@@ -599,18 +590,6 @@ export const KanbanBoard = () => {
     }
   }, []);
 
-  // Handle task click from Lotus chat
-  const handleTaskClickFromLotus = useCallback((task: Task) => {
-    // Close Lotus dialog first to prevent overlay conflict
-    setIsLotusOpen(false);
-
-    // Small delay to allow Lotus dialog to close smoothly
-    setTimeout(() => {
-      setSelectedTask(task);
-      setIsDialogOpen(true);
-    }, 150);
-  }, []);
-
   const handleDeleteTask = useCallback(async (taskId: string) => {
     try {
       await tasksApi.deleteTask(taskId);
@@ -689,23 +668,6 @@ export const KanbanBoard = () => {
     setDraggedTask(null);
   }, [draggedTask]);
 
-  const handleTasksInferred = useCallback((result: InferenceResponse) => {
-    // Add inferred tasks to the board
-    setTasks((prev) => [...prev, ...result.tasks]);
-
-    const taskCount = result.tasks_inferred;
-    const taskWord = taskCount === 1 ? "task" : "tasks";
-    const timeInSeconds = (result.inference_time_ms / 1000).toFixed(1);
-
-    toast.success(
-      `Added ${taskCount} ${taskWord} to your board!`,
-      {
-        description: `Processed in ${timeInSeconds}s using ${result.model_used}`,
-        duration: TOAST_DURATION.MEDIUM,
-      }
-    );
-  }, []);
-
   // Handle shortcut key recording
   const handleShortcutKeyDown = useCallback((e: React.KeyboardEvent, shortcutId: string) => {
     e.preventDefault();
@@ -765,16 +727,6 @@ export const KanbanBoard = () => {
           </div>
           <div className="flex items-center gap-2">
             <TaskSearchBar ref={searchBarRef} onSearch={handleSearch} isSearching={isSearching} />
-            <Button
-              variant="default"
-              size="sm"
-              onClick={() => setIsLotusOpen(true)}
-              className="gap-2 bg-lotus-green-medium hover:bg-[hsl(var(--lotus-green-dark))] transition-zen shadow-zen-sm hover:shadow-zen-md"
-              disabled={!backendConnected}
-            >
-              <LotusIcon className="h-4 w-4" size={16} />
-              <span className="text-xs font-semibold">Lotus</span>
-            </Button>
             <Button
               variant="ghost"
               size="sm"
@@ -1061,13 +1013,6 @@ export const KanbanBoard = () => {
         </div>
         )}
       </div>
-
-      <LotusDialog
-        open={isLotusOpen}
-        onOpenChange={setIsLotusOpen}
-        onTasksCreated={loadTasks}
-        onTaskClick={handleTaskClickFromLotus}
-      />
 
       {selectedTask && !isFullPageOpen && (
         <TaskDetailSheet
