@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Task, Comment } from "@/types/task";
-import { LotusIcon } from "./LotusIcon";
 import { Input } from "./ui/input";
 import { Textarea } from "./ui/textarea";
 import { Button } from "./ui/button";
@@ -12,15 +11,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "./ui/select";
-import { Calendar, Paperclip, MessageSquare, Trash2, X, User, FileText, ArrowLeft, Minimize2 } from "lucide-react";
-import { format } from "date-fns";
-import { toast } from "sonner";
+import { Calendar, Paperclip, MessageSquare, Trash2, X, User, ArrowLeft, Minimize2 } from "lucide-react";
 import { ValueStreamCombobox } from "./ValueStreamCombobox";
-import { RichTextEditor } from "./RichTextEditor";
-import { TaskScheduler } from "./TaskScheduler";
 import { useRegisterShortcut } from "@/contexts/ShortcutContext";
 import { DeleteTaskDialog } from "./DeleteTaskDialog";
 import { CommentItem } from "./CommentItem";
+import { AskLotus } from "./AskLotus";
 
 interface TaskFullPageProps {
   task: Task;
@@ -44,7 +40,6 @@ export const TaskFullPage = ({
   });
   const [newComment, setNewComment] = useState("");
   const [newAttachment, setNewAttachment] = useState("");
-  const [commentResetKey, setCommentResetKey] = useState(0);
   const [isExiting, setIsExiting] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const notesRef = useRef<HTMLDivElement>(null);
@@ -56,7 +51,6 @@ export const TaskFullPage = ({
   const startDateRef = useRef<HTMLInputElement>(null);
   const dueDateRef = useRef<HTMLInputElement>(null);
   const valueStreamRef = useRef<HTMLDivElement>(null);
-  const scheduleRef = useRef<HTMLDivElement>(null);
   const [currentSectionIndex, setCurrentSectionIndex] = useState(0);
 
   // Track last update timestamp to prevent feedback loops
@@ -90,14 +84,13 @@ export const TaskFullPage = ({
 
   // Section tabbing - list of focusable sections in order
   const sections = [
-    titleRef,        // RichTextEditor
+    titleRef,        // Input
     statusRef,       // SelectTrigger
     valueStreamRef,  // ValueStreamCombobox button
     startDateRef,    // Input date
     dueDateRef,      // Input date
-    scheduleRef,     // TaskScheduler button
-    descriptionRef,  // RichTextEditor
-    notesRef,       // RichTextEditor
+    descriptionRef,  // Textarea
+    notesRef,       // Textarea
   ];
 
   const focusSection = useCallback((index: number) => {
@@ -112,10 +105,10 @@ export const TaskFullPage = ({
       const element = sectionRef.current;
       if (!element) return;
 
-      // For RichTextEditor divs, find the contenteditable element
-      const editable = element.querySelector('[contenteditable="true"]') as HTMLElement;
-      if (editable) {
-        editable.focus();
+      // For Textarea elements
+      const textarea = element.querySelector('textarea') as HTMLTextAreaElement;
+      if (textarea) {
+        textarea.focus();
         return;
       }
 
@@ -140,31 +133,6 @@ export const TaskFullPage = ({
         }
       }
 
-      // For TaskScheduler: find the focusable button
-      if (index === 5) { // scheduleRef is at index 5
-        // Try to find button with text containing "Find" or "best time" (collapsed state)
-        const buttons = element.querySelectorAll('button');
-        for (const btn of buttons) {
-          const text = btn.textContent || '';
-          if (text.includes('Find') || text.includes('best time') || text.includes('Find the best')) {
-            btn.focus();
-            return;
-          }
-        }
-        // If scheduled, try to find the cancel button or any interactive button
-        for (const btn of buttons) {
-          if (btn.textContent?.includes('Cancel') || btn.textContent?.includes('Scheduled')) {
-            btn.focus();
-            return;
-          }
-        }
-        // Fallback: focus first focusable button if found
-        if (buttons.length > 0) {
-          buttons[0].focus();
-          return;
-        }
-      }
-
       // Try to focus the element itself
       if (element.tabIndex >= 0) {
         element.focus();
@@ -180,9 +148,9 @@ export const TaskFullPage = ({
   useRegisterShortcut('focus_notes', () => {
     notesRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
     setTimeout(() => {
-      const editable = notesRef.current?.querySelector('[contenteditable="true"]') as HTMLElement;
-      if (editable) {
-        editable.focus();
+      const textarea = notesRef.current?.querySelector('textarea') as HTMLTextAreaElement;
+      if (textarea) {
+        textarea.focus();
       }
     }, 300);
   });
@@ -218,8 +186,6 @@ export const TaskFullPage = ({
 
     handleUpdate({ comments: [...(editedTask.comments || []), comment] });
     setNewComment("");
-    // Increment reset key to force the RichTextEditor to sync with the empty content
-    setCommentResetKey(prev => prev + 1);
   };
 
   const handleEditComment = useCallback((commentId: string, newText: string) => {
@@ -302,13 +268,11 @@ export const TaskFullPage = ({
         <div className="space-y-12">
           {/* Title */}
           <div ref={titleRef}>
-            <RichTextEditor
-              content={editedTask.title}
-              onChange={(html) => handleUpdate({ title: html })}
-              placeholder="Task title - Type / for Word Art styles!"
-              variant="title"
-              className="text-5xl"
-              autoFocus={false}
+            <Input
+              value={editedTask.title}
+              onChange={(e) => handleUpdate({ title: e.target.value })}
+              placeholder="Task title"
+              className="text-5xl font-semibold border-0 border-b border-border/50 rounded-none px-0 h-auto py-2 focus-visible:ring-0 focus-visible:border-primary/50"
             />
           </div>
 
@@ -390,31 +354,17 @@ export const TaskFullPage = ({
             </div>
           </div>
 
-          {/* Schedule */}
-          <div ref={scheduleRef}>
-            <TaskScheduler
-              taskId={editedTask.id}
-              taskTitle={editedTask.title}
-              comments={editedTask.comments}
-              onScheduled={(action) => {
-                if (action === 'approved') {
-                  toast.success("Time block added to calendar");
-                }
-              }}
-            />
-          </div>
-
           {/* Description */}
           <div className="space-y-4">
             <Label className="text-sm font-semibold text-foreground">
               Description
             </Label>
             <div ref={descriptionRef}>
-              <RichTextEditor
-                content={editedTask.description || ""}
-                onChange={(html) => handleUpdate({ description: html })}
-                placeholder="Add a detailed description... Type / for commands, * for bullets"
-                variant="minimal"
+              <Textarea
+                value={editedTask.description || ""}
+                onChange={(e) => handleUpdate({ description: e.target.value })}
+                placeholder="Add a detailed description..."
+                className="min-h-[120px] border-border/50 focus:border-primary/50 transition-[border-color] duration-150"
               />
             </div>
           </div>
@@ -486,13 +436,11 @@ export const TaskFullPage = ({
                 <User className="h-4 w-4 text-muted-foreground" />
               </div>
               <div className="flex-1" ref={commentsRef}>
-                <RichTextEditor
-                  content={newComment}
-                  onChange={setNewComment}
-                  placeholder="Add a comment... Type / for commands, * for bullets"
-                  variant="minimal"
-                  className="border-0 border-b rounded-none"
-                  resetKey={commentResetKey}
+                <Textarea
+                  value={newComment}
+                  onChange={(e) => setNewComment(e.target.value)}
+                  placeholder="Add a comment..."
+                  className="border-0 border-b rounded-none min-h-[60px]"
                 />
                 <Button
                   onClick={handleAddComment}
@@ -512,15 +460,16 @@ export const TaskFullPage = ({
               Notes
             </Label>
             <div ref={notesRef}>
-              <RichTextEditor
-                content={editedTask.notes || ""}
-                onChange={(html) => handleUpdate({ notes: html })}
-                placeholder="Write your notes, thoughts, or documentation here... Type / for commands, * for bullets, create tables and more!"
-                variant="full"
+              <Textarea
+                value={editedTask.notes || ""}
+                onChange={(e) => handleUpdate({ notes: e.target.value })}
+                placeholder="Write your notes, thoughts, or documentation here..."
+                className="min-h-[500px] border-border/50 focus:border-primary/50 transition-[border-color] duration-150"
               />
             </div>
-            <span className="text-xs text-muted-foreground">Ctrl+D to focus notes • Ctrl+Tab to cycle through sections • Full formatting available: headings, tables, code blocks, and Word Art!</span>
+            <span className="text-xs text-muted-foreground">Ctrl+D to focus notes • Ctrl+Tab to cycle through sections</span>
           </div>
+        <AskLotus taskId={task.id} />
         </div>
       </div>
 

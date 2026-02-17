@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Task, Comment, Document as DocumentType } from "@/types/task";
-import { LotusIcon } from "./LotusIcon";
+import { Task, Comment } from "@/types/task";
 import {
   Sheet,
   SheetContent,
@@ -8,6 +7,7 @@ import {
   SheetTitle,
 } from "./ui/sheet";
 import { Input } from "./ui/input";
+import { Textarea } from "./ui/textarea";
 import { Button } from "./ui/button";
 import { Label } from "./ui/label";
 import {
@@ -20,14 +20,11 @@ import {
 import { Skeleton } from "./ui/skeleton";
 import { Calendar, Paperclip, MessageSquare, Trash2, User, Maximize2, Minimize2, Expand } from "lucide-react";
 import { toast } from "sonner";
-import { uploadDocument, listDocuments } from "@/api/tasks";
-import { UnifiedAttachments } from "./UnifiedAttachments";
 import { ValueStreamCombobox } from "./ValueStreamCombobox";
-import { RichTextEditor } from "./RichTextEditor";
-import { TaskScheduler } from "./TaskScheduler";
 import { useRegisterShortcut } from "@/contexts/ShortcutContext";
 import { DeleteTaskDialog } from "./DeleteTaskDialog";
 import { CommentItem } from "./CommentItem";
+import { AskLotus } from "./AskLotus";
 
 // Helper function to get today's date in YYYY-MM-DD format
 const getTodayDateString = (): string => {
@@ -72,12 +69,9 @@ export const TaskDetailSheet = ({
     attachments: task.attachments || [],
   });
   const [newComment, setNewComment] = useState("");
-  const [commentResetKey, setCommentResetKey] = useState(0);
   const [isExpanded, setIsExpanded] = useState(isExpandedProp);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [isExiting, setIsExiting] = useState(false);
-  const [uploadedDocuments, setUploadedDocuments] = useState<DocumentType[]>([]);
-  const [isUploadingDocument, setIsUploadingDocument] = useState(false);
   const notesRef = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLDivElement>(null);
   const descriptionRef = useRef<HTMLDivElement>(null);
@@ -87,7 +81,6 @@ export const TaskDetailSheet = ({
   const startDateRef = useRef<HTMLInputElement>(null);
   const dueDateRef = useRef<HTMLInputElement>(null);
   const valueStreamRef = useRef<HTMLDivElement>(null);
-  const scheduleRef = useRef<HTMLDivElement>(null);
   const previousTaskIdRef = useRef<string>(task.id);
   const [currentSectionIndex, setCurrentSectionIndex] = useState(0);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -178,14 +171,13 @@ export const TaskDetailSheet = ({
 
   // Section tabbing - list of focusable sections in order
   const sections = [
-    titleRef,        // RichTextEditor
+    titleRef,        // Input
     statusRef,       // SelectTrigger
     valueStreamRef,  // ValueStreamCombobox button
     startDateRef,    // Input date
     dueDateRef,      // Input date
-    scheduleRef,     // TaskScheduler button
-    descriptionRef,  // RichTextEditor
-    notesRef,       // RichTextEditor
+    descriptionRef,  // Textarea
+    notesRef,       // Textarea
   ];
 
   const focusSection = useCallback((index: number) => {
@@ -200,10 +192,10 @@ export const TaskDetailSheet = ({
       const element = sectionRef.current;
       if (!element) return;
 
-      // For RichTextEditor divs, find the contenteditable element
-      const editable = element.querySelector('[contenteditable="true"]') as HTMLElement;
-      if (editable) {
-        editable.focus();
+      // For Textarea elements
+      const textarea = element.querySelector('textarea') as HTMLTextAreaElement;
+      if (textarea) {
+        textarea.focus();
         return;
       }
 
@@ -224,23 +216,6 @@ export const TaskDetailSheet = ({
         const button = element.querySelector('button[role="combobox"]') as HTMLButtonElement;
         if (button) {
           button.focus();
-          return;
-        }
-      }
-
-      // For TaskScheduler: find the "Find the best time" button
-      if (index === 5) { // scheduleRef is at index 5
-        // Try to find button with text containing "Find" or "best time"
-        const buttons = element.querySelectorAll('button');
-        for (const btn of buttons) {
-          if (btn.textContent?.includes('Find') || btn.textContent?.includes('best time')) {
-            btn.focus();
-            return;
-          }
-        }
-        // Fallback: focus first button if found
-        if (buttons.length > 0) {
-          buttons[0].focus();
           return;
         }
       }
@@ -271,9 +246,9 @@ export const TaskDetailSheet = ({
     if (open) {
       notesRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
       setTimeout(() => {
-        const editable = notesRef.current?.querySelector('[contenteditable="true"]') as HTMLElement;
-        if (editable) {
-          editable.focus();
+        const textarea = notesRef.current?.querySelector('textarea') as HTMLTextAreaElement;
+        if (textarea) {
+          textarea.focus();
         }
       }, 300);
     }
@@ -337,8 +312,6 @@ export const TaskDetailSheet = ({
 
     handleUpdate({ comments: [...(editedTask.comments || []), comment] });
     setNewComment("");
-    // Increment reset key to force the RichTextEditor to sync with the empty content
-    setCommentResetKey(prev => prev + 1);
   }, [newComment, editedTask.assignee, editedTask.comments, handleUpdate]);
 
   const handleEditComment = useCallback((commentId: string, newText: string) => {
@@ -367,41 +340,6 @@ export const TaskDetailSheet = ({
     updatedAttachments[index] = newUrl;
     handleUpdate({ attachments: updatedAttachments });
   }, [editedTask.attachments, handleUpdate]);
-
-  // Document handlers
-  const loadTaskDocuments = async () => {
-    try {
-      const response = await listDocuments("tasks", task.id);
-      setUploadedDocuments(response.documents);
-    } catch (error) {
-      console.error("Failed to load documents:", error);
-    }
-  };
-
-  const handleDocumentUpload = useCallback(async (file: File) => {
-    setIsUploadingDocument(true);
-    try {
-      await uploadDocument(file, "tasks", task.id);
-      toast.success(`Uploaded ${file.name}`);
-      await loadTaskDocuments();
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to upload document");
-    } finally {
-      setIsUploadingDocument(false);
-    }
-  }, [task.id]);
-
-  const handleDocumentDeleted = async (documentId: string) => {
-    await loadTaskDocuments();
-  };
-
-  // Load documents when task changes
-  useEffect(() => {
-    if (open && task.id) {
-      loadTaskDocuments();
-    }
-  }, [open, task.id]);
-
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange} modal={false}>
@@ -541,13 +479,11 @@ export const TaskDetailSheet = ({
             <div className="space-y-8 animate-in fade-in duration-200">
               {/* Title */}
               <div ref={titleRef}>
-                <RichTextEditor
-                  content={editedTask.title}
-                  onChange={(html) => handleUpdate({ title: html })}
-                  placeholder="Task title - Type / for Word Art styles!"
-                  variant="title"
-                  className="text-3xl transition-all duration-[400ms] ease-butter"
-                  autoFocus={false}
+                <Input
+                  value={editedTask.title}
+                  onChange={(e) => handleUpdate({ title: e.target.value })}
+                  placeholder="Task title"
+                  className="text-3xl font-semibold border-0 border-b border-border/50 rounded-none px-0 h-auto py-2 focus-visible:ring-0 focus-visible:border-primary/50 transition-all duration-[400ms] ease-butter"
                 />
               </div>
 
@@ -633,23 +569,6 @@ export const TaskDetailSheet = ({
             </div>
           </div>
 
-          {/* Schedule */}
-          <div ref={scheduleRef}>
-            <TaskScheduler
-              taskId={editedTask.id}
-              taskTitle={editedTask.title}
-              comments={editedTask.comments}
-              onScheduled={(action) => {
-                // Only show toast for approvals, not cancellations (cancellation already shows its own toast)
-                if (action === 'approved') {
-                  toast.success("Time block added to calendar");
-                }
-                // Refresh task to get updated comments
-                // The parent component should handle this via onUpdate
-              }}
-            />
-          </div>
-
           {/* Assignee - only show in peek mode since it's in the grid for expanded */}
           {!isExpanded && (
             <div className="space-y-3">
@@ -671,32 +590,54 @@ export const TaskDetailSheet = ({
               Description
             </Label>
             <div ref={descriptionRef}>
-              <RichTextEditor
-                content={editedTask.description || ""}
-                onChange={(html) => handleUpdate({ description: html })}
-                placeholder="Add a detailed description... Type / for commands, * for bullets"
-                variant="minimal"
+              <Textarea
+                value={editedTask.description || ""}
+                onChange={(e) => handleUpdate({ description: e.target.value })}
+                placeholder="Add a detailed description..."
+                className="min-h-[100px] border-border/50 focus:border-primary/50 transition-[border-color] duration-150"
               />
             </div>
           </div>
 
-          {/* Attachments & Documents */}
+          {/* Attachments */}
           <div className="space-y-3">
             <Label className="flex items-center gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
               <Paperclip className="h-3.5 w-3.5 opacity-60" />
               Attachments
             </Label>
-
-            <UnifiedAttachments
-              attachments={editedTask.attachments}
-              onAddAttachment={handleAddAttachment}
-              onRemoveAttachment={handleRemoveAttachment}
-              onEditAttachment={handleEditAttachment}
-              documents={uploadedDocuments}
-              onFileSelect={handleDocumentUpload}
-              onDocumentDeleted={handleDocumentDeleted}
-              isUploading={isUploadingDocument}
-            />
+            <div className="space-y-2">
+              {editedTask.attachments.map((attachment, index) => (
+                <div
+                  key={index}
+                  className="flex items-center justify-between p-2 bg-muted/30 rounded-lg border border-border/20 group hover:border-border/40 transition-[border-color] duration-150"
+                >
+                  <span className="text-sm truncate text-muted-foreground">{attachment}</span>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => handleRemoveAttachment(index)}
+                    className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity duration-150"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              ))}
+              <div className="flex gap-2">
+                <Input
+                  placeholder="Paste attachment URL..."
+                  className="h-9 border-border/50 focus:border-primary/50 transition-[border-color] duration-150"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      const input = e.target as HTMLInputElement;
+                      if (input.value.trim()) {
+                        handleAddAttachment(input.value.trim());
+                        input.value = '';
+                      }
+                    }
+                  }}
+                />
+              </div>
+            </div>
           </div>
 
           {/* Comments - Chat-style */}
@@ -733,13 +674,11 @@ export const TaskDetailSheet = ({
                   }
                 }}
               >
-                <RichTextEditor
-                  content={newComment}
-                  onChange={setNewComment}
-                  placeholder="Add a comment... Type / for commands, * for bullets. Press Cmd/Ctrl+Enter to post"
-                  variant="minimal"
-                  className="border-0 border-b rounded-none"
-                  resetKey={commentResetKey}
+                <Textarea
+                  value={newComment}
+                  onChange={(e) => setNewComment(e.target.value)}
+                  placeholder="Add a comment... Press Cmd/Ctrl+Enter to post"
+                  className="border-0 border-b rounded-none min-h-[60px]"
                 />
                 <Button
                   onClick={handleAddComment}
@@ -759,17 +698,18 @@ export const TaskDetailSheet = ({
               Notes
             </Label>
             <div ref={notesRef}>
-              <RichTextEditor
-                content={editedTask.notes || ""}
-                onChange={(html) => handleUpdate({ notes: html })}
-                placeholder="Write your notes, thoughts, or documentation here... Type / for commands, * for bullets, create tables and more!"
-                variant="full"
+              <Textarea
+                value={editedTask.notes || ""}
+                onChange={(e) => handleUpdate({ notes: e.target.value })}
+                placeholder="Write your notes, thoughts, or documentation here..."
+                className={`border-border/50 focus:border-primary/50 transition-[border-color] duration-150 ${isExpanded ? "min-h-[500px]" : "min-h-[400px]"}`}
               />
             </div>
-            <span className="text-xs text-muted-foreground">Ctrl+D to focus notes • Ctrl+Tab to cycle through sections • Full formatting available: headings, tables, code blocks, and Word Art!</span>
+            <span className="text-xs text-muted-foreground">Ctrl+D to focus notes • Ctrl+Tab to cycle through sections</span>
           </div>
             </div>
           )}
+        <AskLotus taskId={task.id} />
         </div>
       </SheetContent>
 
