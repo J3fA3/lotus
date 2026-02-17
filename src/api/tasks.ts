@@ -42,9 +42,7 @@ async function fetchWithTimeout(
  */
 export interface HealthResponse {
   status: string;
-  ollama_connected: boolean;
   database_connected: boolean;
-  model: string;
 }
 
 /**

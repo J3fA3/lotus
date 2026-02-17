@@ -94,18 +94,9 @@ export const KanbanBoard = () => {
   const checkBackendHealth = useCallback(async () => {
     try {
       const health = await tasksApi.checkHealth();
-      setBackendConnected(health.ollama_connected);
-
-      if (!health.ollama_connected) {
-        toast.warning("Ollama is not connected. AI features will not work.", {
-          duration: TOAST_DURATION.LONG,
-        });
-      }
-    } catch (err) {
-      console.error("Backend health check failed:", err);
+      setBackendConnected(health.database_connected);
+    } catch {
       setBackendConnected(false);
-      // Don't show error toast for health check failures - it's expected if backend is down
-      // The warning banner will be shown instead
     }
   }, []);
 
