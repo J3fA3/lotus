@@ -204,10 +204,8 @@ export async function searchTasks(
     params.append("threshold", threshold.toString());
 
     const url = `${API_BASE_URL}/tasks/search/${encodeURIComponent(query)}?${params.toString()}`;
-    console.log('[searchTasks] Calling API:', url);
 
     const response = await fetch(url);
-    console.log('[searchTasks] Response status:', response.status);
 
     if (!response.ok) {
       const errorBody = await response.text();
@@ -230,7 +228,6 @@ export async function searchTasks(
     }
 
     const data = await response.json();
-    console.log('[searchTasks] Response data:', data);
     return data;
   } catch (error) {
     console.error('[searchTasks] Error:', error);

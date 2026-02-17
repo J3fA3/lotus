@@ -48,7 +48,9 @@ backend/.env.local
 backend.log
 *.log
 
-# Data directories with generated content
-data/documents/inference/
-data/documents/knowledge/
-data/documents/tasks/
+# Intelligence Flywheel generated data
+backend/case_studies/*/
+backend/.vector_index.json
+
+# Data export (user-specific)
+backend/data_export.json

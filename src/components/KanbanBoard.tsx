@@ -137,37 +137,27 @@ export const KanbanBoard = () => {
 
   // Handle search
   const handleSearch = useCallback(async (query: string) => {
-    console.log('[KanbanBoard] handleSearch called with query:', query);
     setSearchQuery(query);
 
     // If query is empty, clear search results
     if (!query.trim()) {
-      console.log('[KanbanBoard] Empty query, clearing results');
       setSearchResults(new Set());
       setIsSearching(false);
       return;
     }
 
     setIsSearching(true);
-    console.log('[KanbanBoard] Starting search for:', query);
 
     try {
       const response = await tasksApi.searchTasks(query, 50, 0.3);
-      console.log('[KanbanBoard] Search response:', response);
-
       const matchingTaskIds = new Set(response.results.map(r => r.task.id));
-      console.log('[KanbanBoard] Matching task IDs:', Array.from(matchingTaskIds));
-
       setSearchResults(matchingTaskIds);
 
-      // Show feedback if no results
       if (matchingTaskIds.size === 0) {
         toast.info("No matching tasks found", {
           description: "Try different search terms",
           duration: 2000,
         });
-      } else {
-        console.log(`[KanbanBoard] Found ${matchingTaskIds.size} matching tasks`);
       }
     } catch (err) {
       console.error("[KanbanBoard] Search failed:", err);
@@ -196,12 +186,8 @@ export const KanbanBoard = () => {
     // Filter by search results if search is active
     if (searchQuery.trim()) {
       if (searchResults.size > 0) {
-        // Show only matching tasks
         columnTasks = columnTasks.filter((t) => searchResults.has(t.id));
-        console.log(`[getColumnTasks] Column ${status}: ${columnTasks.length} tasks match search`);
       } else {
-        // No matches, show empty list
-        console.log(`[getColumnTasks] Column ${status}: No matches, showing empty`);
         columnTasks = [];
       }
     }
@@ -918,7 +904,6 @@ export const KanbanBoard = () => {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
           {COLUMNS.map((column, columnIndex) => {
             const columnTasks = getColumnTasks(columnIndex);
-            console.log(`[Render] Column ${column.id}: showing ${columnTasks.length} tasks (search: "${searchQuery}")`);
 
             return (
             <div

@@ -28,7 +28,6 @@ export const TaskSearchBar = forwardRef<TaskSearchBarRef, TaskSearchBarProps>(
     }
 
     debounceTimerRef.current = setTimeout(() => {
-      console.log('[TaskSearchBar] Triggering search with query:', searchQuery);
       onSearch(searchQuery);
     }, 150);
 
