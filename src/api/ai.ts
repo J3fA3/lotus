@@ -29,18 +29,3 @@ export async function askLotus(
 
   return response.json();
 }
-
-/**
- * Rebuild the semantic search index
- */
-export async function reindexCases(): Promise<{ message: string; count: number }> {
-  const response = await fetch(`${API_BASE_URL}/ai/reindex`, {
-    method: "POST",
-  });
-
-  if (!response.ok) {
-    throw new Error(`Reindex failed: ${response.statusText}`);
-  }
-
-  return response.json();
-}
