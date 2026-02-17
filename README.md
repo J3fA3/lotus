@@ -1,324 +1,135 @@
-# Task Crate
+# Lotus v2 — Intelligence Flywheel Task Board
 
-**AI-powered task management with intelligent context analysis.** Transform conversations, meeting notes, and messages into actionable tasks automatically.
+A personal task management system where completing tasks makes the AI smarter. Kanban board frontend with a MERLIN-inspired backend: every completed task becomes a semantically indexed case study, building compounding intelligence over time.
 
-[![Made with React](https://img.shields.io/badge/React-18-61DAFB?logo=react)](https://react.dev)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.104-009688?logo=fastapi)](https://fastapi.tiangolo.com)
-[![Ollama](https://img.shields.io/badge/Ollama-Local_AI-000000)](https://ollama.com)
-[![Gemini 2.0](https://img.shields.io/badge/Gemini-2.0_Flash-4285F4?logo=google)](https://ai.google.dev)
+## Features
 
-## ✨ Key Features
+- **Kanban Board** — Drag-and-drop across To Do / Doing / Done columns
+- **Task Management** — CRUD with comments, attachments, notes, and value stream categorization
+- **Keyboard Shortcuts** — 45+ configurable shortcuts with conflict detection
+- **Search** — Semantic search across all tasks
+- **Intelligence Flywheel** — Completed tasks automatically become case studies indexed for future AI context
+- **Ask Lotus** — Collapsible AI assistant powered by Gemini 2.0 Flash + local semantic RAG
 
-### 🤖 **Lotus AI Assistant** - Phase 3
-Your personal AI task manager powered by Gemini 2.0 Flash and local LLMs:
-- **Natural conversation** - Ask questions about your tasks naturally
-- **Smart task extraction** - Automatically creates tasks from Slack, emails, PDFs
-- **Personal awareness** - Knows your name, role, projects, and markets
-- **Relevance filtering** - Only creates tasks relevant to you (70+ score)
-- **Auto-enrichment** - Updates existing tasks when new info arrives
-- **Natural comments** - No more robot emojis, just helpful context
-- **Fast & affordable** - 2-3x faster, $8/mo → $0.18/mo with Gemini
-
-### 📅 **Calendar Integration** - Phase 4
-Intelligent calendar synchronization and smart scheduling:
-- **Google Calendar sync** - Automatic event synchronization
-- **Availability analysis** - Smart scheduling based on your calendar
-- **Meeting preparation** - AI-powered meeting prep from calendar events
-- **Timezone-aware** - Handles all timezones correctly
-- **Smart blocking** - Identifies blocking events automatically
-
-### 📧 **Gmail Integration** - Phase 5
-Email-powered task management:
-- **Gmail OAuth** - Secure Google account connection
-- **Email parsing** - Intelligent email content extraction
-- **Email classification** - Automatically categorizes emails (task, FYI, question, meeting)
-- **Email-to-task** - Creates tasks directly from emails
-- **Email-to-calendar** - Converts meeting invites to calendar events
-- **Thread consolidation** - Groups related emails intelligently
-
-### 🧠 **Cognitive Nexus** - Multi-Agent AI System
-4-agent LangGraph pipeline for intelligent context processing:
-- **Context Analysis** - Determines complexity and extraction strategy
-- **Entity Extraction** - Identifies people, projects, teams, dates
-- **Relationship Synthesis** - Infers connections between entities
-- **Task Integration** - Intelligently creates, updates, or enriches tasks
-
-### 📊 **Knowledge Graph** - Cross-Context Memory
-Learns and remembers across all your conversations:
-- **Entity deduplication** - "Jef", "jef adriaenssens", "Jef A" → one person
-- **Relationship tracking** - Remembers who works on what
-- **Dynamic org learning** - Discovers team structures automatically
-- **Fuzzy matching** - Smart name and project recognition
-
-### 📝 **Rich Text Editing**
-Best-in-class formatting for tasks and notes:
-- **Slash commands** (`/`) - Quick formatting menu
-- **Markdown shortcuts** - `*` bullets, `-` lists, auto-links
-- **Word Art** - 8 retro text effects (Ocean Wave, Rainbow, Fire, etc.)
-- **Advanced formatting** - Code blocks, tables, blockquotes
-- **Table editing** - Add/delete rows and columns intuitively
-- **Slack-style links** - Select text + paste URL = instant link
-
-### ⌨️ **45+ Keyboard Shortcuts**
-Fully configurable with conflict detection:
-- `Ctrl+E` - Toggle peek/extended view
-- `Ctrl+Shift+F` - Open full page mode
-- Quick add shortcuts for all columns
-- Customizable per-user preferences
-
-### 🎯 **Smart Task Management**
-- **Kanban board** - Drag-and-drop between columns
-- **Multiple view modes** - Peek, extended, full-page
-- **Persistent storage** - SQLite with full audit trail
-- **Comments & attachments** - Rich task context
-
-### 🔒 **Privacy First**
-- 100% local processing (Ollama)
-- Optional cloud AI (Gemini) for speed
-- No data collection or tracking
-- Works offline after setup
-
-## 🚀 Quick Start
-
-### Prerequisites
-
-- **Node.js 18+** and npm
-- **Python 3.11+**
-- **Ollama** with `qwen2.5:7b-instruct` model
-- **Gemini API key** (optional, for Phase 3 features)
-
-### Installation
-
-```bash
-# 1. Install Ollama (for local AI)
-brew install ollama  # macOS
-# or download from https://ollama.com/download
-
-# Pull the model
-ollama pull qwen2.5:7b-instruct
-
-# Start Ollama (keep running)
-ollama serve
-
-# 2. Clone and install dependencies
-git clone https://github.com/yourusername/task-crate.git
-cd task-crate
-npm install
-cd backend && pip install -r requirements.txt && cd ..
-
-# 3. Configure Gemini (optional)
-cd backend
-cp .env.example .env
-# Edit .env and add your GOOGLE_AI_API_KEY
-
-# 4. Run database migrations
-python -m db.migrations.003_add_phase3_tables
-
-# 5. Start the application
-cd ..
-./start.sh
-```
-
-### First Run
-
-1. Open http://localhost:8080 in your browser
-2. Click the **"Lotus"** button (✨ emerald sparkles icon)
-3. Try this example:
-   ```
-   Meeting notes: Jef needs to share CRESCO data with Andy by Friday.
-   Sarah from Product should review the specs before we ship.
-   ```
-4. Watch Lotus automatically:
-   - Extract entities (Jef, Andy, Sarah, CRESCO, Friday)
-   - Infer relationships (who works on what)
-   - Create relevant tasks
-   - Add natural comments with context
-
-## 🏗️ Architecture
-
-```
-┌─────────────────────────────────────────────────────────┐
-│                 React Frontend (:8080)                   │
-│    • Kanban Board  • Rich Text Editor  • AI Dialogs    │
-└───────────────────────┬─────────────────────────────────┘
-                        │ REST API
-┌───────────────────────▼─────────────────────────────────┐
-│              FastAPI Backend (:8000)                     │
-│                                                          │
-│  ┌──────────────────────────────────────────────────┐  │
-│  │  Phase 3 Orchestrator (11 nodes)                │  │
-│  │  1. load_profile    → Loads user context        │  │
-│  │  2. classify        → Routes requests            │  │
-│  │  3. answer_question → Gemini Q&A                │  │
-│  │  4. run_phase1      → Cognitive Nexus agents    │  │
-│  │  5. find_tasks      → Match existing tasks      │  │
-│  │  6. check_enrichments → Find update opportunities│  │
-│  │  7. enrich_proposals → Add task metadata        │  │
-│  │  8. filter_relevance → Score 0-100, keep 70+   │  │
-│  │  9. calculate_confidence → Auto-apply threshold │  │
-│  │  10. generate_questions → Clarify if needed     │  │
-│  │  11. execute_actions → Create/update tasks      │  │
-│  └──────────────────────────────────────────────────┘  │
-│                                                          │
-│  ┌──────────────────────────────────────────────────┐  │
-│  │  Knowledge Graph + Services                      │  │
-│  │  • Entity deduplication (fuzzy matching)         │  │
-│  │  • Relationship tracking (strength scoring)      │  │
-│  │  • Performance cache (LRU + Redis)               │  │
-│  │  • User profile manager (5min TTL)               │  │
-│  └──────────────────────────────────────────────────┘  │
-└───────────────────┬──────────────────┬──────────────────┘
-                    │                  │
-        ┌───────────▼────────┐    ┌───▼──────────────┐
-        │  SQLite (tasks.db) │    │  AI Models       │
-        │  • Tasks           │    │  • Ollama (Qwen) │
-        │  • Knowledge nodes │    │  • Gemini 2.0    │
-        │  • Relationships   │    └──────────────────┘
-        │  • User profiles   │
-        └────────────────────┘
-```
-
-### Data Flow Example
-
-```
-User: "Alberto asked about pinning position 3 for pharmacies in Spain"
-  │
-  ├─> load_profile: Get Jef's context (Spain market, projects)
-  ├─> classify: Identifies as task creation request
-  ├─> run_phase1: Extract entities (Alberto, Spain, pharmacies)
-  ├─> filter_relevance: Score = 85 (Spain is your market ✓)
-  ├─> enrich_proposals: Add market tag, assignee
-  ├─> calculate_confidence: 90% → auto-create
-  └─> execute_actions: Create task + natural comment
-      "Alberto (Spain market) asked about pharmacy pinning..."
-```
-
-## 🛠️ Tech Stack
-
-### Frontend
-- **React 18** + TypeScript + Vite
-- **UI:** shadcn/ui, Radix UI, Tailwind CSS
-- **Editor:** Tiptap (ProseMirror-based)
-- **State:** TanStack Query, React hooks
+## Quick Start
 
 ### Backend
-- **FastAPI** + Python 3.11+
-- **Database:** SQLite + SQLAlchemy 2.0 (async)
-- **AI:** Ollama SDK, Gemini SDK
-- **PDF:** PyMuPDF (fitz)
-- **Graph:** LangGraph for agent orchestration
 
-### AI Models
-- **Ollama + Qwen 2.5 7B** - Local processing, 100% private
-- **Gemini 2.0 Flash** - Fast cloud processing, $0.18/month
-
-## 📚 Documentation
-
-### 🚀 Quick Start
-- **[Getting Started](./docs/GETTING_STARTED.md)** ⭐ - 5-minute setup guide
-- **[Setup Guide](./docs/SETUP.md)** - Complete installation
-- **[Ollama Setup](./docs/OLLAMA_SETUP.md)** - Dev container configuration
-
-### 🤖 Core Features
-- **[Lotus AI Assistant](./docs/guides/LOTUS_ASSISTANT.md)** - Phase 2 & 3 features
-- **[Cognitive Nexus](./docs/architecture/COGNITIVE_NEXUS.md)** - 4-agent AI system
-- **[Knowledge Graph](./docs/architecture/KNOWLEDGE_GRAPH.md)** - Cross-context memory
-- **[Task Management](./docs/guides/TASK_MANAGEMENT.md)** - Unified intelligence
-
-### 💻 Development
-- **[Development Guide](./docs/development/DEVELOPMENT_GUIDE.md)** - Architecture & workflow
-- **[Phase 3 Guide](./docs/development/PHASE3_GUIDE.md)** - Phase 3 improvements
-- **[Phase 4 Guide](./docs/development/PHASE4_GUIDE.md)** - Calendar integration & scheduling
-- **[Phase 5 Guide](./docs/PHASE5_GMAIL_SETUP.md)** - Gmail integration & OAuth setup
-- **[Code Quality Refactoring](./docs/development/CODE_QUALITY_REFACTORING.md)** - Production readiness improvements
-- **[Production Readiness](./docs/development/PRODUCTION_READINESS.md)** - Current production status
-- **[API Reference](./docs/api/API_REFERENCE.md)** - Complete endpoint docs
-- **[Project Structure](./docs/PROJECT_STRUCTURE.md)** - File organization
-
-### 📖 More
-- **[Documentation Index](./docs/INDEX.md)** - Complete navigation
-- **[Changelog](./CHANGELOG.md)** - Version history
-- **[Contributing](./CONTRIBUTING.md)** - How to contribute
-- **[API Docs (Live)](http://localhost:8000/docs)** - Swagger UI when running
-
-## 🚦 Development
-
-### Running Tests
 ```bash
+cd backend
+pip install -r requirements.txt
+cp .env.example .env        # Add your GOOGLE_AI_API_KEY
+python main.py              # Starts on :8000
+```
+
+### Frontend
+
+```bash
+npm install
+npm run dev                 # Starts on :5173
+```
+
+Open http://localhost:5173 in your browser.
+
+## Architecture
+
+```
+backend/
+  main.py                    # FastAPI app
+  api/
+    routes.py                # Task CRUD + shortcuts + value streams + AI endpoints
+    schemas.py               # Pydantic models
+  db/
+    database.py              # SQLite async engine (aiosqlite)
+    models.py                # Task, Comment, Attachment, ValueStream, ShortcutConfig
+  services/
+    gemini_client.py         # Gemini 2.0 Flash API client
+    case_memory.py           # Create case studies from completed tasks
+    semantic_rag.py          # Local embeddings + vector search (all-MiniLM-L6-v2)
+    ai_service.py            # Search cases + Gemini = contextual response
+  case_studies/              # File-based case memory (~3.5KB each)
+  scripts/
+    export_data.py           # Export all task data to JSON
+    import_data.py           # Import task data into fresh DB
+
+src/                         # React 18 + TypeScript + Vite
+  components/
+    KanbanBoard.tsx          # Main board with drag-and-drop
+    TaskCard.tsx             # Task card with badges
+    TaskDetailSheet.tsx      # Side panel for task editing
+    TaskFullPage.tsx         # Full-page task view
+    AskLotus.tsx             # Collapsible AI assist
+    QuickAddTask.tsx         # Inline task creation
+    TaskSearchBar.tsx        # Semantic search input
+    DeleteTaskDialog.tsx     # Confirmation dialog
+    ValueStreamCombobox.tsx  # Value stream picker
+    CommentItem.tsx          # Comment display/edit
+    ui/                      # shadcn/ui primitives
+  api/
+    tasks.ts                 # Task CRUD + search client
+    ai.ts                    # AI assist client
+    shortcuts.ts             # Keyboard shortcuts client
+    valueStreams.ts           # Value stream client
+  contexts/
+    ShortcutContext.tsx       # Global shortcut state
+  types/
+    task.ts                  # Task type definitions
+    shortcuts.ts             # Shortcut type definitions
+```
+
+## Intelligence Flywheel
+
+The core innovation: **doing work = getting smarter.**
+
+1. User completes a task (moves to "Done")
+2. System creates a structured case study (markdown + JSON)
+3. Case study is embedded locally using sentence-transformers (all-MiniLM-L6-v2)
+4. Vector index updated (single JSON file, no external services)
+5. Future "Ask Lotus" queries find relevant past case studies via semantic search
+6. Gemini generates responses with real context from your completed work
+
+All vector operations are local. Only AI generation calls the external Gemini API. Search runs in <100ms.
+
+## Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `GOOGLE_AI_API_KEY` | Gemini API key | (required for AI features) |
+| `GEMINI_MODEL` | Gemini model ID | `gemini-2.0-flash-exp` |
+| `DATABASE_URL` | SQLite connection | `sqlite:///./tasks.db` |
+| `API_HOST` | Backend host | `0.0.0.0` |
+| `API_PORT` | Backend port | `8000` |
+| `CORS_ORIGINS` | Allowed origins | `http://localhost:5173` |
+| `DEBUG` | Debug logging | `true` |
+
+## Data Migration
+
+If you have existing task data from a previous version:
+
+```bash
+# Export from old database (handles any schema version)
+python backend/scripts/export_data.py --db backend/tasks.db
+
+# Import into fresh v2 database
+python backend/scripts/import_data.py --input backend/data_export.json
+```
+
+## Development
+
+```bash
+# Frontend type-check + build
+npm run build
+
 # Backend tests
-cd backend && pytest tests/ -v
+cd backend && python -m pytest tests/ -v
 
-# Specific test suites
-pytest tests/test_phase3_comprehensive.py -v  # Phase 3 features
-pytest tests/test_cognitive_nexus.py -v      # AI agents
+# API docs (when backend is running)
+open http://localhost:8000/docs
 ```
 
-### Health Checks
-```bash
-# System health
-curl http://localhost:8000/api/health
+## Tech Stack
 
-# View AI reasoning
-curl http://localhost:8000/api/context/{id}/reasoning
-
-# Check Gemini usage
-curl http://localhost:8000/api/assistant/usage-stats
-```
-
-### Code Style
-- **Python:** PEP 8, type hints, async/await
-- **TypeScript:** Strict mode, functional components
-- **Commits:** Conventional commits (`feat:`, `fix:`, `docs:`)
-
-## 🤝 Contributing
-
-We welcome contributions! Please see [CONTRIBUTING.md](./CONTRIBUTING.md) for:
-- Development setup
-- Code style guidelines
-- Testing requirements
-- Pull request process
-
-### Quick Contribution Guide
-1. Fork and create feature branch: `git checkout -b feature/amazing-feature`
-2. Make changes following code style guidelines
-3. Add tests and ensure all pass
-4. Commit: `git commit -m "feat: add amazing feature"`
-5. Push and create Pull Request
-
-## 📊 Performance
-
-### Metrics (Phase 3)
-- **Latency:** 20-30s → **8-12s** (2-3x faster)
-- **Cost:** $8/mo → **$0.18/mo** (45x reduction)
-- **Accuracy:** 95% task extraction, 90% relevance filtering
-- **Cache hit rate:** >60% after warm-up
-
-### System Requirements
-- **RAM:** 8GB minimum (16GB recommended)
-- **Disk:** 10GB free space
-- **CPU:** Modern multi-core processor
-- **Network:** Internet for Gemini (optional)
-
-## 🔒 Privacy & Security
-
-- ✅ **100% local processing** with Ollama (Qwen 2.5)
-- ✅ **Optional cloud AI** with Gemini (user choice)
-- ✅ **No data collection** or tracking
-- ✅ **SQLite encryption** support ready
-- ✅ **Works offline** after initial setup
-- ⚠️ **Development mode** - Not production-hardened
-
-## 📄 License
-
-MIT License - see [LICENSE](./LICENSE) for details
-
-## 🙏 Acknowledgments
-
-- **Ollama** - Local LLM infrastructure
-- **LangGraph** - Agent orchestration framework
-- **shadcn/ui** - Beautiful component library
-- **FastAPI** - Modern Python web framework
-
----
-
-**Built with ❤️ for better task management**
+- **Frontend:** React 18, TypeScript, Vite, Tailwind CSS, shadcn/ui, TanStack Query
+- **Backend:** FastAPI, SQLAlchemy 2.0 (async), aiosqlite
+- **AI:** Gemini 2.0 Flash, sentence-transformers (local embeddings)
+- **Database:** SQLite

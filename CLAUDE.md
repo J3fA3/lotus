@@ -5,10 +5,7 @@
 **What This Project Does:**
 Lotus v2 is a personal task management system with an AI backend inspired by MERLIN (Multi-agent Executor for Recursive Logic Iteration and Navigation). The frontend is a clean Kanban task board. The backend implements an Intelligence Flywheel: every completed task becomes a case study that's semantically indexed, making the AI smarter over time.
 
-**Phase 1 Goal:**
-Fork current Lotus, strip all bloated backend (LangGraph agents, OAuth, knowledge graph, ChromaDB), strip AI-specific frontend UI, implement MERLIN flywheel foundation: Case Memory + Semantic RAG + minimal AI service.
-
-**Full Vision:**
+**Vision:**
 A task board that works for you. AI learns from every completed task, builds tools to help with future tasks, gets smarter through use. Not a chatbot — a compounding intelligence engine.
 
 ---
@@ -16,7 +13,7 @@ A task board that works for you. AI learns from every completed task, builds too
 ## Guiding Principles
 
 ### 1. Simplicity Over Sophistication
-The old Lotus was over-engineered. The new Lotus follows MERLIN: simple infrastructure, compounding intelligence through use. Every service is a plain Python module with clear functions — no state machines, no agent graphs, no orchestrators.
+Every service is a plain Python module with clear functions — no state machines, no agent graphs, no orchestrators.
 
 ### 2. Output-as-RAG: Every Completion is Learning
 When a task is marked "Done", the system creates a structured case study. This is embedded and indexed. Future tasks benefit from past completions. Doing work = getting smarter.
@@ -49,19 +46,43 @@ backend/
     semantic_rag.py          # Local embeddings + vector search
     ai_service.py            # Search cases → Gemini → response
   case_studies/              # MERLIN-style case memory (file-based)
+  scripts/
+    export_data.py           # Export all task data to JSON (any schema version)
+    import_data.py           # Import task data into v2 database
   config/
     constants.py             # App constants
 
 src/                         # Frontend (React 18 + TypeScript + Vite)
   components/
     KanbanBoard.tsx          # Main board with drag-and-drop
-    TaskCard.tsx             # Task card display
-    TaskDetailSheet.tsx      # Task detail panel
+    TaskCard.tsx             # Task card with badges
+    TaskDetailSheet.tsx      # Side panel for task editing
+    TaskFullPage.tsx         # Full-page task view
     AskLotus.tsx             # Collapsible AI assist UI
-    ui/                      # shadcn/ui components
+    QuickAddTask.tsx         # Inline task creation
+    TaskSearchBar.tsx        # Semantic search input
+    DeleteTaskDialog.tsx     # Confirmation dialog
+    ValueStreamCombobox.tsx  # Value stream picker
+    CommentItem.tsx          # Comment display/edit
+    LotusIcon.tsx            # Animated Lotus icon
+    LotusLoading.tsx         # Loading state component
+    ui/                      # shadcn/ui components (keep minimal — only add what you use)
   api/
-    tasks.ts                 # Task CRUD API client
+    tasks.ts                 # Task CRUD + search API client
     ai.ts                    # AI assist API client
+    shortcuts.ts             # Keyboard shortcuts API client
+    valueStreams.ts           # Value stream API client
+  contexts/
+    ShortcutContext.tsx       # Global shortcut state management
+  hooks/
+    useKeyboardHandler.ts    # Keyboard shortcut handling
+    use-toast.ts             # Toast notification hook
+    use-mobile.tsx           # Mobile detection hook
+  types/
+    task.ts                  # Task type definitions
+    shortcuts.ts             # Shortcut type definitions
+  lib/
+    utils.ts                 # Utility functions (cn, etc.)
 ```
 
 ## Development Workflow
@@ -77,6 +98,15 @@ npm run dev                                      # Start dev server on :5173
 npm run build                                    # Type-check + build
 ```
 
+### Data Migration
+```bash
+# Export from existing database (handles old + new schema)
+python backend/scripts/export_data.py --db backend/tasks.db
+
+# Import into fresh v2 database
+python backend/scripts/import_data.py --input backend/data_export.json
+```
+
 ### Testing
 - Backend: pytest with async fixtures
 - Frontend: TypeScript compilation via `npm run build`
@@ -84,4 +114,4 @@ npm run build                                    # Type-check + build
 ## Code Style
 - **Python:** snake_case files/functions, PascalCase classes
 - **TypeScript:** PascalCase components, camelCase utils
-- **Commits:** `[Stage X]: Brief description`
+- **shadcn/ui:** Only add components you actually import — do not bulk-install
