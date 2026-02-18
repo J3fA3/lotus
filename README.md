@@ -13,10 +13,26 @@ A personal task management system where completing tasks makes the AI smarter. K
 
 ## Quick Start
 
+### One-command local start (recommended)
+
+```bash
+./start-local.sh
+```
+
+What this does:
+- Ensures `backend/.env` exists (copies from `backend/.env.example` if missing)
+- Creates `backend/venv` and installs backend dependencies if needed
+- Installs frontend dependencies if needed
+- Starts backend and frontend for local development
+
+Your Gemini key stays local: `backend/.env` is git-ignored and will not be committed.
+
 ### Backend
 
 ```bash
 cd backend
+python3.13 -m venv venv
+source venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env        # Add your GOOGLE_AI_API_KEY
 python main.py              # Starts on :8000
@@ -30,6 +46,8 @@ npm run dev                 # Starts on :5173
 ```
 
 Open http://localhost:5173 in your browser.
+
+If port `5173` is already in use, Vite automatically selects the next available port.
 
 ## Architecture
 
