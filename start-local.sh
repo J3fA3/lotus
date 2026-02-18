@@ -88,6 +88,19 @@ port_in_use() {
   return 1
 }
 
+kill_port_listeners() {
+  local port="$1"
+  local pids
+  pids="$(lsof -nP -iTCP:"$port" -sTCP:LISTEN -t 2>/dev/null || true)"
+
+  if [[ -z "$pids" ]]; then
+    return 0
+  fi
+
+  log "Killing non-Lotus process(es) on port $port: $pids"
+  kill $pids >/dev/null 2>&1 || true
+}
+
 cleanup() {
   if [[ "$STARTED_BACKEND" == "1" && -n "$BACKEND_PID" ]]; then
     log "Stopping backend (PID $BACKEND_PID)"
@@ -112,8 +125,18 @@ main() {
   fi
 
   if port_in_use "$api_port"; then
-    log "Backend port $api_port already in use. Reusing existing backend."
-  else
+    log "Backend port $api_port already in use. Verifying existing backend."
+
+    if wait_for_backend "http://localhost:${api_port}/api/health"; then
+      log "Backend is ready at http://localhost:${api_port}"
+    else
+      log "Port $api_port is in use, but the Lotus backend is not responding."
+      kill_port_listeners "$api_port"
+      sleep 0.5
+    fi
+  fi
+
+  if ! port_in_use "$api_port"; then
     log "Starting backend on port $api_port"
     (
       cd "$BACKEND_DIR"
@@ -129,6 +152,8 @@ main() {
       log "Backend did not become ready. Check .backend.log"
       exit 1
     fi
+  else
+    log "Backend port $api_port already in use. Reusing existing backend."
   fi
 
   log "Starting frontend dev server"
