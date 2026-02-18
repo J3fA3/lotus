@@ -54,3 +54,7 @@ backend/.vector_index.json
 
 # Data export (user-specific)
 backend/data_export.json
+
+# User data directories
+backend/data/
+data/
