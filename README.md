@@ -34,7 +34,7 @@ cd backend
 python3.13 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env        # Add your GOOGLE_AI_API_KEY
+cp .env.example .env        # Add your GOOGLE_API_KEY
 python main.py              # Starts on :8000
 ```
 
@@ -112,7 +112,7 @@ All vector operations are local. Only AI generation calls the external Gemini AP
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `GOOGLE_AI_API_KEY` | Gemini API key | (required for AI features) |
+| `GOOGLE_API_KEY` | Gemini API key | (required for AI features) |
 | `GEMINI_MODEL` | Gemini model ID | `gemini-2.0-flash-exp` |
 | `DATABASE_URL` | SQLite connection | `sqlite:///./tasks.db` |
 | `API_HOST` | Backend host | `0.0.0.0` |

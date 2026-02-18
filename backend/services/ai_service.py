@@ -113,7 +113,7 @@ focused and practical (2-4 paragraphs max)."""
         fallback = (
             "No similar past tasks found and AI generation is unavailable. "
             "Complete more tasks to build up the case memory, or configure "
-            "a GOOGLE_AI_API_KEY for AI-powered assistance."
+            "a GOOGLE_API_KEY for AI-powered assistance."
         )
 
     return {

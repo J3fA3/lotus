@@ -56,9 +56,13 @@ class GeminiClient:
     """Client for Google Gemini 2.0 Flash API."""
 
     def __init__(self):
-        self.api_key = os.getenv("GOOGLE_AI_API_KEY", "")
+        # Prefer the new env var name, but allow the legacy one with a warning.
+        self.api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GOOGLE_AI_API_KEY", "")
         self.model_name = os.getenv("GEMINI_MODEL", "gemini-2.0-flash-exp")
         self.usage_stats = UsageStats()
+
+        if not os.getenv("GOOGLE_API_KEY") and os.getenv("GOOGLE_AI_API_KEY"):
+            logger.warning("GOOGLE_AI_API_KEY is deprecated; use GOOGLE_API_KEY instead")
 
         if self.api_key and self.api_key != "your_gemini_key_here":
             try:
@@ -97,7 +101,7 @@ class GeminiClient:
             Exception: If Gemini is unavailable or generation fails
         """
         if not self.available:
-            raise Exception("Gemini not available — set GOOGLE_AI_API_KEY")
+            raise Exception("Gemini not available — set GOOGLE_API_KEY")
 
         enhanced_prompt = f"""{prompt}
 
@@ -154,7 +158,7 @@ IMPORTANT: Return ONLY valid JSON matching the requested schema. Do not include 
             Exception: If Gemini is unavailable or generation fails
         """
         if not self.available:
-            raise Exception("Gemini not available — set GOOGLE_AI_API_KEY")
+            raise Exception("Gemini not available — set GOOGLE_API_KEY")
 
         loop = asyncio.get_event_loop()
         response = await loop.run_in_executor(
