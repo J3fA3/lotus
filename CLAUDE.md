@@ -63,6 +63,12 @@ src/                         # Frontend (React 18 + TypeScript + Vite)
     TaskSearchBar.tsx        # Semantic search input
     DeleteTaskDialog.tsx     # Confirmation dialog
     ValueStreamCombobox.tsx  # Value stream picker
+    RichTextEditor.tsx       # Tiptap WYSIWYG with slash commands + Word Art
+    RichTextEditorMenu.tsx   # Slash command menu with search filtering
+    WordArtExtension.tsx     # 8 retro text styles (custom Tiptap node)
+    TableMenu.tsx            # Floating table editing toolbar
+    rich-text-editor.css     # Editor + Word Art + table styling
+    UnifiedAttachments.tsx   # Smart URL attachments with clickable links
     CommentItem.tsx          # Comment display/edit
     LotusIcon.tsx            # Animated Lotus icon
     LotusLoading.tsx         # Loading state component

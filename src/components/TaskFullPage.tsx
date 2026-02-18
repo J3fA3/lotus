@@ -11,12 +11,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "./ui/select";
-import { Calendar, Paperclip, MessageSquare, Trash2, X, User, ArrowLeft, Minimize2 } from "lucide-react";
+import { Calendar, Paperclip, MessageSquare, Trash2, User, ArrowLeft, Minimize2 } from "lucide-react";
 import { ValueStreamCombobox } from "./ValueStreamCombobox";
 import { useRegisterShortcut } from "@/contexts/ShortcutContext";
 import { DeleteTaskDialog } from "./DeleteTaskDialog";
 import { CommentItem } from "./CommentItem";
 import { AskLotus } from "./AskLotus";
+import { RichTextEditor } from "./RichTextEditor";
+import { UnifiedAttachments } from "./UnifiedAttachments";
 
 interface TaskFullPageProps {
   task: Task;
@@ -39,8 +41,8 @@ export const TaskFullPage = ({
     attachments: task.attachments || [],
   });
   const [newComment, setNewComment] = useState("");
-  const [newAttachment, setNewAttachment] = useState("");
   const [isExiting, setIsExiting] = useState(false);
+  const [resetKey, setResetKey] = useState(0);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const notesRef = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLDivElement>(null);
@@ -79,6 +81,7 @@ export const TaskFullPage = ({
         comments: task.comments || [],
         attachments: task.attachments || [],
       });
+      setResetKey(prev => prev + 1);
     }
   }, [task.updatedAt]);
 
@@ -104,6 +107,13 @@ export const TaskFullPage = ({
     setTimeout(() => {
       const element = sectionRef.current;
       if (!element) return;
+
+      // For contenteditable elements (RichTextEditor)
+      const contentEditable = element.querySelector('[contenteditable="true"]') as HTMLElement;
+      if (contentEditable) {
+        contentEditable.focus();
+        return;
+      }
 
       // For Textarea elements
       const textarea = element.querySelector('textarea') as HTMLTextAreaElement;
@@ -148,6 +158,11 @@ export const TaskFullPage = ({
   useRegisterShortcut('focus_notes', () => {
     notesRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
     setTimeout(() => {
+      const contentEditable = notesRef.current?.querySelector('[contenteditable="true"]') as HTMLElement;
+      if (contentEditable) {
+        contentEditable.focus();
+        return;
+      }
       const textarea = notesRef.current?.querySelector('textarea') as HTMLTextAreaElement;
       if (textarea) {
         textarea.focus();
@@ -200,20 +215,20 @@ export const TaskFullPage = ({
     handleUpdate({ comments: updatedComments });
   }, [editedTask.comments, handleUpdate]);
 
-  const handleAddAttachment = () => {
-    const trimmedUrl = newAttachment.trim();
-    if (!trimmedUrl) {
-      return;
-    }
-    
-    handleUpdate({ attachments: [...(editedTask.attachments || []), trimmedUrl] });
-    setNewAttachment("");
-  };
+  const handleAddAttachment = useCallback((url: string) => {
+    handleUpdate({ attachments: [...(editedTask.attachments || []), url] });
+  }, [editedTask.attachments, handleUpdate]);
 
-  const handleRemoveAttachment = (index: number) => {
+  const handleRemoveAttachment = useCallback((index: number) => {
     const updatedAttachments = (editedTask.attachments || []).filter((_, i) => i !== index);
     handleUpdate({ attachments: updatedAttachments });
-  };
+  }, [editedTask.attachments, handleUpdate]);
+
+  const handleEditAttachment = useCallback((index: number, newUrl: string) => {
+    const updatedAttachments = [...(editedTask.attachments || [])];
+    updatedAttachments[index] = newUrl;
+    handleUpdate({ attachments: updatedAttachments });
+  }, [editedTask.attachments, handleUpdate]);
 
   return (
     <div 
@@ -268,11 +283,12 @@ export const TaskFullPage = ({
         <div className="space-y-12">
           {/* Title */}
           <div ref={titleRef}>
-            <Input
-              value={editedTask.title}
-              onChange={(e) => handleUpdate({ title: e.target.value })}
+            <RichTextEditor
+              content={editedTask.title}
+              onChange={(content) => handleUpdate({ title: content })}
+              variant="title"
               placeholder="Task title"
-              className="text-5xl font-semibold border-0 border-b border-border/50 rounded-none px-0 h-auto py-2 focus-visible:ring-0 focus-visible:border-primary/50"
+              resetKey={resetKey}
             />
           </div>
 
@@ -360,11 +376,12 @@ export const TaskFullPage = ({
               Description
             </Label>
             <div ref={descriptionRef}>
-              <Textarea
-                value={editedTask.description || ""}
-                onChange={(e) => handleUpdate({ description: e.target.value })}
+              <RichTextEditor
+                content={editedTask.description || ""}
+                onChange={(content) => handleUpdate({ description: content })}
+                variant="full"
                 placeholder="Add a detailed description..."
-                className="min-h-[120px] border-border/50 focus:border-primary/50 transition-[border-color] duration-150"
+                resetKey={resetKey}
               />
             </div>
           </div>
@@ -375,41 +392,12 @@ export const TaskFullPage = ({
               <Paperclip className="h-4 w-4 opacity-60" />
               Attachments
             </Label>
-            <div className="flex gap-2">
-              <Input
-                value={newAttachment}
-                onChange={(e) => setNewAttachment(e.target.value)}
-                placeholder="Paste attachment URL..."
-                className="h-11 border-border/50 focus:border-primary/50 transition-[border-color] duration-150"
-              />
-              <Button
-                onClick={handleAddAttachment}
-                size="sm"
-                className="h-11 px-6 bg-primary hover:bg-primary/90 transition-colors duration-150"
-              >
-                Add
-              </Button>
-            </div>
-            {editedTask.attachments.length > 0 && (
-              <div className="space-y-2">
-                {editedTask.attachments.map((attachment, index) => (
-                  <div
-                    key={index}
-                    className="flex items-center justify-between p-3 bg-muted/30 rounded-lg border border-border/20 group hover:border-border/40 transition-[border-color] duration-150"
-                  >
-                    <span className="text-sm truncate text-muted-foreground">{attachment}</span>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => handleRemoveAttachment(index)}
-                      className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity duration-150"
-                    >
-                      <X className="h-4 w-4" />
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            )}
+            <UnifiedAttachments
+              attachments={editedTask.attachments}
+              onAddAttachment={handleAddAttachment}
+              onRemoveAttachment={handleRemoveAttachment}
+              onEditAttachment={handleEditAttachment}
+            />
           </div>
 
           {/* Comments Section - Full Width, Chat-style */}
@@ -460,11 +448,13 @@ export const TaskFullPage = ({
               Notes
             </Label>
             <div ref={notesRef}>
-              <Textarea
-                value={editedTask.notes || ""}
-                onChange={(e) => handleUpdate({ notes: e.target.value })}
+              <RichTextEditor
+                content={editedTask.notes || ""}
+                onChange={(content) => handleUpdate({ notes: content })}
+                variant="full"
                 placeholder="Write your notes, thoughts, or documentation here..."
-                className="min-h-[500px] border-border/50 focus:border-primary/50 transition-[border-color] duration-150"
+                className="min-h-[500px]"
+                resetKey={resetKey}
               />
             </div>
             <span className="text-xs text-muted-foreground">Ctrl+D to focus notes • Ctrl+Tab to cycle through sections</span>

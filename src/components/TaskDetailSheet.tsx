@@ -9,6 +9,8 @@ import {
 import { Input } from "./ui/input";
 import { Textarea } from "./ui/textarea";
 import { Button } from "./ui/button";
+import { RichTextEditor } from "./RichTextEditor";
+import { UnifiedAttachments } from "./UnifiedAttachments";
 import { Label } from "./ui/label";
 import {
   Select,
@@ -84,6 +86,7 @@ export const TaskDetailSheet = ({
   const previousTaskIdRef = useRef<string>(task.id);
   const [currentSectionIndex, setCurrentSectionIndex] = useState(0);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [resetKey, setResetKey] = useState(0);
 
   // Track last update timestamp to prevent feedback loops
   const lastExternalUpdateRef = useRef<string>("");
@@ -111,6 +114,7 @@ export const TaskDetailSheet = ({
         lastExternalUpdateRef.current = task.updatedAt || "";
         localUpdateInProgressRef.current = false;
         localUpdateTimestampRef.current = "";
+        setResetKey(prev => prev + 1);
         setIsTransitioning(false);
       }, 150);
 
@@ -192,7 +196,12 @@ export const TaskDetailSheet = ({
       const element = sectionRef.current;
       if (!element) return;
 
-      // For Textarea elements
+      // For RichTextEditor (contenteditable) or Textarea elements
+      const contentEditable = element.querySelector('[contenteditable="true"]') as HTMLElement;
+      if (contentEditable) {
+        contentEditable.focus();
+        return;
+      }
       const textarea = element.querySelector('textarea') as HTMLTextAreaElement;
       if (textarea) {
         textarea.focus();
@@ -246,6 +255,11 @@ export const TaskDetailSheet = ({
     if (open) {
       notesRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
       setTimeout(() => {
+        const editable = notesRef.current?.querySelector('[contenteditable="true"]') as HTMLElement;
+        if (editable) {
+          editable.focus();
+          return;
+        }
         const textarea = notesRef.current?.querySelector('textarea') as HTMLTextAreaElement;
         if (textarea) {
           textarea.focus();
@@ -479,11 +493,13 @@ export const TaskDetailSheet = ({
             <div className="space-y-8 animate-in fade-in duration-200">
               {/* Title */}
               <div ref={titleRef}>
-                <Input
-                  value={editedTask.title}
-                  onChange={(e) => handleUpdate({ title: e.target.value })}
+                <RichTextEditor
+                  content={editedTask.title}
+                  onChange={(content) => handleUpdate({ title: content })}
                   placeholder="Task title"
-                  className="text-3xl font-semibold border-0 border-b border-border/50 rounded-none px-0 h-auto py-2 focus-visible:ring-0 focus-visible:border-primary/50 transition-all duration-[400ms] ease-butter"
+                  variant="title"
+                  resetKey={resetKey}
+                  className="text-3xl font-semibold"
                 />
               </div>
 
@@ -590,11 +606,13 @@ export const TaskDetailSheet = ({
               Description
             </Label>
             <div ref={descriptionRef}>
-              <Textarea
-                value={editedTask.description || ""}
-                onChange={(e) => handleUpdate({ description: e.target.value })}
+              <RichTextEditor
+                content={editedTask.description || ""}
+                onChange={(content) => handleUpdate({ description: content })}
                 placeholder="Add a detailed description..."
-                className="min-h-[100px] border-border/50 focus:border-primary/50 transition-[border-color] duration-150"
+                variant="full"
+                resetKey={resetKey}
+                className="min-h-[100px]"
               />
             </div>
           </div>
@@ -605,39 +623,12 @@ export const TaskDetailSheet = ({
               <Paperclip className="h-3.5 w-3.5 opacity-60" />
               Attachments
             </Label>
-            <div className="space-y-2">
-              {editedTask.attachments.map((attachment, index) => (
-                <div
-                  key={index}
-                  className="flex items-center justify-between p-2 bg-muted/30 rounded-lg border border-border/20 group hover:border-border/40 transition-[border-color] duration-150"
-                >
-                  <span className="text-sm truncate text-muted-foreground">{attachment}</span>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => handleRemoveAttachment(index)}
-                    className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity duration-150"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
-              ))}
-              <div className="flex gap-2">
-                <Input
-                  placeholder="Paste attachment URL..."
-                  className="h-9 border-border/50 focus:border-primary/50 transition-[border-color] duration-150"
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      const input = e.target as HTMLInputElement;
-                      if (input.value.trim()) {
-                        handleAddAttachment(input.value.trim());
-                        input.value = '';
-                      }
-                    }
-                  }}
-                />
-              </div>
-            </div>
+            <UnifiedAttachments
+              attachments={editedTask.attachments}
+              onAddAttachment={handleAddAttachment}
+              onRemoveAttachment={handleRemoveAttachment}
+              onEditAttachment={handleEditAttachment}
+            />
           </div>
 
           {/* Comments - Chat-style */}
@@ -698,11 +689,13 @@ export const TaskDetailSheet = ({
               Notes
             </Label>
             <div ref={notesRef}>
-              <Textarea
-                value={editedTask.notes || ""}
-                onChange={(e) => handleUpdate({ notes: e.target.value })}
+              <RichTextEditor
+                content={editedTask.notes || ""}
+                onChange={(content) => handleUpdate({ notes: content })}
                 placeholder="Write your notes, thoughts, or documentation here..."
-                className={`border-border/50 focus:border-primary/50 transition-[border-color] duration-150 ${isExpanded ? "min-h-[500px]" : "min-h-[400px]"}`}
+                variant="full"
+                resetKey={resetKey}
+                className={isExpanded ? "min-h-[500px]" : "min-h-[400px]"}
               />
             </div>
             <span className="text-xs text-muted-foreground">Ctrl+D to focus notes • Ctrl+Tab to cycle through sections</span>
