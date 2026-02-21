@@ -11,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "./ui/select";
-import { Calendar, Paperclip, MessageSquare, Trash2, User, ArrowLeft, Minimize2, ScrollText } from "lucide-react";
+import { Calendar, Paperclip, MessageSquare, Trash2, User, ArrowLeft, Minimize2, ScrollText, Send } from "lucide-react";
 import { ValueStreamCombobox } from "./ValueStreamCombobox";
 import { useRegisterShortcut } from "@/contexts/ShortcutContext";
 import { DeleteTaskDialog } from "./DeleteTaskDialog";
@@ -374,7 +374,7 @@ export const TaskFullPage = ({
           </div>
 
           {/* Comments Section - Full Width, Chat-style */}
-          <div className="space-y-4">
+          <div className="space-y-3">
             <Label className="flex items-center gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
               <MessageSquare className="h-3.5 w-3.5 opacity-60" />
               Comments
@@ -392,25 +392,38 @@ export const TaskFullPage = ({
                 ))}
               </div>
             )}
-            <div className="flex gap-3 items-start">
-              <div className="flex-shrink-0 w-8 h-8 rounded-full bg-muted flex items-center justify-center mt-1">
+            <div className="flex gap-3 items-center">
+              <div className="flex-shrink-0 w-8 h-8 rounded-full bg-muted flex items-center justify-center">
                 <User className="h-4 w-4 text-muted-foreground" />
               </div>
-              <div className="flex-1" ref={commentsRef}>
+              <div
+                ref={commentsRef}
+                className="flex-1 group relative flex items-center gap-2 pl-4 pr-2 py-2.5 rounded-2xl border border-border/40 bg-muted/20 hover:border-border/70 focus-within:border-primary/40 focus-within:bg-background transition-all duration-300"
+                onKeyDown={(e) => {
+                  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+                    e.preventDefault();
+                    handleAddComment();
+                  }
+                }}
+              >
                 <Textarea
                   value={newComment}
                   onChange={(e) => setNewComment(e.target.value)}
-                  placeholder="Add a comment..."
-                  className="border-0 border-b rounded-none min-h-[60px]"
+                  placeholder="Add a comment… ⌘↵ to post"
+                  className="flex-1 border-0 bg-transparent focus-visible:ring-0 shadow-none resize-none min-h-[22px] max-h-[120px] p-0 m-0 text-sm leading-relaxed"
+                  rows={1}
                 />
-                <Button
+                <button
                   onClick={handleAddComment}
-                  size="sm"
-                  className="mt-2 h-8"
                   disabled={!newComment.trim()}
+                  className={`flex-shrink-0 h-9 w-9 rounded-full flex items-center justify-center transition-all duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] ${newComment.trim()
+                      ? 'opacity-100 scale-100 bg-primary text-primary-foreground shadow-md hover:scale-110 active:scale-95 cursor-pointer pointer-events-auto'
+                      : 'opacity-0 scale-75 bg-transparent text-transparent pointer-events-none'
+                    }`}
+                  aria-label="Post comment"
                 >
-                  Comment
-                </Button>
+                  <Send className="h-4 w-4 transform translate-x-[1px]" />
+                </button>
               </div>
             </div>
           </div>
