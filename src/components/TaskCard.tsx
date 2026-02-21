@@ -17,6 +17,7 @@ export const TaskCard = ({ task, onClick, onDragStart }: TaskCardProps) => {
       draggable
       onDragStart={onDragStart}
       onClick={onClick}
+      data-task-id={task.id}
     >
       <h3
         className="font-medium text-[15px] text-card-foreground mb-3 leading-snug tracking-tight group-hover:text-primary transition-colors duration-300"
@@ -25,8 +26,8 @@ export const TaskCard = ({ task, onClick, onDragStart }: TaskCardProps) => {
 
       <div className="space-y-2.5">
         {task.valueStream && (
-          <Badge 
-            variant="secondary" 
+          <Badge
+            variant="secondary"
             className="text-[11px] px-2.5 py-0.5 font-medium bg-accent text-accent-foreground border-0"
           >
             {task.valueStream}

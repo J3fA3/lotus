@@ -13,6 +13,8 @@ import { toast } from "sonner";
 import * as tasksApi from "@/api/tasks";
 import { useRegisterShortcut, useShortcuts } from "@/contexts/ShortcutContext";
 import { getShortcutDisplay } from "@/hooks/useKeyboardHandler";
+import { triggerTaskCompletionConfetti } from "@/utils/confetti";
+
 
 // Constants
 const COLUMNS: { id: TaskStatus; title: string }[] = [
@@ -69,7 +71,7 @@ export const KanbanBoard = () => {
   const [navigationMode, setNavigationMode] = useState(false); // Track if we're in keyboard navigation mode
   const [taskToDelete, setTaskToDelete] = useState<Task | null>(null);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  
+
   // Track newly created tasks for animation
   const [newlyCreatedTaskIds, setNewlyCreatedTaskIds] = useState<Set<string>>(new Set());
   // Track which column just had a task added (for column highlight animation)
@@ -102,13 +104,13 @@ export const KanbanBoard = () => {
 
   const loadTasks = useCallback(async () => {
     setIsLoading(true);
-    
+
     // Safety timeout: ensure loading state is always cleared after 15 seconds
     const safetyTimeout = setTimeout(() => {
       setIsLoading(false);
       console.warn("Task loading timeout - clearing loading state");
     }, 15000);
-    
+
     try {
       const fetchedTasks = await tasksApi.fetchTasks();
       clearTimeout(safetyTimeout);
@@ -246,10 +248,10 @@ export const KanbanBoard = () => {
   // Auto-scroll focused task into view during keyboard navigation
   useEffect(() => {
     if (!navigationMode) return;
-    
+
     const focusedTask = getFocusedTask();
     if (!focusedTask) return;
-    
+
     // Small delay to ensure DOM is updated after state change
     requestAnimationFrame(() => {
       // When at the first task, scroll the board header into view
@@ -261,7 +263,7 @@ export const KanbanBoard = () => {
         });
         return;
       }
-      
+
       // For other tasks, scroll the task element into view
       const taskElement = document.querySelector(`[data-task-id="${focusedTask.id}"]`);
       if (taskElement) {
@@ -335,16 +337,16 @@ export const KanbanBoard = () => {
       const statusOrder: TaskStatus[] = ["todo", "doing", "done"];
       const currentIndex = statusOrder.indexOf(task.status);
       const nextStatus = statusOrder[(currentIndex + 1) % statusOrder.length];
-      
+
       // Auto-set start date when moving from todo to doing
       const updatedTask = { ...task, status: nextStatus };
       if (shouldAutoSetStartDate(task.status, nextStatus, task.startDate)) {
         updatedTask.startDate = getTodayDateString();
       }
-      
+
       // Update the task
       handleUpdateTask(updatedTask);
-      
+
       // Update focused task state to track the moved task's new position
       const newColumnIndex = COLUMNS.findIndex(col => col.id === nextStatus);
       if (newColumnIndex !== -1) {
@@ -359,7 +361,7 @@ export const KanbanBoard = () => {
           }
         }, 0);
       }
-      
+
       toast.success(`Moved to ${COLUMNS.find(c => c.id === nextStatus)?.title}`, { duration: TOAST_DURATION.SHORT });
     }
   });
@@ -410,15 +412,15 @@ export const KanbanBoard = () => {
   const handleTaskClick = (task: Task, columnIndex?: number, taskIndex?: number) => {
     // Update task first (triggers skeleton if different task)
     setSelectedTask(task);
-    
+
     // Only open dialog if it's closed, otherwise just switch the task
     if (!isDialogOpen) {
       setIsDialogOpen(true);
     }
-    
+
     // Enable navigation mode and set focus to clicked task
     setNavigationMode(true);
-    
+
     // If column and task indices provided, use them; otherwise find them
     if (columnIndex !== undefined && taskIndex !== undefined) {
       setFocusedColumn(columnIndex);
@@ -426,7 +428,7 @@ export const KanbanBoard = () => {
     } else {
       // Find the task's position using getColumnTasks for consistent sorting
       const foundColumn = COLUMNS.findIndex(col => col.id === task.status);
-      
+
       if (foundColumn !== -1) {
         // Use getColumnTasks to ensure we get the same sorted order as rendered
         const columnTasks = getColumnTasks(foundColumn);
@@ -444,28 +446,28 @@ export const KanbanBoard = () => {
         status,
         assignee: "You",
       });
-      
+
       // Find the column index for the new task
       const columnIndex = COLUMNS.findIndex(col => col.id === status);
-      
+
       // New task will be at index 0 (top of the column) since we sort by newest first
       const newTaskIndex = 0;
-      
+
       // Mark task as newly created for animation
       setNewlyCreatedTaskIds((prev) => new Set([...prev, newTask.id]));
-      
+
       // Highlight the column to make it obvious where the task was created
       setHighlightedColumn(status);
-      
+
       // Add task to state (will appear at top due to sorting)
       setTasks((prev) => [...prev, newTask]);
       setQuickAddColumn(null);
-      
+
       // Set focus and navigation state immediately
       setFocusedColumn(columnIndex);
       setFocusedTaskIndex(newTaskIndex);
       setNavigationMode(true);
-      
+
       // Delay opening the detail sheet to let the card animation play first
       // This creates a smooth, coordinated animation sequence
       // The card slides in over 500ms, so we start opening the sheet at 200ms for overlap
@@ -473,7 +475,7 @@ export const KanbanBoard = () => {
         setSelectedTask(newTask);
         setIsDialogOpen(true);
       }, 200); // Coordinated delay - card animation starts, then sheet slides in
-      
+
       // Remove the "newly created" flag after animation completes
       setTimeout(() => {
         setNewlyCreatedTaskIds((prev) => {
@@ -483,7 +485,7 @@ export const KanbanBoard = () => {
         });
         setHighlightedColumn(null); // Remove column highlight
       }, 1200); // Remove after all animations complete (card + sheet + column highlight)
-      
+
       toast.success("Task added", { duration: TOAST_DURATION.SHORT });
     } catch (err) {
       console.error("Failed to create task:", err);
@@ -505,9 +507,9 @@ export const KanbanBoard = () => {
         originalTask = prev.find(t => t.id === updatedTask.id);
         return prev; // Don't modify, just read
       });
-      
+
       const statusChanged = originalTask && originalTask.status !== updatedTask.status;
-      
+
       // Build update data - only include fields that should be sent to API
       // Don't send id, createdAt, updatedAt, etc. as those are managed by the backend
       const updateData: Partial<Task> = {
@@ -522,17 +524,21 @@ export const KanbanBoard = () => {
         comments: updatedTask.comments,
         attachments: updatedTask.attachments,
       };
-      
+
       // Auto-set start date when moving from todo to doing
       if (originalTask && shouldAutoSetStartDate(originalTask.status, updatedTask.status, originalTask.startDate)) {
         updateData.startDate = getTodayDateString();
         updatedTask = { ...updatedTask, startDate: updateData.startDate };
       }
-      
+
       const response = await tasksApi.updateTask(updatedTask.id, updateData);
       setTasks((prev) => prev.map((t) => (t.id === updatedTask.id ? response : t)));
       setSelectedTask(response);
-      
+
+      if (statusChanged && updatedTask.status === "done") {
+        triggerTaskCompletionConfetti(updatedTask.id);
+      }
+
       // If status changed, update focused task state to track the moved task's new position
       if (statusChanged) {
         const newColumnIndex = COLUMNS.findIndex(col => col.id === updatedTask.status);
@@ -605,11 +611,15 @@ export const KanbanBoard = () => {
     if (shouldAutoSetStartDate(draggedTask.status, status, draggedTask.startDate)) {
       updateData.startDate = getTodayDateString();
     }
-    
+
     try {
       const updatedTask = await tasksApi.updateTask(draggedTask.id, updateData);
       setTasks((prev) => prev.map((t) => (t.id === draggedTask.id ? updatedTask : t)));
-      
+
+      if (status === "done" && draggedTask.status !== "done") {
+        triggerTaskCompletionConfetti(draggedTask.id);
+      }
+
       // Update focused task state to track the moved task's new position
       const newColumnIndex = COLUMNS.findIndex(col => col.id === status);
       if (newColumnIndex !== -1) {
@@ -634,7 +644,7 @@ export const KanbanBoard = () => {
           });
         }, 0);
       }
-      
+
       toast.success("Task moved", { duration: TOAST_DURATION.SHORT });
     } catch (err) {
       console.error("Failed to update task:", err);
@@ -663,8 +673,8 @@ export const KanbanBoard = () => {
 
     // Check for conflicts with existing shortcuts
     const newKey = e.key.toLowerCase();
-    const conflictingShortcut = shortcuts.find(s => 
-      s.id !== shortcutId && 
+    const conflictingShortcut = shortcuts.find(s =>
+      s.id !== shortcutId &&
       s.enabled &&
       s.key.toLowerCase() === newKey &&
       JSON.stringify(s.modifiers.sort()) === JSON.stringify(modifiers.sort())
@@ -892,101 +902,98 @@ export const KanbanBoard = () => {
         )}
 
         {!isLoading && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-          {COLUMNS.map((column, columnIndex) => {
-            const columnTasks = getColumnTasks(columnIndex);
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+            {COLUMNS.map((column, columnIndex) => {
+              const columnTasks = getColumnTasks(columnIndex);
 
-            return (
-            <div
-              key={column.id}
-              className={`flex flex-col bg-column-bg rounded-2xl p-3 min-h-[70vh] transition-all duration-500 ${
-                highlightedColumn === column.id 
-                  ? 'ring-2 ring-primary/60 ring-offset-2 shadow-lg shadow-primary/20 bg-primary/5' 
-                  : ''
-              }`}
-              style={{
-                ...(highlightedColumn === column.id ? {
-                  animation: 'columnPulse 1.2s ease-in-out',
-                } : {}),
-              }}
-              onDragOver={handleDragOver}
-              onDrop={() => handleDrop(column.id)}
-            >
-              <div className="flex items-center justify-between px-2 py-3 mb-2">
-                <div className="flex items-center gap-2.5">
-                  <h2 className="text-xs font-semibold text-foreground/70 uppercase tracking-wider">
-                    {column.title}
-                  </h2>
-                  <span className="text-xs text-muted-foreground font-medium bg-background/60 px-2 py-0.5 rounded-full">
-                    {columnTasks.length}
-                  </span>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7 hover:bg-background/60 rounded-lg transition-colors"
-                  onClick={() => handleAddTask(column.id)}
+              return (
+                <div
+                  key={column.id}
+                  className={`flex flex-col bg-column-bg rounded-2xl p-3 min-h-[70vh] transition-all duration-500 ${highlightedColumn === column.id
+                      ? 'ring-2 ring-primary/60 ring-offset-2 shadow-lg shadow-primary/20 bg-primary/5'
+                      : ''
+                    }`}
+                  style={{
+                    ...(highlightedColumn === column.id ? {
+                      animation: 'columnPulse 1.2s ease-in-out',
+                    } : {}),
+                  }}
+                  onDragOver={handleDragOver}
+                  onDrop={() => handleDrop(column.id)}
                 >
-                  <Plus className="h-3.5 w-3.5" />
-                </Button>
-              </div>
+                  <div className="flex items-center justify-between px-2 py-3 mb-2">
+                    <div className="flex items-center gap-2.5">
+                      <h2 className="text-xs font-semibold text-foreground/70 uppercase tracking-wider">
+                        {column.title}
+                      </h2>
+                      <span className="text-xs text-muted-foreground font-medium bg-background/60 px-2 py-0.5 rounded-full">
+                        {columnTasks.length}
+                      </span>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 hover:bg-background/60 rounded-lg transition-colors"
+                      onClick={() => handleAddTask(column.id)}
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
 
-              <div className="space-y-2.5 flex-1 px-1">
-                {quickAddColumn === column.id && (
-                  <QuickAddTask
-                    onAdd={(title) => handleQuickAddTask(column.id, title)}
-                    onCancel={() => setQuickAddColumn(null)}
-                  />
-                )}
-                {columnTasks.map((task, taskIndex) => {
-                    const isFocused = navigationMode &&
-                                     columnIndex === focusedColumn &&
-                                     taskIndex === focusedTaskIndex;
-                    const isNewlyCreated = newlyCreatedTaskIds.has(task.id);
-                    // If a new task was added to this column and this isn't the new task, animate shift down
-                    // Only shift tasks that come after the new task (new task is at index 0, so shift index > 0)
-                    const shouldShiftDown = highlightedColumn === column.id && !isNewlyCreated && taskIndex > 0;
+                  <div className="space-y-2.5 flex-1 px-1">
+                    {quickAddColumn === column.id && (
+                      <QuickAddTask
+                        onAdd={(title) => handleQuickAddTask(column.id, title)}
+                        onCancel={() => setQuickAddColumn(null)}
+                      />
+                    )}
+                    {columnTasks.map((task, taskIndex) => {
+                      const isFocused = navigationMode &&
+                        columnIndex === focusedColumn &&
+                        taskIndex === focusedTaskIndex;
+                      const isNewlyCreated = newlyCreatedTaskIds.has(task.id);
+                      // If a new task was added to this column and this isn't the new task, animate shift down
+                      // Only shift tasks that come after the new task (new task is at index 0, so shift index > 0)
+                      const shouldShiftDown = highlightedColumn === column.id && !isNewlyCreated && taskIndex > 0;
 
-                    return (
-                      <div
-                        key={task.id}
-                        data-task-id={task.id}
-                        className={`transition-all duration-200 ${
-                          isFocused ? 'ring-2 ring-primary ring-offset-2 rounded-lg' : ''
-                        }`}
-                        style={{
-                          ...(shouldShiftDown ? {
-                            animation: 'task-shift-down 0.5s cubic-bezier(0.16, 1, 0.3, 1)',
-                          } : {}),
-                        }}
-                      >
+                      return (
                         <div
-                          className={`relative ${
-                            isNewlyCreated 
-                              ? 'ring-2 ring-primary/40 ring-offset-1 rounded-lg shadow-lg shadow-primary/10' 
-                              : ''
-                          }`}
+                          key={task.id}
+                          data-task-id={task.id}
+                          className={`transition-all duration-200 ${isFocused ? 'ring-2 ring-primary ring-offset-2 rounded-lg' : ''
+                            }`}
                           style={{
-                            ...(isNewlyCreated ? {
-                              animation: 'task-slide-in 0.5s cubic-bezier(0.16, 1, 0.3, 1), task-pulse 1.5s ease-in-out 2',
-                              transformOrigin: 'top center',
+                            ...(shouldShiftDown ? {
+                              animation: 'task-shift-down 0.5s cubic-bezier(0.16, 1, 0.3, 1)',
                             } : {}),
                           }}
                         >
-                          <TaskCard
-                            task={task}
-                            onClick={() => handleTaskClick(task, columnIndex, taskIndex)}
-                            onDragStart={() => handleDragStart(task)}
-                          />
+                          <div
+                            className={`relative ${isNewlyCreated
+                                ? 'ring-2 ring-primary/40 ring-offset-1 rounded-lg shadow-lg shadow-primary/10'
+                                : ''
+                              }`}
+                            style={{
+                              ...(isNewlyCreated ? {
+                                animation: 'task-slide-in 0.5s cubic-bezier(0.16, 1, 0.3, 1), task-pulse 1.5s ease-in-out 2',
+                                transformOrigin: 'top center',
+                              } : {}),
+                            }}
+                          >
+                            <TaskCard
+                              task={task}
+                              onClick={() => handleTaskClick(task, columnIndex, taskIndex)}
+                              onDragStart={() => handleDragStart(task)}
+                            />
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })}
-              </div>
-            </div>
-            );
-          })}
-        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         )}
       </div>
 

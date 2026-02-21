@@ -11,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "./ui/select";
-import { Calendar, Paperclip, MessageSquare, Trash2, User, ArrowLeft, Minimize2 } from "lucide-react";
+import { Calendar, Paperclip, MessageSquare, Trash2, User, ArrowLeft, Minimize2, ScrollText } from "lucide-react";
 import { ValueStreamCombobox } from "./ValueStreamCombobox";
 import { useRegisterShortcut } from "@/contexts/ShortcutContext";
 import { DeleteTaskDialog } from "./DeleteTaskDialog";
@@ -48,7 +48,6 @@ export const TaskFullPage = ({
   const titleRef = useRef<HTMLDivElement>(null);
   const descriptionRef = useRef<HTMLDivElement>(null);
   const statusRef = useRef<HTMLButtonElement>(null);
-  const assigneeRef = useRef<HTMLInputElement>(null);
   const commentsRef = useRef<HTMLDivElement>(null);
   const startDateRef = useRef<HTMLInputElement>(null);
   const dueDateRef = useRef<HTMLInputElement>(null);
@@ -231,17 +230,16 @@ export const TaskFullPage = ({
   }, [editedTask.attachments, handleUpdate]);
 
   return (
-    <div 
-      className={`fixed inset-0 z-50 bg-background overflow-y-auto will-change-[transform,opacity] ${
-        isExiting 
-          ? "animate-view-morph-out" 
-          : "animate-view-morph-in"
-      }`}
+    <div
+      className={`fixed inset-0 z-50 bg-background overflow-y-auto will-change-[transform,opacity] ${isExiting
+        ? "animate-view-morph-out"
+        : "animate-view-morph-in"
+        }`}
       style={{
         transform: isExiting ? "scale(0.98) translateZ(0)" : "scale(1) translateZ(0)",
         opacity: isExiting ? 0 : 1,
-        transition: isExiting 
-          ? "opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1), transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)" 
+        transition: isExiting
+          ? "opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1), transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)"
           : "opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1), transform 0.4s cubic-bezier(0.16, 1, 0.3, 1)",
         backfaceVisibility: "hidden",
         WebkitBackfaceVisibility: "hidden",
@@ -289,11 +287,12 @@ export const TaskFullPage = ({
               variant="title"
               placeholder="Task title"
               resetKey={resetKey}
+              className="text-4xl font-semibold tracking-tight"
             />
           </div>
 
           {/* Properties Grid */}
-          <div className="grid grid-cols-3 gap-8">
+          <div className="grid grid-cols-2 gap-8">
             <div className="space-y-3">
               <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                 Status
@@ -322,19 +321,6 @@ export const TaskFullPage = ({
                 onChange={(value) => handleUpdate({ valueStream: value })}
                 placeholder="Select or create value stream..."
                 className="w-full"
-              />
-            </div>
-
-            <div className="space-y-3">
-              <Label className="flex items-center gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                <User className="h-3.5 w-3.5 opacity-60" />
-                Assignee
-              </Label>
-              <Input
-                ref={assigneeRef}
-                value={editedTask.assignee}
-                onChange={(e) => handleUpdate({ assignee: e.target.value })}
-                className="h-11 border-border/50 focus:border-primary/50 transition-[border-color] duration-150"
               />
             </div>
           </div>
@@ -372,7 +358,7 @@ export const TaskFullPage = ({
 
           {/* Description */}
           <div className="space-y-4">
-            <Label className="text-sm font-semibold text-foreground">
+            <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
               Description
             </Label>
             <div ref={descriptionRef}>
@@ -382,28 +368,15 @@ export const TaskFullPage = ({
                 variant="full"
                 placeholder="Add a detailed description..."
                 resetKey={resetKey}
+                className="min-h-[60px]"
               />
             </div>
           </div>
 
-          {/* Attachments Section - Full Width */}
-          <div className="space-y-4">
-            <Label className="flex items-center gap-2 text-sm font-semibold text-foreground">
-              <Paperclip className="h-4 w-4 opacity-60" />
-              Attachments
-            </Label>
-            <UnifiedAttachments
-              attachments={editedTask.attachments}
-              onAddAttachment={handleAddAttachment}
-              onRemoveAttachment={handleRemoveAttachment}
-              onEditAttachment={handleEditAttachment}
-            />
-          </div>
-
           {/* Comments Section - Full Width, Chat-style */}
           <div className="space-y-4">
-            <Label className="flex items-center gap-2 text-sm font-semibold text-foreground">
-              <MessageSquare className="h-4 w-4 opacity-60" />
+            <Label className="flex items-center gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+              <MessageSquare className="h-3.5 w-3.5 opacity-60" />
               Comments
             </Label>
             {editedTask.comments.length > 0 && (
@@ -442,25 +415,67 @@ export const TaskFullPage = ({
             </div>
           </div>
 
-          {/* Notes Section - Full Width, No Header */}
-          <div className="space-y-3 pb-24">
-            <Label className="text-sm font-semibold text-foreground">
-              Notes
+          {/* Attachments Section - Full Width */}
+          <div className="space-y-4">
+            <Label className="flex items-center gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+              <Paperclip className="h-3.5 w-3.5 opacity-60" />
+              Attachments
             </Label>
-            <div ref={notesRef}>
-              <RichTextEditor
-                content={editedTask.notes || ""}
-                onChange={(content) => handleUpdate({ notes: content })}
-                variant="full"
-                placeholder="Write your notes, thoughts, or documentation here..."
-                className="min-h-[500px]"
-                resetKey={resetKey}
-              />
-            </div>
-            <span className="text-xs text-muted-foreground">Ctrl+D to focus notes • Ctrl+Tab to cycle through sections</span>
+            <UnifiedAttachments
+              attachments={editedTask.attachments}
+              onAddAttachment={handleAddAttachment}
+              onRemoveAttachment={handleRemoveAttachment}
+              onEditAttachment={handleEditAttachment}
+            />
           </div>
-        <AskLotus taskId={task.id} />
+
+          {/* Notes / Canvas Section - Zen & Papyrus Theme */}
+          <div className="mt-16 group pb-24">
+            <div className="flex items-center gap-3 mb-6 opacity-80 transition-opacity duration-300 group-hover:opacity-100">
+              <div className="h-[1px] flex-1 bg-gradient-to-r from-transparent via-border/40 to-border/40" />
+              <div className="flex items-center gap-2 px-5 py-2 rounded-full border border-[#E5E0D8] dark:border-[#2C2A25] bg-[#F9F8F6] dark:bg-[#1A1918] shadow-sm">
+                <ScrollText className="h-4 w-4 text-amber-700/80 dark:text-amber-400/80" />
+                <Label className="text-[12px] font-semibold text-amber-900/80 dark:text-amber-200/80 uppercase tracking-widest cursor-default">
+                  Workspace Canvas
+                </Label>
+              </div>
+              <div className="h-[1px] flex-1 bg-gradient-to-l from-transparent via-border/40 to-border/40" />
+            </div>
+
+            {/* Seamless AskLotus Integration */}
+            <div className="mb-8">
+              <AskLotus taskId={task.id} />
+            </div>
+
+            <div className="relative rounded-3xl border border-[#E5E0D8] dark:border-[#2C2A25] bg-[#FCFBF8] dark:bg-[#161615] shadow-[0_8px_30px_rgb(0,0,0,0.03)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.2)] transition-all duration-500 hover:shadow-[0_8px_30px_rgb(0,0,0,0.06)] overflow-hidden">
+              {/* Subtle papyrus/canvas texture overlay */}
+              <div
+                className="absolute inset-0 z-0 opacity-[0.35] mix-blend-multiply dark:mix-blend-screen pointer-events-none"
+                style={{
+                  backgroundImage: 'url("data:image/svg+xml,%3Csvg viewBox=%220 0 200 200%22 xmlns=%22http://www.w3.org/2000/svg%22%3E%3Cfilter id=%22noiseFilter%22%3E%3CfeTurbulence type=%22fractalNoise%22 baseFrequency=%220.8%22 numOctaves=%223%22 stitchTiles=%22stitch%22/%3E%3C/filter%3E%3Crect width=%22100%25%22 height=%22100%25%22 filter=%22url(%23noiseFilter)%22/%3E%3C/svg%3E")',
+                  backgroundSize: '150px 150px'
+                }}
+              />
+
+              {/* Subtle grid pattern background */}
+              <div className="absolute inset-0 z-0 opacity-[0.02] dark:opacity-[0.03] pointer-events-none"
+                style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, currentColor 1px, transparent 0)', backgroundSize: '32px 32px' }} />
+
+              <div ref={notesRef} className="relative z-10 p-10 min-h-[600px]">
+                <RichTextEditor
+                  content={editedTask.notes || ""}
+                  onChange={(content) => handleUpdate({ notes: content })}
+                  variant="full"
+                  placeholder="Start capturing thoughts, research, or documentation... (Ctrl+D to focus)"
+                  className="border-none shadow-none focus-within:ring-0 px-0 [&_.ProseMirror]:px-0 [&_.ProseMirror]:min-h-[600px] bg-transparent"
+                  resetKey={resetKey}
+                />
+              </div>
+            </div>
+          </div>
+
         </div>
+
       </div>
 
       <DeleteTaskDialog

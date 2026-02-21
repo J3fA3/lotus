@@ -20,7 +20,7 @@ import {
   SelectValue,
 } from "./ui/select";
 import { Skeleton } from "./ui/skeleton";
-import { Calendar, Paperclip, MessageSquare, Trash2, User, Maximize2, Minimize2, Expand } from "lucide-react";
+import { Calendar, Paperclip, MessageSquare, Trash2, User, Maximize2, Minimize2, Expand, ScrollText } from "lucide-react";
 import { toast } from "sonner";
 import { ValueStreamCombobox } from "./ValueStreamCombobox";
 import { useRegisterShortcut } from "@/contexts/ShortcutContext";
@@ -78,7 +78,6 @@ export const TaskDetailSheet = ({
   const titleRef = useRef<HTMLDivElement>(null);
   const descriptionRef = useRef<HTMLDivElement>(null);
   const statusRef = useRef<HTMLButtonElement>(null);
-  const assigneeRef = useRef<HTMLInputElement>(null);
   const commentsRef = useRef<HTMLDivElement>(null);
   const startDateRef = useRef<HTMLInputElement>(null);
   const dueDateRef = useRef<HTMLInputElement>(null);
@@ -359,9 +358,8 @@ export const TaskDetailSheet = ({
     <Sheet open={open} onOpenChange={onOpenChange} modal={false}>
       <SheetContent
         side="right"
-        className={`p-0 border-l border-border/30 transition-[width,max-width,opacity,transform] duration-[400ms] ease-butter task-sheet-scroll overflow-y-auto shadow-2xl will-change-[width,max-width,opacity,transform] ${
-          isExpanded ? "w-full sm:max-w-[900px]" : "w-full sm:max-w-[600px]"
-        } ${isExiting ? "opacity-0 scale-[0.98]" : "opacity-100 scale-100"}`}
+        className={`p-0 border-l border-border/30 transition-[width,max-width,opacity,transform] duration-[400ms] ease-butter task-sheet-scroll overflow-y-auto shadow-2xl will-change-[width,max-width,opacity,transform] ${isExpanded ? "w-full sm:max-w-[900px]" : "w-full sm:max-w-[600px]"
+          } ${isExiting ? "opacity-0 scale-[0.98]" : "opacity-100 scale-100"}`}
         onOpenAutoFocus={(e) => e.preventDefault()}
         style={{
           transform: isExiting ? "scale(0.98) translateZ(0)" : "scale(1) translateZ(0)",
@@ -431,7 +429,7 @@ export const TaskDetailSheet = ({
         </SheetHeader>
 
         {/* Content */}
-        <div className="px-8 py-6 space-y-8">
+        <div className="px-8 py-6 space-y-6">
           {isTransitioning ? (
             /* Skeleton Loading State */
             <div className="space-y-8 animate-in fade-in duration-150">
@@ -441,7 +439,7 @@ export const TaskDetailSheet = ({
               </div>
 
               {/* Properties Grid Skeleton */}
-              <div className={`grid gap-6 ${isExpanded ? "grid-cols-3" : "grid-cols-2"}`}>
+              <div className="grid grid-cols-2 gap-6">
                 <div className="space-y-3">
                   <Skeleton className="h-3 w-16" />
                   <Skeleton className="h-10 w-full" />
@@ -450,12 +448,6 @@ export const TaskDetailSheet = ({
                   <Skeleton className="h-3 w-24" />
                   <Skeleton className="h-10 w-full" />
                 </div>
-                {isExpanded && (
-                  <div className="space-y-3">
-                    <Skeleton className="h-3 w-20" />
-                    <Skeleton className="h-10 w-full" />
-                  </div>
-                )}
               </div>
 
               {/* Dates Skeleton */}
@@ -503,206 +495,207 @@ export const TaskDetailSheet = ({
                 />
               </div>
 
-          {/* Properties Grid */}
-          <div className={`grid gap-6 transition-[grid-template-columns] duration-[400ms] ease-butter will-change-[grid-template-columns] ${
-            isExpanded ? "grid-cols-3" : "grid-cols-2"
-          }`}>
-            <div className="space-y-3">
-              <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                Status
-              </Label>
-              <Select
-                value={editedTask.status}
-                onValueChange={(value) => handleUpdate({ status: value as Task["status"] })}
-              >
-                <SelectTrigger ref={statusRef} className="h-10 border-border/50 focus:border-primary/50 transition-[border-color] duration-150 hover:border-primary/30">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="todo">To-Do</SelectItem>
-                  <SelectItem value="doing">In Progress</SelectItem>
-                  <SelectItem value="done">Done</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+              {/* Properties Grid */}
+              <div className="grid grid-cols-2 gap-6 transition-[grid-template-columns] duration-[400ms] ease-butter will-change-[grid-template-columns]">
+                <div className="space-y-3">
+                  <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                    Status
+                  </Label>
+                  <Select
+                    value={editedTask.status}
+                    onValueChange={(value) => handleUpdate({ status: value as Task["status"] })}
+                  >
+                    <SelectTrigger ref={statusRef} className="h-10 border-border/50 focus:border-primary/50 transition-[border-color] duration-150 hover:border-primary/30">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="todo">To-Do</SelectItem>
+                      <SelectItem value="doing">In Progress</SelectItem>
+                      <SelectItem value="done">Done</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
 
-            <div className="space-y-3" ref={valueStreamRef}>
-              <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                Value Stream
-              </Label>
-              <ValueStreamCombobox
-                value={editedTask.valueStream || ""}
-                onChange={(value) => handleUpdate({ valueStream: value })}
-                placeholder="Select or create value stream..."
-                className="w-full"
-              />
-            </div>
-
-            {isExpanded && (
-              <div className="space-y-3 animate-in fade-in slide-in-from-right-3 duration-[400ms] ease-butter">
-                <Label className="flex items-center gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  <User className="h-3.5 w-3.5 opacity-60" />
-                  Assignee
-                </Label>
-                <Input
-                  ref={assigneeRef}
-                  value={editedTask.assignee}
-                  onChange={(e) => handleUpdate({ assignee: e.target.value })}
-                  className="h-10 border-border/50 focus:border-primary/50 transition-[border-color] duration-150 hover:border-primary/30"
-                />
-              </div>
-            )}
-          </div>
-
-          {/* Dates */}
-          <div className="grid grid-cols-2 gap-6">
-            <div className="space-y-3">
-              <Label className="flex items-center gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                <Calendar className="h-3.5 w-3.5 opacity-60" />
-                Start Date
-              </Label>
-              <Input
-                ref={startDateRef}
-                type="date"
-                value={editedTask.startDate || ""}
-                onChange={(e) => handleUpdate({ startDate: e.target.value })}
-                className="h-10 border-border/50 focus:border-primary/50 transition-[border-color] duration-150 hover:border-primary/30"
-              />
-            </div>
-
-            <div className="space-y-3">
-              <Label className="flex items-center gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                <Calendar className="h-3.5 w-3.5 opacity-60" />
-                Due Date
-              </Label>
-              <Input
-                ref={dueDateRef}
-                type="date"
-                value={editedTask.dueDate || ""}
-                onChange={(e) => handleUpdate({ dueDate: e.target.value })}
-                className="h-10 border-border/50 focus:border-primary/50 transition-[border-color] duration-150 hover:border-primary/30"
-              />
-            </div>
-          </div>
-
-          {/* Assignee - only show in peek mode since it's in the grid for expanded */}
-          {!isExpanded && (
-            <div className="space-y-3">
-              <Label className="flex items-center gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                <User className="h-3.5 w-3.5 opacity-60" />
-                Assignee
-              </Label>
-              <Input
-                value={editedTask.assignee}
-                onChange={(e) => handleUpdate({ assignee: e.target.value })}
-                className="h-10 border-border/50 focus:border-primary/50 transition-[border-color] duration-150 hover:border-primary/30"
-              />
-            </div>
-          )}
-
-          {/* Description */}
-          <div className="space-y-3">
-            <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-              Description
-            </Label>
-            <div ref={descriptionRef}>
-              <RichTextEditor
-                content={editedTask.description || ""}
-                onChange={(content) => handleUpdate({ description: content })}
-                placeholder="Add a detailed description..."
-                variant="full"
-                resetKey={resetKey}
-                className="min-h-[100px]"
-              />
-            </div>
-          </div>
-
-          {/* Attachments */}
-          <div className="space-y-3">
-            <Label className="flex items-center gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-              <Paperclip className="h-3.5 w-3.5 opacity-60" />
-              Attachments
-            </Label>
-            <UnifiedAttachments
-              attachments={editedTask.attachments}
-              onAddAttachment={handleAddAttachment}
-              onRemoveAttachment={handleRemoveAttachment}
-              onEditAttachment={handleEditAttachment}
-            />
-          </div>
-
-          {/* Comments - Chat-style */}
-          <div className="space-y-4">
-            <Label className="flex items-center gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-              <MessageSquare className="h-3.5 w-3.5 opacity-60" />
-              Comments
-            </Label>
-            {editedTask.comments.length > 0 && (
-              <div className="space-y-3">
-                {editedTask.comments.map((comment) => (
-                  <CommentItem
-                    key={comment.id}
-                    comment={comment}
-                    onEdit={handleEditComment}
-                    onDelete={handleDeleteComment}
-                    currentUser={editedTask.assignee}
+                <div className="space-y-3" ref={valueStreamRef}>
+                  <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                    Value Stream
+                  </Label>
+                  <ValueStreamCombobox
+                    value={editedTask.valueStream || ""}
+                    onChange={(value) => handleUpdate({ valueStream: value })}
+                    placeholder="Select or create value stream..."
+                    className="w-full"
                   />
-                ))}
+                </div>
               </div>
-            )}
-            <div className="flex gap-3 items-start">
-              <div className="flex-shrink-0 w-7 h-7 rounded-full bg-muted flex items-center justify-center mt-1">
-                <User className="h-3.5 w-3.5 text-muted-foreground" />
-              </div>
-              <div
-                className="flex-1"
-                ref={commentsRef}
-                onKeyDown={(e) => {
-                  // Handle Command+Enter or Ctrl+Enter to post comment
-                  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-                    e.preventDefault();
-                    handleAddComment();
-                  }
-                }}
-              >
-                <Textarea
-                  value={newComment}
-                  onChange={(e) => setNewComment(e.target.value)}
-                  placeholder="Add a comment... Press Cmd/Ctrl+Enter to post"
-                  className="border-0 border-b rounded-none min-h-[60px]"
-                />
-                <Button
-                  onClick={handleAddComment}
-                  size="sm"
-                  className="mt-2 h-8"
-                  disabled={!newComment.trim()}
-                >
-                  Comment
-                </Button>
-              </div>
-            </div>
-          </div>
 
-          {/* Notes - No Header Divider */}
-          <div className="space-y-3 pb-12">
-            <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-              Notes
-            </Label>
-            <div ref={notesRef}>
-              <RichTextEditor
-                content={editedTask.notes || ""}
-                onChange={(content) => handleUpdate({ notes: content })}
-                placeholder="Write your notes, thoughts, or documentation here..."
-                variant="full"
-                resetKey={resetKey}
-                className={isExpanded ? "min-h-[500px]" : "min-h-[400px]"}
-              />
-            </div>
-            <span className="text-xs text-muted-foreground">Ctrl+D to focus notes • Ctrl+Tab to cycle through sections</span>
-          </div>
+              {/* Dates */}
+              <div className="grid grid-cols-2 gap-6">
+                <div className="space-y-3">
+                  <Label className="flex items-center gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                    <Calendar className="h-3.5 w-3.5 opacity-60" />
+                    Start Date
+                  </Label>
+                  <Input
+                    ref={startDateRef}
+                    type="date"
+                    value={editedTask.startDate || ""}
+                    onChange={(e) => handleUpdate({ startDate: e.target.value })}
+                    className="h-10 border-border/50 focus:border-primary/50 transition-[border-color] duration-150 hover:border-primary/30"
+                  />
+                </div>
+
+                <div className="space-y-3">
+                  <Label className="flex items-center gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                    <Calendar className="h-3.5 w-3.5 opacity-60" />
+                    Due Date
+                  </Label>
+                  <Input
+                    ref={dueDateRef}
+                    type="date"
+                    value={editedTask.dueDate || ""}
+                    onChange={(e) => handleUpdate({ dueDate: e.target.value })}
+                    className="h-10 border-border/50 focus:border-primary/50 transition-[border-color] duration-150 hover:border-primary/30"
+                  />
+                </div>
+              </div>
+
+
+
+              {/* Description */}
+              <div className="space-y-3">
+                <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  Description
+                </Label>
+                <div ref={descriptionRef}>
+                  <RichTextEditor
+                    content={editedTask.description || ""}
+                    onChange={(content) => handleUpdate({ description: content })}
+                    placeholder="Add a detailed description..."
+                    variant="full"
+                    resetKey={resetKey}
+                    className="min-h-[60px]"
+                  />
+                </div>
+              </div>
+
+              {/* Comments - Chat-style */}
+              <div className="space-y-4">
+                <Label className="flex items-center gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  <MessageSquare className="h-3.5 w-3.5 opacity-60" />
+                  Comments
+                </Label>
+                {editedTask.comments.length > 0 && (
+                  <div className="space-y-3">
+                    {editedTask.comments.map((comment) => (
+                      <CommentItem
+                        key={comment.id}
+                        comment={comment}
+                        onEdit={handleEditComment}
+                        onDelete={handleDeleteComment}
+                        currentUser={editedTask.assignee}
+                      />
+                    ))}
+                  </div>
+                )}
+                <div className="flex gap-3 items-start">
+                  <div className="flex-shrink-0 w-7 h-7 rounded-full bg-muted flex items-center justify-center mt-1">
+                    <User className="h-3.5 w-3.5 text-muted-foreground" />
+                  </div>
+                  <div
+                    className="flex-1"
+                    ref={commentsRef}
+                    onKeyDown={(e) => {
+                      // Handle Command+Enter or Ctrl+Enter to post comment
+                      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+                        e.preventDefault();
+                        handleAddComment();
+                      }
+                    }}
+                  >
+                    <Textarea
+                      value={newComment}
+                      onChange={(e) => setNewComment(e.target.value)}
+                      placeholder="Add a comment... Press Cmd/Ctrl+Enter to post"
+                      className="border-0 border-b rounded-none min-h-[60px]"
+                    />
+                    <Button
+                      onClick={handleAddComment}
+                      size="sm"
+                      className="mt-2 h-8"
+                      disabled={!newComment.trim()}
+                    >
+                      Comment
+                    </Button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Attachments */}
+              <div className="space-y-3">
+                <Label className="flex items-center gap-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  <Paperclip className="h-3.5 w-3.5 opacity-60" />
+                  Attachments
+                </Label>
+                <UnifiedAttachments
+                  attachments={editedTask.attachments}
+                  onAddAttachment={handleAddAttachment}
+                  onRemoveAttachment={handleRemoveAttachment}
+                  onEditAttachment={handleEditAttachment}
+                />
+              </div>
+
+              {/* Notes / Canvas Section - Zen & Papyrus Theme */}
+              <div className="mt-12 group">
+                <div className="flex items-center gap-3 mb-5 opacity-80 transition-opacity duration-300 group-hover:opacity-100">
+                  <div className="h-[1px] flex-1 bg-gradient-to-r from-transparent via-border/40 to-border/40" />
+                  <div className="flex items-center gap-2 px-4 py-1.5 rounded-full border border-[#E5E0D8] dark:border-[#2C2A25] bg-[#F9F8F6] dark:bg-[#1A1918] shadow-sm">
+                    <ScrollText className="h-4 w-4 text-amber-700/80 dark:text-amber-400/80" />
+                    <Label className="text-[11px] font-semibold text-amber-900/80 dark:text-amber-200/80 uppercase tracking-widest cursor-default">
+                      Workspace Canvas
+                    </Label>
+                  </div>
+                  <div className="h-[1px] flex-1 bg-gradient-to-l from-transparent via-border/40 to-border/40" />
+                </div>
+
+                {/* Seamless AskLotus Integration */}
+                {!isTransitioning && (
+                  <div className="mb-6">
+                    <AskLotus taskId={task.id} />
+                  </div>
+                )}
+
+                <div className="relative rounded-2xl border border-[#E5E0D8] dark:border-[#2C2A25] bg-[#FCFBF8] dark:bg-[#161615] shadow-[0_8px_30px_rgb(0,0,0,0.03)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.2)] transition-all duration-500 hover:shadow-[0_8px_30px_rgb(0,0,0,0.06)] overflow-hidden">
+                  {/* Subtle papyrus/canvas texture overlay */}
+                  <div
+                    className="absolute inset-0 z-0 opacity-[0.35] mix-blend-multiply dark:mix-blend-screen pointer-events-none"
+                    style={{
+                      backgroundImage: 'url("data:image/svg+xml,%3Csvg viewBox=%220 0 200 200%22 xmlns=%22http://www.w3.org/2000/svg%22%3E%3Cfilter id=%22noiseFilter%22%3E%3CfeTurbulence type=%22fractalNoise%22 baseFrequency=%220.8%22 numOctaves=%223%22 stitchTiles=%22stitch%22/%3E%3C/filter%3E%3Crect width=%22100%25%22 height=%22100%25%22 filter=%22url(%23noiseFilter)%22/%3E%3C/svg%3E")',
+                      backgroundSize: '150px 150px'
+                    }}
+                  />
+
+                  {/* Subtle grid pattern background */}
+                  <div className="absolute inset-0 z-0 opacity-[0.02] dark:opacity-[0.03] pointer-events-none"
+                    style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, currentColor 1px, transparent 0)', backgroundSize: '24px 24px' }} />
+
+                  <div ref={notesRef} className="relative z-10 p-6 sm:p-8 min-h-[400px]">
+                    <RichTextEditor
+                      content={editedTask.notes || ""}
+                      onChange={(content) => handleUpdate({ notes: content })}
+                      placeholder="Start capturing thoughts, research, or documentation... (Ctrl+D to focus)"
+                      variant="full"
+                      resetKey={resetKey}
+                      className="min-h-[400px] border-none shadow-none focus-within:ring-0 px-0 [&_.ProseMirror]:px-0 [&_.ProseMirror]:min-h-[400px] bg-transparent"
+                    />
+                  </div>
+                </div>
+              </div>
+
+
             </div>
           )}
-        <AskLotus taskId={task.id} />
+
         </div>
       </SheetContent>
 

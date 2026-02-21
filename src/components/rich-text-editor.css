@@ -10,7 +10,7 @@
 }
 
 .rich-text-editor.full-featured .ProseMirror {
-  @apply min-h-[300px];
+  @apply min-h-[80px];
 }
 
 .rich-text-editor .ProseMirror p.is-editor-empty:first-child::before {
